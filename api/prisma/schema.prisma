@@ -1,0 +1,728 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// User (Customer) model
+model User {
+  id                      String   @id @default(uuid())
+  email                   String   @unique
+  name                    String?
+  phone                   String?
+  supabaseId              String?  @unique // Supabase user ID
+  isAdmin                 Boolean  @default(false)
+  isSuperAdmin            Boolean  @default(false)
+  notificationPreferences Json? // JSON field for notification preferences (metadata)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  addresses              Address[]
+  orders                 Order[]
+  payments               Payment[]
+  cart                   Cart?
+  wishlistItems          WishlistItem[]
+  reviews                Review[]
+  recentlyViewedProducts RecentlyViewedProduct[]
+  couponUsages           CouponUsage[]
+
+  @@index([email])
+  @@index([isAdmin])
+  @@map("users")
+}
+
+// Address model
+model Address {
+  id        String   @id @default(uuid())
+  userId    String
+  street    String
+  city      String
+  state     String
+  zipCode   String
+  country   String   @default("India")
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([userId])
+  @@index([userId, isDefault])
+  @@map("addresses")
+}
+
+// Brand/Manufacturer model
+model Brand {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  logo        String?
+  description String?
+  website     String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@index([isActive])
+  @@index([slug])
+  @@map("brands")
+}
+
+// Category model
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  image       String? // Keep for backward compatibility
+  parentId    String? // For subcategories
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent                Category?                  @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children              Category[]                 @relation("CategoryToCategory")
+  products              Product[]
+  specifications        CategorySpecification[]
+  pricingRules          CategoryPricingRule[]
+  configuration         CategoryConfiguration?
+  images                CategoryImage[]
+
+  @@index([parentId])
+  @@index([isActive])
+  @@index([slug])
+  @@map("categories")
+}
+
+// Category Specification model (Defines what specifications a category has)
+model CategorySpecification {
+  id          String   @id @default(uuid())
+  categoryId  String
+  name        String   // e.g., "Paper Size", "Paper Type", "Print Color"
+  slug        String   // e.g., "paper-size", "paper-type"
+  type        SpecificationType
+  isRequired  Boolean  @default(false)
+  displayOrder Int     @default(0)
+  dependsOn   Json?    // For conditional specifications, e.g., paper type depends on paper size
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category Category                  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  options  CategorySpecificationOption[]
+
+  @@unique([categoryId, slug])
+  @@index([categoryId])
+  @@index([categoryId, displayOrder])
+  @@map("category_specifications")
+}
+
+// Category Specification Option model (Options for SELECT-type specifications)
+model CategorySpecificationOption {
+  id             String   @id @default(uuid())
+  specificationId String
+  label          String   // e.g., "A4", "70 Gsm", "Black & White"
+  value          String   // e.g., "a4", "70-gsm", "bw"
+  displayOrder   Int      @default(0)
+  isActive       Boolean  @default(true)
+  metadata       Json?    // For additional data like icons, descriptions
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  specification CategorySpecification @relation(fields: [specificationId], references: [id], onDelete: Cascade)
+
+  @@unique([specificationId, value])
+  @@index([specificationId])
+  @@index([specificationId, displayOrder])
+  @@index([isActive])
+  @@map("category_specification_options")
+}
+
+// Category Pricing Rule model (Pricing rules based on specification combinations)
+model CategoryPricingRule {
+  id                  String   @id @default(uuid())
+  categoryId          String
+  ruleType            PricingRuleType
+  specificationValues  Json     // Maps specification slugs to selected values
+  basePrice            Decimal? @db.Decimal(10, 2)
+  priceModifier        Decimal? @db.Decimal(10, 2) // For addons like binding, lamination
+  quantityMultiplier   Boolean  @default(false) // Whether price multiplies by quantity
+  minQuantity          Int?     // For quantity tiers
+  maxQuantity          Int?     // For quantity tiers
+  isActive             Boolean  @default(true)
+  priority             Int      @default(0) // For rule precedence (higher = evaluated first)
+  productId            String?  @unique // Link to Product when published
+  isPublished          Boolean  @default(false) // Whether this rule is published as a product
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product   Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  cartItems CartItem[] @relation("CartItemAddons")
+  orderItems OrderItem[] @relation("OrderItemAddons")
+
+  @@index([categoryId])
+  @@index([categoryId, isActive])
+  @@index([categoryId, priority])
+  @@index([categoryId, isPublished])
+  @@index([isActive])
+  @@index([isPublished])
+  @@index([productId])
+  @@map("category_pricing_rules")
+}
+
+// Category Configuration model (Category-specific UI and behavior settings)
+model CategoryConfiguration {
+  id                String   @id @default(uuid())
+  categoryId        String   @unique
+  pageTitle         String?
+  pageDescription   String?
+  features          Json?    // JSON Array (list of feature strings)
+  breadcrumbConfig  Json?    // Breadcrumb structure
+  layoutConfig      Json?    // UI layout preferences
+  fileUploadRequired Boolean @default(false)
+  fileUploadConfig  Json?    // Allowed types, max size, etc.
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@map("category_configurations")
+}
+
+// Category Image model (Multiple images for categories)
+model CategoryImage {
+  id           String   @id @default(uuid())
+  categoryId   String
+  url          String
+  alt          String?
+  isPrimary    Boolean  @default(false)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@index([categoryId, displayOrder])
+  @@index([isPrimary])
+  @@map("category_images")
+}
+
+// Enums for Category Specifications
+enum SpecificationType {
+  SELECT       // Single selection dropdown
+  MULTI_SELECT // Multiple selection
+  TEXT         // Text input
+  NUMBER       // Number input
+  BOOLEAN      // Checkbox
+}
+
+// Enums for Pricing Rules
+enum PricingRuleType {
+  BASE_PRICE              // Base price for the category
+  SPECIFICATION_COMBINATION // Price based on specific specification combinations
+  QUANTITY_TIER           // Quantity-based pricing tiers
+  ADDON                   // Addon pricing (binding, lamination, etc.)
+}
+
+// Product model
+model Product {
+  id               String   @id @default(uuid())
+  name             String
+  slug             String?  @unique // Made nullable for migration, populate from name later
+  description      String?
+  shortDescription String? // Brief description for listings
+  basePrice        Decimal  @db.Decimal(10, 2)
+  sellingPrice     Decimal? @db.Decimal(10, 2) // Discounted price
+  mrp              Decimal? @db.Decimal(10, 2) // Maximum Retail Price
+  categoryId       String
+  brandId          String?
+  sku              String?  @unique // Stock Keeping Unit
+  stock            Int      @default(0) // Available quantity
+  minOrderQuantity Int      @default(1)
+  maxOrderQuantity Int? // Null means no limit
+  weight           Decimal? @db.Decimal(10, 2) // in kg
+  dimensions       String? // e.g., "10x5x2 cm"
+  isActive         Boolean  @default(true)
+  isFeatured       Boolean  @default(false)
+  isNewArrival     Boolean  @default(false)
+  isBestSeller     Boolean  @default(false)
+  rating           Decimal? @db.Decimal(3, 2) // Average rating (0-5)
+  totalReviews     Int      @default(0)
+  totalSold        Int      @default(0)
+  returnPolicy     String? // Return policy text
+  warranty         String? // Warranty information
+  generatedFromPricingRule Boolean @default(false) // Track if product was generated from category
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  category       Category                @relation(fields: [categoryId], references: [id])
+  brand          Brand?                  @relation(fields: [brandId], references: [id])
+  pricingRule    CategoryPricingRule?    // One-to-one relation to pricing rule
+  variants       ProductVariant[]
+  images         ProductImage[]
+  specifications ProductSpecification[]
+  attributes     ProductAttribute[]
+  tags           ProductTag[]
+  orderItems     OrderItem[]
+  cartItems      CartItem[]
+  wishlistItems  WishlistItem[]
+  reviews        Review[]
+  recentlyViewed RecentlyViewedProduct[]
+  offerProducts  OfferProduct[]
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([isActive])
+  @@index([isFeatured])
+  @@index([isNewArrival])
+  @@index([isBestSeller])
+  @@index([basePrice])
+  @@index([createdAt])
+  @@index([rating])
+  @@index([totalSold])
+  @@index([categoryId, isActive])
+  @@index([brandId, isActive])
+  @@index([isActive, isFeatured])
+  @@index([isActive, isNewArrival])
+  @@index([isActive, isBestSeller])
+  @@index([slug])
+  @@index([generatedFromPricingRule])
+  @@map("products")
+}
+
+// Product Image model (separate table for better management)
+model ProductImage {
+  id           String   @id @default(uuid())
+  productId    String
+  url          String
+  alt          String?
+  isPrimary    Boolean  @default(false)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([productId, displayOrder])
+  @@index([isPrimary])
+  @@map("product_images")
+}
+
+// Product Specification model (key-value pairs for product details)
+model ProductSpecification {
+  id           String   @id @default(uuid())
+  productId    String
+  key          String // e.g., "Material", "Color", "Size"
+  value        String // e.g., "Cotton", "Red", "Large"
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([productId, displayOrder])
+  @@map("product_specifications")
+}
+
+// Product Attribute model (for filtering/searching)
+model ProductAttribute {
+  id             String   @id @default(uuid())
+  productId      String
+  attributeType  String // e.g., "color", "size", "material"
+  attributeValue String // e.g., "red", "large", "cotton"
+  createdAt      DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([attributeType])
+  @@index([attributeType, attributeValue])
+  @@map("product_attributes")
+}
+
+// Product Tag model (for categorization and search)
+model ProductTag {
+  id        String   @id @default(uuid())
+  productId String
+  tag       String // e.g., "trending", "sale", "new"
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([tag])
+  @@map("product_tags")
+}
+
+// ProductVariant model (size, color, etc.)
+model ProductVariant {
+  id            String   @id @default(uuid())
+  productId     String
+  name          String // e.g., "Small", "Red", "Cotton"
+  sku           String?  @unique // Variant SKU
+  stock         Int      @default(0) // Variant-specific stock
+  priceModifier Decimal  @default(0) @db.Decimal(10, 2) // Additional cost
+  available     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+  cartItems  CartItem[]
+
+  @@index([productId])
+  @@index([available])
+  @@index([productId, available])
+  @@map("product_variants")
+}
+
+// Order model
+model Order {
+  id              String        @id @default(uuid())
+  userId          String
+  addressId       String
+  subtotal        Decimal?      @db.Decimal(10, 2) // Before discount - nullable for migration, populate from total later
+  discountAmount  Decimal?      @db.Decimal(10, 2) // Discount from coupon/offer
+  shippingCharges Decimal?      @db.Decimal(10, 2)
+  total           Decimal       @db.Decimal(10, 2) // Final amount
+  status          OrderStatus   @default(PENDING_REVIEW)
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus @default(PENDING)
+  razorpayOrderId String?       @unique
+  couponId        String? // Applied coupon
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user          User                 @relation(fields: [userId], references: [id])
+  address       Address              @relation(fields: [addressId], references: [id])
+  items         OrderItem[]
+  payments      Payment[]
+  statusHistory OrderStatusHistory[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([razorpayOrderId])
+  @@map("orders")
+}
+
+// OrderItem model
+model OrderItem {
+  id              String   @id @default(uuid())
+  orderId         String
+  productId       String
+  variantId       String?
+  quantity        Int
+  price           Decimal  @db.Decimal(10, 2) // Price at time of order
+  customDesignUrl Json?    // Array of S3 URLs for multiple files
+  customText      String?
+  hasAddon        Boolean  @default(false)
+  addons          CategoryPricingRule[] @relation("OrderItemAddons")
+  metadata        Json?    // Additional pricing metadata (pageCount, copies, addons, breakdown)
+  createdAt       DateTime @default(now())
+
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+  @@map("order_items")
+}
+
+// OrderStatusHistory model
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  status    OrderStatus
+  comment   String?
+  createdAt DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([orderId, createdAt])
+  @@index([status])
+  @@map("order_status_history")
+}
+
+// Payment model
+model Payment {
+  id                String        @id @default(uuid())
+  orderId           String
+  userId            String
+  amount            Decimal       @db.Decimal(10, 2)
+  discountAmount    Decimal?      @db.Decimal(10, 2) // Discount from coupon
+  razorpayOrderId   String?       @unique
+  razorpayPaymentId String?       @unique
+  status            PaymentStatus @default(PENDING)
+  method            PaymentMethod
+  couponId          String? // Applied coupon
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order  Order   @relation(fields: [orderId], references: [id])
+  user   User    @relation(fields: [userId], references: [id])
+  coupon Coupon? @relation(fields: [couponId], references: [id])
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([userId, status])
+  @@index([razorpayOrderId])
+  @@index([razorpayPaymentId])
+  @@map("payments")
+}
+
+// Cart model (Shopping Cart)
+model Cart {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@index([userId])
+  @@map("carts")
+}
+
+// Cart Item model
+model CartItem {
+  id              String   @id @default(uuid())
+  cartId          String
+  productId       String
+  variantId       String?
+  quantity        Int      @default(1)
+  customDesignUrl Json?    // Array of S3 URLs for multiple files
+  customText      String?
+  hasAddon        Boolean  @default(false)
+  addons          CategoryPricingRule[] @relation("CartItemAddons")
+  metadata        Json?    // Pricing metadata (pageCount, copies, selectedAddons, breakdown)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cart    Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@unique([cartId, productId, variantId]) // Prevent duplicate items
+  @@index([cartId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+// Wishlist model (Save for Later / Favorites)
+model WishlistItem {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId]) // One product per user in wishlist
+  @@index([userId])
+  @@index([productId])
+  @@map("wishlist_items")
+}
+
+// Review model
+model Review {
+  id                 String   @id @default(uuid())
+  productId          String
+  userId             String
+  rating             Int // 1-5 stars
+  title              String?
+  comment            String?
+  images             Json?    // Review images
+  isVerifiedPurchase Boolean  @default(false) // Verified purchase badge
+  isHelpful          Int      @default(0) // Helpful votes count
+  isApproved         Boolean  @default(false) // Admin approval
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  product      Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  helpfulVotes ReviewHelpfulVote[]
+
+  @@unique([productId, userId]) // One review per user per product
+  @@index([productId])
+  @@index([userId])
+  @@index([isApproved])
+  @@index([productId, isApproved])
+  @@index([rating])
+  @@index([createdAt])
+  @@map("reviews")
+}
+
+// Review Helpful Vote model (users can vote if review is helpful)
+model ReviewHelpfulVote {
+  id        String   @id @default(uuid())
+  reviewId  String
+  userId    String // User who voted
+  isHelpful Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId]) // One vote per user per review
+  @@index([reviewId])
+  @@index([userId])
+  @@map("review_helpful_votes")
+}
+
+// Coupon/Offer model
+model Coupon {
+  id                String             @id @default(uuid())
+  code              String             @unique
+  name              String
+  description       String?
+  discountType      DiscountType
+  discountValue     Decimal            @db.Decimal(10, 2) // Percentage or fixed amount
+  minPurchaseAmount Decimal?           @db.Decimal(10, 2) // Minimum order value
+  maxDiscountAmount Decimal?           @db.Decimal(10, 2) // Maximum discount cap
+  usageLimit        Int? // Total usage limit (null = unlimited)
+  usageLimitPerUser Int                @default(1) // Per user usage limit
+  validFrom         DateTime
+  validUntil        DateTime
+  isActive          Boolean            @default(true)
+  applicableTo      CouponApplicableTo @default(ALL)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  usages        CouponUsage[]
+  payments      Payment[]
+  offerProducts OfferProduct[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([validFrom, validUntil])
+  @@index([isActive, validFrom, validUntil])
+  @@map("coupons")
+}
+
+// Coupon Usage tracking
+model CouponUsage {
+  id       String   @id @default(uuid())
+  couponId String
+  userId   String
+  orderId  String? // Order where coupon was used
+  usedAt   DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([couponId])
+  @@index([userId])
+  @@index([userId, couponId])
+  @@index([usedAt])
+  @@map("coupon_usages")
+}
+
+// Offer model (Product-specific offers/deals)
+model Offer {
+  id                String       @id @default(uuid())
+  title             String
+  description       String?
+  discountType      DiscountType
+  discountValue     Decimal      @db.Decimal(10, 2)
+  minPurchaseAmount Decimal?     @db.Decimal(10, 2)
+  maxDiscountAmount Decimal?     @db.Decimal(10, 2)
+  validFrom         DateTime
+  validUntil        DateTime
+  isActive          Boolean      @default(true)
+  bannerImage       String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  products OfferProduct[]
+
+  @@index([isActive])
+  @@index([validFrom, validUntil])
+  @@index([isActive, validFrom, validUntil])
+  @@map("offers")
+}
+
+// Offer-Product relationship (many-to-many)
+model OfferProduct {
+  id        String   @id @default(uuid())
+  offerId   String?
+  couponId  String?
+  productId String
+  createdAt DateTime @default(now())
+
+  offer   Offer?  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  coupon  Coupon? @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([offerId])
+  @@index([couponId])
+  @@index([productId])
+  @@map("offer_products")
+}
+
+// Recently Viewed Products (for recommendations)
+model RecentlyViewedProduct {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  viewedAt  DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId]) // Track unique views, update timestamp on duplicate
+  @@index([userId])
+  @@index([userId, viewedAt])
+  @@index([productId])
+  @@map("recently_viewed_products")
+}
+
+// Enums
+enum OrderStatus {
+  PENDING_REVIEW
+  ACCEPTED
+  REJECTED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  ONLINE
+  OFFLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum DiscountType {
+  PERCENTAGE // Percentage discount (e.g., 10%)
+  FIXED // Fixed amount discount (e.g., ₹100)
+}
+
+enum CouponApplicableTo {
+  ALL // All products
+  CATEGORY // Specific category
+  PRODUCT // Specific products
+  BRAND // Specific brand
+}
