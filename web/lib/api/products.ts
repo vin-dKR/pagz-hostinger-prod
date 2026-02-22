@@ -177,3 +177,23 @@ export async function searchProducts(
     return get<ProductListResponse>(`/search?${queryParams.toString()}`);
 }
 
+/**
+ * Get product addons (ADDON pricing rules associated with a product)
+ */
+export interface ProductAddon {
+    id: string;
+    categoryId: string;
+    ruleType: 'ADDON';
+    specificationValues: Record<string, any>;
+    basePrice?: number;
+    priceModifier?: number;
+    quantityMultiplier: boolean;
+    minQuantity?: number;
+    maxQuantity?: number;
+    isActive: boolean;
+    priority: number;
+}
+
+export async function getProductAddons(productId: string): Promise<ApiResponse<ProductAddon[]>> {
+    return get<ProductAddon[]>(`/products/${productId}/addons`);
+}

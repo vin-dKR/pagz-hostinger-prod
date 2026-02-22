@@ -262,6 +262,79 @@ export async function deleteProduct(id: string): Promise<void> {
     }
 }
 
+export interface ProductAddon {
+    id: string; // ProductAddon ID
+    addonRuleId: string;
+    addonRule: {
+        id: string;
+        categoryId: string;
+        ruleType: 'ADDON';
+        specificationValues: Record<string, any>;
+        basePrice?: number | null;
+        priceModifier?: number | null;
+        quantityMultiplier: boolean;
+        minQuantity?: number | null;
+        maxQuantity?: number | null;
+        isActive: boolean;
+        priority: number;
+    };
+}
+
+export interface ProductAddonsResponse {
+    addons: ProductAddon[];
+    category: {
+        id: string;
+        name: string;
+        slug: string;
+        specifications: Array<{
+            id: string;
+            name: string;
+            slug: string;
+            options: Array<{
+                value: string;
+                label: string;
+            }>;
+        }>;
+    };
+}
+
+/**
+ * Get product addons (admin)
+ */
+export async function getProductAddons(productId: string): Promise<ProductAddonsResponse> {
+    const response = await get<ProductAddonsResponse>(`/admin/products/${productId}/addons`);
+
+    if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to fetch product addons');
+    }
+
+    return response.data;
+}
+
+/**
+ * Add addon to product
+ */
+export async function addProductAddon(productId: string, addonRuleId: string): Promise<ProductAddon> {
+    const response = await post<ProductAddon>(`/admin/products/${productId}/addons`, { addonRuleId });
+
+    if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to add addon');
+    }
+
+    return response.data;
+}
+
+/**
+ * Remove addon from product
+ */
+export async function removeProductAddon(productId: string, productAddonId: string): Promise<void> {
+    const response = await post(`/admin/products/${productId}/addons/remove`, { productAddonId });
+
+    if (!response.success) {
+        throw new Error(response.error || 'Failed to remove addon');
+    }
+}
+
 /**
  * Add variant to product
  */

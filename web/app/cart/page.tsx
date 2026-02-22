@@ -287,21 +287,21 @@ function CartPageContent() {
     ];
 
     return (
-        <div className="min-h-screen py-8">
+        <div className="min-h-screen py-4 sm:py-6 lg:py-8">
             {ConfirmDialog}
-            <div className="max-w-7xl mx-auto px-6">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6">
                 {/* Breadcrumbs */}
                 <Breadcrumbs items={breadcrumbs} />
 
-                <h1 className="text-3xl font-hkgb font-bold text-gray-900 mb-6">YOUR CART</h1>
+                <h1 className="text-2xl sm:text-3xl font-hkgb font-bold text-gray-900 mb-4 sm:mb-6">YOUR CART</h1>
 
                 {/* Error State */}
                 {error && (
-                    <div className="bg-red-50 border border-red-200 rounded-2xl p-4 sm:p-6 mb-6">
-                        <p className="text-red-600 text-sm">{error}</p>
+                    <div className="bg-red-50 border border-red-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-4 sm:mb-6">
+                        <p className="text-red-600 text-sm sm:text-base">{error}</p>
                         <button
                             onClick={() => refetch()}
-                            className="mt-2 text-sm text-red-600 hover:text-red-700 font-medium underline cursor-pointer"
+                            className="mt-2 text-xs sm:text-sm text-red-600 hover:text-red-700 font-medium underline cursor-pointer"
                         >
                             Try again
                         </button>
@@ -314,17 +314,17 @@ function CartPageContent() {
                         <BarsSpinner />
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
                         {/* Left Column - Cart Items */}
-                        <div className="lg:col-span-2">
+                        <div className="lg:col-span-2 order-2 lg:order-1">
                             {/* Select All / Unselect All */}
                             {items.length > 0 && (
-                                <div className="mb-4 flex items-center justify-between bg-white rounded-2xl border border-gray-100 p-3">
-                                    <div className="flex items-center gap-3">
+                                <div className="mb-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white rounded-xl sm:rounded-2xl border border-gray-100 p-3 sm:p-4">
+                                    <div className="flex items-center gap-2 sm:gap-3">
                                         <button
                                             onClick={handleSelectAll}
                                             disabled={selectedItems.size === items.length}
-                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedItems.size === items.length
+                                            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${selectedItems.size === items.length
                                                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                 : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                                 }`}
@@ -334,7 +334,7 @@ function CartPageContent() {
                                         <button
                                             onClick={handleUnselectAll}
                                             disabled={selectedItems.size === 0}
-                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedItems.size === 0
+                                            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${selectedItems.size === 0
                                                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                 : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                                                 }`}
@@ -342,30 +342,30 @@ function CartPageContent() {
                                             Unselect All
                                         </button>
                                     </div>
-                                    <span className="text-sm text-gray-600">
+                                    <span className="text-xs sm:text-sm text-gray-600 text-center sm:text-right">
                                         {selectedItems.size} of {items.length} items selected
                                     </span>
                                 </div>
                             )}
 
                             {items.length === 0 ? (
-                                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 sm:p-12 text-center">
-                                    <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-gray-50 flex items-center justify-center">
-                                        <ShoppingCart className="text-gray-400 w-8 h-8" strokeWidth={1.5} />
+                                <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 lg:p-12 text-center">
+                                    <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 sm:mb-5 rounded-full bg-gray-50 flex items-center justify-center">
+                                        <ShoppingCart className="text-gray-400 w-6 h-6 sm:w-8 sm:h-8" strokeWidth={1.5} />
                                     </div>
-                                    <p className="text-lg font-semibold text-gray-900 mb-2">Your cart is empty</p>
-                                    <p className="text-gray-500 text-sm mb-6 max-w-md mx-auto">
+                                    <p className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Your cart is empty</p>
+                                    <p className="text-gray-500 text-xs sm:text-sm mb-4 sm:mb-6 max-w-md mx-auto px-4">
                                         Looks like you haven't added anything to your cart yet. Start shopping to add items.
                                     </p>
                                     <Link
                                         href="/products"
-                                        className="inline-flex items-center justify-center px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-[#008ECC] active:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow font-medium"
+                                        className="inline-flex items-center justify-center px-5 sm:px-6 py-2.5 sm:py-3 bg-blue-500 text-white rounded-lg hover:bg-[#008ECC] active:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow font-medium text-sm sm:text-base"
                                     >
                                         Continue Shopping
                                     </Link>
                                 </div>
                             ) : (
-                                <div className="space-y-4 border border-gray-100 rounded-2xl p-4 pb-0">
+                                <div className="space-y-4 sm:space-y-6 border border-gray-100 rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 bg-white">
                                     {items.map((item) => (
                                         <CartItem
                                             key={item.id}
@@ -388,34 +388,36 @@ function CartPageContent() {
 
                         {/* Right Column - Billing Summary */}
                         {items.length > 0 && (
-                            <div className="lg:col-span-1">
-                                <BillingSummary
-                                    mrp={mrp || 0}
-                                    subtotal={baseSubtotal || 0}
-                                    addonsSubtotal={addonsSubtotal || 0}
-                                    discount={discount}
-                                    couponApplied={couponApplied}
-                                    shipping={shippingFee}
-                                    tax={tax}
-                                    grandTotal={grandTotal}
-                                    itemCount={selectedItemsList.length}
-                                    showCheckoutActions={false}
-                                />
-                                <button
-                                    onClick={handleGoToCheckout}
-                                    disabled={selectedItems.size === 0 || !allSelectedItemsHaveImages}
-                                    className={`w-full mt-4 px-6 py-3 rounded-2xl text-white transition-colors font-medium ${selectedItems.size > 0 && allSelectedItemsHaveImages
-                                        ? "bg-[#1EADD8] hover:bg-blue-700"
-                                        : "bg-gray-400 cursor-not-allowed"
-                                        }`}
-                                >
-                                    {selectedItems.size === 0
-                                        ? 'Select items to checkout'
-                                        : !allSelectedItemsHaveImages
-                                            ? 'Add images to all items'
-                                            : `Go to Checkout (${selectedItemsList.length} ${selectedItemsList.length === 1 ? 'item' : 'items'})`
-                                    }
-                                </button>
+                            <div className="lg:col-span-1 order-1 lg:order-2">
+                                <div className="sticky top-4">
+                                    <BillingSummary
+                                        mrp={mrp || 0}
+                                        subtotal={baseSubtotal || 0}
+                                        addonsSubtotal={addonsSubtotal || 0}
+                                        discount={discount}
+                                        couponApplied={couponApplied}
+                                        shipping={shippingFee}
+                                        tax={tax}
+                                        grandTotal={grandTotal}
+                                        itemCount={selectedItemsList.length}
+                                        showCheckoutActions={false}
+                                    />
+                                    <button
+                                        onClick={handleGoToCheckout}
+                                        disabled={selectedItems.size === 0 || !allSelectedItemsHaveImages}
+                                        className={`w-full mt-3 sm:mt-4 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base text-white transition-colors font-medium ${selectedItems.size > 0 && allSelectedItemsHaveImages
+                                            ? "bg-[#1EADD8] hover:bg-blue-700"
+                                            : "bg-gray-400 cursor-not-allowed"
+                                            }`}
+                                    >
+                                        {selectedItems.size === 0
+                                            ? 'Select items to checkout'
+                                            : !allSelectedItemsHaveImages
+                                                ? 'Add images to all items'
+                                                : `Go to Checkout (${selectedItemsList.length} ${selectedItemsList.length === 1 ? 'item' : 'items'})`
+                                        }
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>

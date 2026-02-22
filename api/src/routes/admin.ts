@@ -5,9 +5,13 @@ import {
     deleteProduct,
     addVariant,
     createCategoties,
+    deleteCategory,
     getAdminCategories,
     getAdminProducts,
     getAdminProduct,
+    getAdminProductAddons,
+    addProductAddon,
+    removeProductAddon,
 } from "../controllers/productController.js";
 import {
     getAdminOrders,
@@ -130,6 +134,7 @@ router.get("/dashboard/overview", getDashboardOverview);
 // Product & Category Management (admin only)
 router.get("/categories", getAdminCategories);
 router.post("/categories", createCategoties);
+router.delete("/categories/:id", deleteCategory);
 
 // Admin Products
 router.get("/products", getAdminProducts);
@@ -138,6 +143,9 @@ router.post("/products", createProduct);
 router.put("/products/:id", updateProduct);
 router.delete("/products/:id", deleteProduct);
 router.post("/products/:id/variants", addVariant);
+router.get("/products/:id/addons", getAdminProductAddons);
+router.post("/products/:id/addons", addProductAddon);
+router.post("/products/:id/addons/remove", removeProductAddon);
 
 // Order Management (admin only)
 router.get("/orders", getAdminOrders);

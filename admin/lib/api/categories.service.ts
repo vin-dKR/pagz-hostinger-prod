@@ -206,12 +206,14 @@ export async function updateCategory(id: string, data: UpdateCategoryData): Prom
     return response.data;
 }
 
-export async function deleteCategory(id: string): Promise<void> {
-    const response = await del<null>(`/admin/categories/${id}`);
+export async function deleteCategory(id: string): Promise<{ deletedProductsCount: number }> {
+    const response = await del<{ deletedProductsCount: number }>(`/admin/categories/${id}`);
 
     if (!response.success) {
         throw new Error(response.error || 'Failed to delete category');
     }
+
+    return response.data || { deletedProductsCount: 0 };
 }
 
 // Specifications
@@ -582,6 +584,7 @@ export interface PublishProductData {
     minOrderQuantity?: number;
     maxOrderQuantity?: number;
     images?: Array<{ url: string; alt?: string; isPrimary?: boolean; displayOrder?: number }>;
+    addonIds?: string[];
 }
 
 export async function previewProductFromPricingRuleApi(

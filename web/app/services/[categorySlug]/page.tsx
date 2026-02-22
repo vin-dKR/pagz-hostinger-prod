@@ -937,12 +937,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     {/* Page Count & Copies (if files are uploaded) */}
                     {pageCount > 0 && (
                         <>
-                            <PageCountDisplay
+                            {/* <PageCountDisplay
                                 pageCount={pageCount}
                                 fileType={getFileType(uploadedFileDetails)}
                                 pdfPageCount={pdfPageCount}
                                 imageCount={imageCount}
-                            />
+                            /> */}
 
                             <CopiesSelector
                                 value={copies}

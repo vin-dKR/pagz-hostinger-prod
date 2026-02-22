@@ -205,7 +205,7 @@ export default function CouponProductCard({ product }: CouponProductCardProps) {
             </div>
 
             {/* Add to Cart Button */}
-            <button
+            {/* <button
                 onClick={handleAddToCart}
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseUp={(e) => e.stopPropagation()}
@@ -250,7 +250,7 @@ export default function CouponProductCard({ product }: CouponProductCardProps) {
                         <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
                 )}
-            </button>
+            </button> */}
         </div>
     );
 }

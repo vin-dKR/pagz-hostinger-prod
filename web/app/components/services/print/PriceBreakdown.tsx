@@ -110,7 +110,7 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
                                     )}
                                 </div>
                                 <div className="font-medium text-gray-900">
-                                    {currency}{item.value.toFixed(2)}
+                                    {currency}{Number(item.value || 0).toFixed(2)}
                                 </div>
                             </div>
                         ))}
@@ -124,7 +124,7 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
                         <div className="font-semibold text-gray-900 text-lg">Total Price</div>
                         <div className="text-right">
                             <div className="font-semibold text-blue-500 text-2xl">
-                                {currency}{total.toFixed(2)}
+                                {currency}{Number(total || 0).toFixed(2)}
                             </div>
                             {showDetailedCalculation && calculatedQuantity > 1 && (
                                 <div className="text-gray-500 text-xs mt-1">

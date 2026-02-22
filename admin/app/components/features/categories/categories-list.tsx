@@ -19,6 +19,7 @@ import { PageLoading } from '@/app/components/ui/loading';
 import { Alert } from '@/app/components/ui/alert';
 import {
     getCategories,
+    deleteCategory,
     type Category,
     type PaginatedCategories,
 } from '@/lib/api/categories.service';
@@ -26,9 +27,11 @@ import { formatDate } from '@/lib/utils/format';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
-import { Search, Grid3x3, List, Image as ImageIcon } from 'lucide-react';
+import { Search, Grid3x3, List, Image as ImageIcon, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useConfirm } from '@/lib/hooks/use-confirm';
+import { toastPromise } from '@/lib/utils/toast';
 
 export function CategoriesList() {
     const [categories, setCategories] = useState<Category[]>([]);
@@ -41,6 +44,7 @@ export function CategoriesList() {
     const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+    const { confirm, ConfirmDialog } = useConfirm();
 
     useEffect(() => {
         loadCategories(page, debouncedSearch);
@@ -75,12 +79,41 @@ export function CategoriesList() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debouncedSearch]);
 
+    const handleDeleteCategory = async (category: Category) => {
+        const productCount = category._count?.publishedPricingRules || 0;
+        await confirm({
+            title: 'Delete Category',
+            description: `Are you sure you want to delete "${category.name}"? This will permanently delete the category and all ${productCount} product(s) associated with it. This action cannot be undone.`,
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            variant: 'destructive',
+            onConfirm: async () => {
+                try {
+                    await toastPromise(
+                        deleteCategory(category.id),
+                        {
+                            loading: 'Deleting category and products...',
+                            success: (data: { deletedProductsCount: number }) => `Category and ${data.deletedProductsCount} product(s) deleted successfully`,
+                            error: 'Failed to delete category',
+                        }
+                    );
+                    // Reload categories
+                    await loadCategories(page, debouncedSearch);
+                } catch {
+                    // Error handled by toastPromise
+                }
+            },
+        });
+    };
+
     if (isLoading && !hasLoadedOnce) {
         return <PageLoading />;
     }
 
     return (
-        <Card>
+        <>
+            {ConfirmDialog}
+            <Card>
             <CardContent className="p-0">
                 {/* Search + Pagination Header */}
                 <div className="flex flex-col gap-3 border-b bg-gray-50/60 px-4 py-3 md:flex-row md:items-center md:justify-between">
@@ -226,11 +259,21 @@ export function CategoriesList() {
                                         </TableCell>
                                         <TableCell>{formatDate(category.createdAt)}</TableCell>
                                         <TableCell className="text-right">
-                                            <Link href={`/categories/${category.id}`}>
-                                                <Button variant="outline" size="sm">
-                                                    Manage
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Link href={`/categories/${category.id}`}>
+                                                    <Button variant="outline" size="sm">
+                                                        Manage
+                                                    </Button>
+                                                </Link>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleDeleteCategory(category)}
+                                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
                                                 </Button>
-                                            </Link>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -280,12 +323,20 @@ export function CategoriesList() {
                                                 {category._count?.publishedPricingRules || 0} Products
                                             </span>
                                         </div>
-                                        <div className="mt-3 flex justify-end">
+                                        <div className="mt-3 flex justify-end gap-2">
                                             <Link href={`/categories/${category.id}`}>
                                                 <Button variant="outline" size="sm">
                                                     Manage
                                                 </Button>
                                             </Link>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleDeleteCategory(category)}
+                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
                                         </div>
                                     </CardContent>
                                 </Card>
@@ -295,6 +346,7 @@ export function CategoriesList() {
                 </div>
             </CardContent>
         </Card>
+        </>
     );
 }
 

@@ -3,6 +3,7 @@ import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { deleteFromS3, extractKeyFromUrl } from "../services/s3.js";
+import { getParamAsString } from "../utils/db-utils.js";
 // Get user's cart
 export const getCart = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -91,11 +92,20 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             const productBasePrice = Number(item.product.sellingPrice ?? item.product.basePrice);
             const variantPrice = item.variant ? Number(item.variant.priceModifier) : 0;
             const unitBasePrice = productBasePrice + variantPrice;
-            const baseTotal = unitBasePrice * item.quantity;
+            
+            // Get pageCount and copies from metadata
+            const pageCount = (item.metadata as any)?.pageCount || 1;
+            const copies = (item.metadata as any)?.copies || 1;
+            const effectivePages = pageCount * copies;
+            
+            // Calculate base total: if pageCount > 1, multiply by effectivePages, otherwise use quantity
+            const baseTotal = pageCount > 1 
+                ? unitBasePrice * effectivePages 
+                : unitBasePrice * item.quantity;
 
             let addonUnitPrice = 0;
             let addonTotal = 0;
-
+ 
             if (item.addons && item.addons.length > 0) {
                 for (const addon of item.addons as any[]) {
                     const rawAddonPrice =
@@ -107,8 +117,33 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
 
                     addonUnitPrice += rawAddonPrice;
 
-                    const multiplier = addon.quantityMultiplier ? item.quantity : 1;
-                    addonTotal += rawAddonPrice * multiplier;
+                    // Calculate addon price based on page ranges and quantity multiplier
+                    let addonPrice = 0;
+                    if (pageCount > 1) {
+                        // Check if effectivePages is in addon's page range
+                        const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
+                        if (hasPageRange) {
+                            const inRange =
+                                (addon.minQuantity == null || effectivePages >= addon.minQuantity) &&
+                                (addon.maxQuantity == null || effectivePages <= addon.maxQuantity);
+                            if (!inRange) {
+                                continue; // Skip this addon if not in range
+                            }
+                        }
+                        
+                        // Calculate addon price
+                        if (addon.quantityMultiplier) {
+                            addonPrice = rawAddonPrice * effectivePages;
+                        } else {
+                            addonPrice = rawAddonPrice;
+                        }
+                    } else {
+                        // No page count, use quantity multiplier if enabled
+                        const multiplier = addon.quantityMultiplier ? item.quantity : 1;
+                        addonPrice = rawAddonPrice * multiplier;
+                    }
+                    
+                    addonTotal += addonPrice;
                 }
             }
 
@@ -350,7 +385,7 @@ export const updateCartItem = async (req: Request, res: Response, next: NextFunc
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { itemId } = req.params;
+        const itemId = getParamAsString(req.params.itemId, "Item ID");
         const { quantity, customDesignUrl, customText } = req.body;
 
         if (!quantity || quantity < 1) {
@@ -442,7 +477,7 @@ export const removeFromCart = async (req: Request, res: Response, next: NextFunc
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { itemId } = req.params;
+        const itemId = getParamAsString(req.params.itemId, "Item ID");
 
         // Verify cart item belongs to user
         const cartItem = await prisma.cartItem.findUnique({

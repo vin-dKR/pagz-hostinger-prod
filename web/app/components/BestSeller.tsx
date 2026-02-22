@@ -206,7 +206,7 @@ export default function BestSeller() {
                                 </div>
 
                                 {/* Add to Cart Button */}
-                                <button
+                                {/* <button
                                     onClick={(e) => handleAddToCart(e, product.id)}
                                     disabled={addingToCartId === product.id}
                                     className={`absolute bottom-4 right-4 w-10 h-10 ${isProductInCart(product.name)
@@ -248,7 +248,7 @@ export default function BestSeller() {
                                             <line x1="5" y1="12" x2="19" y2="12"></line>
                                         </svg>
                                     )}
-                                </button>
+                                </button> */}
                             </div>
                         ))}
                     </div>

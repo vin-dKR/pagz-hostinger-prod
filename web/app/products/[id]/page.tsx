@@ -24,6 +24,8 @@ import { Star, X } from "lucide-react";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 import { imageLoader } from "@/lib/utils/image-loader";
 import ReviewList from "../../components/reviews/ReviewList";
+import { getProductAddons, type ProductAddon } from "@/lib/api/products";
+import { getCategoryBySlug, type CategorySpecification } from "@/lib/api/categories";
 
 export default function ProductDetailsPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -107,6 +109,11 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
 
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [uploadedFileDetails, setUploadedFileDetails] = useState<FileDetail[]>([]);
+    
+    // Addon state
+    const [availableAddons, setAvailableAddons] = useState<ProductAddon[]>([]);
+    const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+    const [categorySpecs, setCategorySpecs] = useState<CategorySpecification[]>([]);
 
     // Check if files are currently uploading
     const isUploadingFiles = useMemo(() => {
@@ -128,11 +135,6 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
     const basePrice = useMemo(() => {
         return currentPrice || 0;
     }, [currentPrice]);
-
-    // Calculate total price based on totalQuantity
-    const totalPrice = useMemo(() => {
-        return basePrice * totalQuantity;
-    }, [basePrice, totalQuantity]);
 
     // Calculate PDF and image counts for breakdown
     const { pdfPageCount, imageCount } = useMemo(() => {
@@ -157,6 +159,79 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
             setSelectedSize(product.variants[0]?.name);
         }
     }, [product, selectedVariant]);
+
+    // Fetch product addons and category specifications when product loads
+    useEffect(() => {
+        async function fetchAddonsAndSpecs() {
+            if (!product?.id || !product?.category) return;
+            try {
+                // Fetch addons
+                const addonsResponse = await getProductAddons(product.id);
+                if (addonsResponse.success && addonsResponse.data) {
+                    setAvailableAddons(addonsResponse.data);
+                }
+                
+                // Fetch category specifications to get spec names for addon labels
+                if (product.category.slug) {
+                    try {
+                        const categoryData = await getCategoryBySlug(product.category.slug);
+                        if (categoryData.specifications) {
+                            setCategorySpecs(categoryData.specifications);
+                        }
+                    } catch (specError) {
+                        console.warn('Failed to load category specifications', specError);
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to load product addons', error);
+            }
+        }
+        fetchAddonsAndSpecs();
+    }, [product?.id, product?.category]);
+
+    // Filter available addons based on page count
+    const filteredAddons = useMemo(() => {
+        if (!availableAddons || availableAddons.length === 0) return [];
+        
+        const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
+        
+        return availableAddons.filter((addon) => {
+            // Check page range if configured
+            const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
+            if (hasPageRange) {
+                if (effectivePages == null) return false;
+                if (addon.minQuantity != null && effectivePages < addon.minQuantity) return false;
+                if (addon.maxQuantity != null && effectivePages > addon.maxQuantity) return false;
+            }
+            return true;
+        });
+    }, [availableAddons, pageCount, copies]);
+
+    // Calculate addon prices
+    const addonPrices = useMemo(() => {
+        let total = 0;
+        const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
+        
+        for (const addonId of selectedAddonIds) {
+            const addon = filteredAddons.find(a => a.id === addonId);
+            if (!addon) continue;
+            
+            const price = Number(addon.priceModifier ?? addon.basePrice ?? 0);
+            if (addon.quantityMultiplier && effectivePages) {
+                total += price * effectivePages;
+            } else {
+                total += price;
+            }
+        }
+        
+        return total;
+    }, [selectedAddonIds, filteredAddons, pageCount, copies]);
+
+    // Calculate total price based on totalQuantity and addons
+    const totalPrice = useMemo(() => {
+        const baseTotal = basePrice * totalQuantity;
+        return baseTotal + addonPrices;
+    }, [basePrice, totalQuantity, addonPrices]);
 
     // Handle file upload with page count calculation
     // Files are uploaded to S3 immediately when selected
@@ -243,6 +318,13 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
             variantId: selectedVariant,
             quantity: totalQuantity,
             customDesignUrl: s3Keys.length > 0 ? s3Keys : undefined,
+            addons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
+            hasAddon: selectedAddonIds.length > 0,
+            metadata: {
+                pageCount: pageCount > 0 ? pageCount : undefined,
+                copies: pageCount > 0 ? copies : undefined,
+                selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
+            },
         });
 
         if (success) {
@@ -302,6 +384,13 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
             variantId: selectedVariant,
             quantity: totalQuantity,
             customDesignUrl: s3Keys.length > 0 ? s3Keys : undefined,
+            addons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
+            hasAddon: selectedAddonIds.length > 0,
+            metadata: {
+                pageCount: pageCount > 0 ? pageCount : undefined,
+                copies: pageCount > 0 ? copies : undefined,
+                selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
+            },
         });
 
         if (success) {
@@ -524,7 +613,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                     {/* Left Column - Product Images (5/12 on desktop) */}
                     <div className="lg:col-span-6 space-y-4 sm:space-y-5">
                         {/* Desktop: Thumbnails and Main Image */}
-                        <div className="hidden lg:flex gap-4 bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-sm">
+                        <div className="hidden lg:flex gap-4 bg-white p-3 sm:p-4 rounded-2xl border border-gray-100">
                             {/* Vertical Thumbnails */}
                             {productImages.length > 1 && (
                                 <div className="flex flex-col gap-3">
@@ -533,7 +622,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                             key={index}
                                             onClick={() => setCurrentImageIndex(index)}
                                             className={`shrink-0 w-20 h-20 rounded-lg border-2 overflow-hidden transition-all cursor-pointer relative ${currentImageIndex === index
-                                                ? "border-blue-600 scale-105 shadow-md"
+                                                ? "border-blue-600 scale-105"
                                                 : "border-gray-200 hover:border-gray-300"
                                                 }`}
                                         >
@@ -577,7 +666,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                         {/* Expand Button */}
                                         {productImages[currentImageIndex] && (
                                             <button
-                                                className="absolute top-3 right-3 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg hover:bg-white transition-colors cursor-pointer z-10"
+                                                className="absolute top-3 right-3 p-2 bg-white/80 backdrop-blur-sm rounded-full hover:bg-white transition-colors cursor-pointer z-10"
                                                 onClick={() => setIsImageExpanded(true)}
                                                 aria-label="Expand image"
                                             >
@@ -594,7 +683,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                                     onClick={() => setCurrentImageIndex(prev =>
                                                         prev === 0 ? productImages.length - 1 : prev - 1
                                                     )}
-                                                    className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg hover:bg-white transition-colors cursor-pointer"
+                                                    className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-white/80 backdrop-blur-sm rounded-full hover:bg-white transition-colors cursor-pointer"
                                                 >
                                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                                         <path d="M15 18l-6-6 6-6" />
@@ -605,7 +694,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                                     onClick={() => setCurrentImageIndex(prev =>
                                                         prev === productImages.length - 1 ? 0 : prev + 1
                                                     )}
-                                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg hover:bg-white transition-colors cursor-pointer"
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white/80 backdrop-blur-sm rounded-full hover:bg-white transition-colors cursor-pointer"
                                                 >
                                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                                         <path d="M9 18l6-6-6-6" />
@@ -634,7 +723,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
 
                         {/* Mobile: Main Image */}
                         <div className="lg:hidden">
-                            <div className="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+                            <div className="bg-white p-3 rounded-2xl border border-gray-100">
                                 <div className="aspect-square relative overflow-hidden rounded-lg bg-gray-50">
                                     {productImages[currentImageIndex] ? (
                                         <Image
@@ -680,7 +769,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                     {/* Expand Button - Mobile */}
                                     {productImages[currentImageIndex] && (
                                         <button
-                                            className="absolute top-3 left-3 p-2 bg-white/80 backdrop-blur-sm rounded-full shadow-lg hover:bg-white transition-colors cursor-pointer z-10"
+                                            className="absolute top-3 left-3 p-2 bg-white/80 backdrop-blur-sm rounded-full hover:bg-white transition-colors cursor-pointer z-10"
                                             onClick={() => setIsImageExpanded(true)}
                                             aria-label="Expand image"
                                         >
@@ -725,7 +814,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                     <div className="lg:col-span-6">
                         <div className="space-y-4 sm:space-y-5">
                             {/* Product Title and Actions */}
-                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
                                 <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-3">
                                     {product.name}
                                 </h1>
@@ -778,7 +867,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                             </div>
 
                             {/* Price Section */}
-                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
                                 <PriceDisplay
                                     currentPrice={currentPrice}
                                     originalPrice={originalPrice}
@@ -789,7 +878,56 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                 {basePrice > 0 && totalQuantity > 0 && (
                                     <div className="mt-4 pt-4 border-t border-gray-200">
                                         <PriceBreakdown
-                                            items={[]}
+                                            items={(() => { 
+                                                const items: Array<{ label: string; value: number }> = [];
+                                                
+                                                // Base price
+                                                const baseTotal = basePrice * totalQuantity;
+                                                items.push({
+                                                    label: `Base Price${pageCount > 0 ? ` (${pageCount} pages × ${copies} ${copies === 1 ? 'copy' : 'copies'})` : ''}`,
+                                                    value: baseTotal,
+                                                });
+                                                
+                                                // Addon prices
+                                                const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
+                                                for (const addonId of selectedAddonIds) {
+                                                    const addon = filteredAddons.find(a => a.id === addonId);
+                                                    if (!addon) continue;
+                                                    
+                                                    const price = Number(addon.priceModifier ?? addon.basePrice ?? 0);
+                                                    const rangeText = addon.minQuantity != null || addon.maxQuantity != null
+                                                        ? ` (${addon.minQuantity ?? 0}-${addon.maxQuantity ?? '∞'} pages)`
+                                                        : '';
+                                                    const finalPrice = addon.quantityMultiplier && effectivePages
+                                                        ? price * effectivePages
+                                                        : price;
+                                                    
+                                                    // Build addon label with specification names
+                                                    const specValues = addon.specificationValues || {};
+                                                    const specParts: string[] = [];
+                                                    for (const [specSlug, specValue] of Object.entries(specValues)) {
+                                                        const spec = categorySpecs.find(s => s.slug === specSlug);
+                                                        if (spec) {
+                                                            const option = spec.options.find(o => o.value === specValue);
+                                                            if (option) {
+                                                                specParts.push(`${spec.name}: ${option.label}`);
+                                                            } else {
+                                                                specParts.push(`${spec.name}: ${specValue}`);
+                                                            }
+                                                        } else {
+                                                            specParts.push(String(specValue));
+                                                        }
+                                                    }
+                                                    const specText = specParts.length > 0 ? ` - ${specParts.join(', ')}` : '';
+                                                    
+                                                    items.push({
+                                                        label: `Addon${specText}${rangeText}`,
+                                                        value: Number(finalPrice),
+                                                    });
+                                                }
+                                                
+                                                return items;
+                                            })()}
                                             total={totalPrice}
                                             basePrice={basePrice}
                                             pageCount={pageCount > 0 ? pageCount : undefined}
@@ -833,14 +971,14 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
 
                             {/* Short Description */}
                             {product.shortDescription && (
-                                <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+                                <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
                                     <h3 className="font-semibold text-gray-900 mb-2">Description</h3>
                                     <p className="text-gray-500 text-sm leading-relaxed">{product.shortDescription}</p>
                                 </div>
                             )}
 
                             {/* Customization Options */}
-                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
                                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Customize Your Order</h3>
                                 <div className="space-y-5">
                                     {/* Upload Document */}
@@ -863,12 +1001,12 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                     {/* Page Count & Copies */}
                                     {pageCount > 0 && (
                                         <>
-                                            <PageCountDisplay
+                                            {/* <PageCountDisplay
                                                 pageCount={pageCount}
                                                 fileType={getFileType(uploadedFileDetails)}
                                                 pdfPageCount={pdfPageCount}
                                                 imageCount={imageCount}
-                                            />
+                                            /> */}
 
                                             <CopiesSelector
                                                 value={copies}
@@ -903,6 +1041,93 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                             label="Quantity"
                                         />
                                     )}
+
+                                    {/* Addon Selection */}
+                                    {filteredAddons.length > 0 && (
+                                        <div className="space-y-3">
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                Additional Options
+                                            </label>
+                                            <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+                                                {filteredAddons.map((addon) => {
+                                                    const rangeText = addon.minQuantity != null || addon.maxQuantity != null
+                                                        ? ` (${addon.minQuantity ?? 0}-${addon.maxQuantity ?? '∞'} pages)`
+                                                        : '';
+                                                    const priceText = addon.priceModifier != null
+                                                        ? `₹${Number(addon.priceModifier).toFixed(2)}`
+                                                        : addon.basePrice != null
+                                                            ? `₹${Number(addon.basePrice).toFixed(2)}`
+                                                            : 'Free';
+                                                    const isSelected = selectedAddonIds.includes(addon.id);
+                                                    const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
+                                                    const addonPrice = Number(addon.priceModifier ?? addon.basePrice ?? 0);
+                                                    const finalPrice = addon.quantityMultiplier && effectivePages
+                                                        ? addonPrice * effectivePages
+                                                        : addonPrice;
+                                                    
+                                                    // Build addon label with specification names
+                                                    const specValues = addon.specificationValues || {};
+                                                    const specParts: string[] = [];
+                                                    for (const [specSlug, specValue] of Object.entries(specValues)) {
+                                                        const spec = categorySpecs.find(s => s.slug === specSlug);
+                                                        if (spec) {
+                                                            const option = spec.options.find(o => o.value === specValue);
+                                                            if (option) {
+                                                                specParts.push(`${spec.name}: ${option.label}`);
+                                                            } else {
+                                                                specParts.push(`${spec.name}: ${specValue}`);
+                                                            }
+                                                        } else {
+                                                            specParts.push(String(specValue));
+                                                        }
+                                                    }
+                                                    const specText = specParts.length > 0 ? specParts.join(', ') : '';
+                                                    
+                                                    return (
+                                                        <div key={addon.id} className="flex items-start gap-3">
+                                                            <input
+                                                                type="checkbox"
+                                                                id={`addon-${addon.id}`}
+                                                                checked={isSelected}
+                                                                onChange={(e) => {
+                                                                    if (e.target.checked) {
+                                                                        setSelectedAddonIds(prev => [...prev, addon.id]);
+                                                                    } else {
+                                                                        setSelectedAddonIds(prev => prev.filter(id => id !== addon.id));
+                                                                    }
+                                                                }}
+                                                                className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                            />
+                                                            <label htmlFor={`addon-${addon.id}`} className="flex-1 cursor-pointer">
+                                                                <div className="flex items-center justify-between">
+                                                                    <div className="flex-1">
+                                                                        {specText ? (
+                                                                            <div className="font-medium text-gray-900">
+                                                                                {specText}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="font-medium text-gray-900">
+                                                                                Addon
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="text-sm text-gray-600 mt-0.5">
+                                                                            {priceText}
+                                                                            {rangeText}
+                                                                        </div>
+                                                                        {addon.quantityMultiplier && effectivePages && (
+                                                                            <div className="text-xs text-gray-500 mt-0.5">
+                                                                                × {effectivePages} pages = ₹{finalPrice.toFixed(2)}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </label>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -936,7 +1161,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                             </div>
 
                             {/* Seller Info */}
-                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
                                 <div className="flex items-center justify-between mb-3">
                                     <div className="font-semibold text-gray-900">Seller</div>
                                     <button className="text-blue-600 text-sm hover:underline cursor-pointer font-medium">
@@ -1022,7 +1247,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                             prev === 0 ? productImages.length - 1 : prev - 1
                                         );
                                     }}
-                                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-black/80 backdrop-blur-sm rounded-full text-white transition-colors z-20 border border-white/20 shadow-lg"
+                                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-black/80 backdrop-blur-sm rounded-full text-white transition-colors z-20 border border-white/20"
                                     aria-label="Previous image"
                                 >
                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -1037,7 +1262,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                             prev === productImages.length - 1 ? 0 : prev + 1
                                         );
                                     }}
-                                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-black/80 backdrop-blur-sm rounded-full text-white transition-colors z-20 border border-white/20 shadow-lg"
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-black/80 backdrop-blur-sm rounded-full text-white transition-colors z-20 border border-white/20"
                                     aria-label="Next image"
                                 >
                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

@@ -3,6 +3,7 @@ import { Prisma } from "../../generated/prisma/client.js";
 import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError } from "../utils/errors.js";
 import { prisma } from "../services/prisma.js";
+import { getParamAsString } from "../utils/db-utils.js";
 
 // Get all categories (public) - Optimized with select to reduce data transfer
 export const getCategories = async (req: Request, res: Response, next: NextFunction) => {
@@ -249,6 +250,80 @@ export const createCategoties = async (req: Request, res: Response, next: NextFu
         return sendSuccess(res, category, "Category created successfully", 200)
     } catch (error) {
         next(error)
+    }
+}
+
+/**
+ * Delete a category and all its products
+ */
+export const deleteCategory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const id = getParamAsString(req.params.id, "Category ID");
+
+        const category = await prisma.category.findUnique({
+            where: { id },
+            include: {
+                _count: {
+                    select: {
+                        products: true,
+                    },
+                },
+            },
+        });
+
+        if (!category) {
+            throw new NotFoundError("Category not found");
+        }
+
+        // Get all products in this category
+        const products = await prisma.product.findMany({
+            where: { categoryId: id },
+            select: { id: true },
+        });
+
+        const productIds = products.map(p => p.id);
+
+        if (productIds.length > 0) {
+            // Delete related records that don't have cascade delete
+            // OrderItem and CartItem don't have cascade delete, so we need to delete them manually
+            await prisma.orderItem.deleteMany({
+                where: { productId: { in: productIds } },
+            });
+
+            await prisma.cartItem.deleteMany({
+                where: { productId: { in: productIds } },
+            });
+
+            // Update CategoryPricingRule to set productId to null (it has onDelete: SetNull)
+            await prisma.categoryPricingRule.updateMany({
+                where: { productId: { in: productIds } },
+                data: { productId: null, isPublished: false },
+            });
+
+            // Now delete all products (this will cascade delete related data with onDelete: Cascade)
+            // ProductImage, ProductSpecification, ProductAttribute, ProductTag, ProductVariant,
+            // WishlistItem, Review, RecentlyViewedProduct, OfferProduct, ProductAddon all have cascade delete
+            await prisma.product.deleteMany({
+                where: { categoryId: id },
+            });
+        }
+
+        // Delete the category (this will cascade delete specifications, pricing rules, images, etc.)
+        await prisma.category.delete({
+            where: { id },
+        });
+
+        return sendSuccess(
+            res,
+            {
+                categoryId: id,
+                deletedProductsCount: productIds.length,
+            },
+            `Category and ${productIds.length} product(s) deleted successfully`,
+            200
+        );
+    } catch (error) {
+        next(error);
     }
 }
 
@@ -544,7 +619,7 @@ export const getAdminProducts = async (req: Request, res: Response, next: NextFu
 // Get single product (public)
 export const getProduct = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Product ID");
 
         const product = await prisma.product.findUnique({
             where: { id },
@@ -606,10 +681,182 @@ export const getProduct = async (req: Request, res: Response, next: NextFunction
     }
 };
 
+// Get product addons
+export const getProductAddons = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const id = getParamAsString(req.params.id, "Product ID");
+
+        const product = await prisma.product.findUnique({
+            where: { id },
+            include: {
+                productAddons: {
+                    include: {
+                        addonRule: true,
+                    },
+                },
+            },
+        }) as any;
+
+        if (!product) {
+            throw new NotFoundError("Product not found");
+        }
+
+        // Extract addon rules from productAddons
+        const addons = (product.productAddons || [])
+            .map((pa: any) => pa.addonRule)
+            .filter((rule: any) => rule && rule.isActive && rule.ruleType === 'ADDON');
+
+        return sendSuccess(res, addons);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Admin: Get product addons (with ProductAddon IDs for management)
+export const getAdminProductAddons = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const id = getParamAsString(req.params.id, "Product ID");
+
+        const product = await prisma.product.findUnique({
+            where: { id },
+            include: {
+                productAddons: {
+                    include: {
+                        addonRule: true,
+                    },
+                },
+                category: {
+                    include: {
+                        specifications: {
+                            include: {
+                                options: true,
+                            },
+                        },
+                    },
+                },
+            },
+        }) as any;
+
+        if (!product) {
+            throw new NotFoundError("Product not found");
+        }
+
+        const addons = (product.productAddons || [])
+            .map((pa: any) => ({
+                id: pa.id, // ProductAddon ID for deletion
+                addonRuleId: pa.addonRuleId,
+                addonRule: pa.addonRule,
+            }))
+            .filter((pa: any) => pa.addonRule && pa.addonRule.isActive && pa.addonRule.ruleType === 'ADDON');
+
+        return sendSuccess(res, { addons, category: product.category });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Admin: Add addon to product
+export const addProductAddon = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const id = getParamAsString(req.params.id, "Product ID");
+        const { addonRuleId } = req.body;
+
+        if (!addonRuleId || typeof addonRuleId !== 'string') {
+            throw new ValidationError("addonRuleId is required");
+        }
+
+        // Verify product exists
+        const product = await prisma.product.findUnique({
+            where: { id },
+            include: { category: true },
+        });
+
+        if (!product) {
+            throw new NotFoundError("Product not found");
+        }
+
+        // Verify addon rule exists and is an ADDON type
+        const addonRule = await prisma.categoryPricingRule.findFirst({
+            where: {
+                id: addonRuleId,
+                categoryId: product.categoryId,
+                ruleType: 'ADDON',
+                isActive: true,
+            },
+        });
+
+        if (!addonRule) {
+            throw new ValidationError("Invalid addon rule or addon does not belong to this product's category");
+        }
+
+        // Check if already exists
+        const existing = await prisma.productAddon.findUnique({
+            where: {
+                productId_addonRuleId: {
+                    productId: id,
+                    addonRuleId: addonRuleId,
+                },
+            },
+        });
+
+        if (existing) {
+            throw new ValidationError("Addon is already associated with this product");
+        }
+
+        // Create association
+        const productAddon = await prisma.productAddon.create({
+            data: {
+                productId: id,
+                addonRuleId: addonRuleId,
+            },
+            include: {
+                addonRule: true,
+            },
+        });
+
+        return sendSuccess(res, productAddon);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Admin: Remove addon from product
+export const removeProductAddon = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const id = getParamAsString(req.params.id, "Product ID");
+        const { productAddonId } = req.body;
+
+        if (!productAddonId || typeof productAddonId !== 'string') {
+            throw new ValidationError("productAddonId is required");
+        }
+
+        // Verify the ProductAddon belongs to this product
+        const productAddon = await prisma.productAddon.findFirst({
+            where: {
+                id: productAddonId,
+                productId: id,
+            },
+        });
+
+        if (!productAddon) {
+            throw new NotFoundError("Product addon not found");
+        }
+
+        // Delete the association
+        await prisma.productAddon.delete({
+            where: { id: productAddonId },
+        });
+
+        return sendSuccess(res, { message: "Addon removed successfully" });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // Get single product for admin (includes inactive products and all relations)
 export const getAdminProduct = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Product ID");
 
         const product = await prisma.product.findUnique({
             where: { id },
@@ -794,7 +1041,7 @@ export const createProduct = async (req: Request, res: Response, next: NextFunct
 // Admin: Update product
 export const updateProduct = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Product ID");
         const {
             name,
             slug,
@@ -953,7 +1200,7 @@ export const updateProduct = async (req: Request, res: Response, next: NextFunct
 // Admin: Delete product (soft delete)
 export const deleteProduct = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Product ID");
 
         const product = await prisma.product.findUnique({
             where: { id },
@@ -995,12 +1242,8 @@ export const deleteProduct = async (req: Request, res: Response, next: NextFunct
 // Admin: Add variant to product
 export const addVariant = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Product ID");
         const { name, priceModifier, available } = req.body;
-
-        if (!id) {
-            throw new ValidationError("There is not id passed in the params")
-        }
 
         if (!name) {
             throw new ValidationError("Variant name is required");

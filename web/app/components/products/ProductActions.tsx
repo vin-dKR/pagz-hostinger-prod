@@ -79,7 +79,7 @@ export default function ProductActions({
                                     : isInCart
                                         ? "Go to Cart"
                                         : totalPrice > 0
-                                            ? `Add to Cart - ₹${totalPrice.toFixed(2)}`
+                                            ? `Add to Cart - ₹${Number(totalPrice || 0).toFixed(2)}`
                                             : "Add to Cart"}
                 </button>
                 <button
@@ -129,7 +129,7 @@ export default function ProductActions({
                                 : isInCart
                                     ? "Go to Cart"
                                     : totalPrice > 0
-                                        ? `Add to Cart - ₹${totalPrice.toFixed(2)}`
+                                        ? `Add to Cart - ₹${Number(totalPrice || 0).toFixed(2)}`
                                         : "Add to Cart"}
             </button>
             <button

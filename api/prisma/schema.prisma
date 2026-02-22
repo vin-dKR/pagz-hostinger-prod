@@ -165,6 +165,7 @@ model CategoryPricingRule {
   product   Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
   cartItems CartItem[] @relation("CartItemAddons")
   orderItems OrderItem[] @relation("OrderItemAddons")
+  productAddons ProductAddon[]
 
   @@index([categoryId])
   @@index([categoryId, isActive])
@@ -276,6 +277,7 @@ model Product {
   reviews        Review[]
   recentlyViewed RecentlyViewedProduct[]
   offerProducts  OfferProduct[]
+  productAddons  ProductAddon[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -690,6 +692,22 @@ model RecentlyViewedProduct {
   @@index([userId, viewedAt])
   @@index([productId])
   @@map("recently_viewed_products")
+}
+
+// Product Addon model (Junction table for Products and Addon Pricing Rules)
+model ProductAddon {
+  id        String   @id @default(uuid())
+  productId String
+  addonRuleId String // CategoryPricingRule ID where ruleType = 'ADDON'
+  createdAt DateTime @default(now())
+
+  product   Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  addonRule CategoryPricingRule  @relation(fields: [addonRuleId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, addonRuleId])
+  @@index([productId])
+  @@index([addonRuleId])
+  @@map("product_addons")
 }
 
 // Enums

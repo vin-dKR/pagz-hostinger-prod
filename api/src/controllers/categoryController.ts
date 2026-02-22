@@ -3,6 +3,7 @@ import { prisma } from "../services/prisma.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { ValidationError, NotFoundError } from "../utils/errors.js";
 import { Prisma } from "../../generated/prisma/client.js";
+import { getParamAsString } from "../utils/db-utils.js";
 
 // ==================== Category Specifications ====================
 
@@ -15,7 +16,7 @@ export const getCategorySpecifications = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
 
         const category = await prisma.category.findUnique({
             where: { id },
@@ -51,12 +52,8 @@ export const createCategorySpecification = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
         const { name, slug, type, isRequired, displayOrder, dependsOn } = req.body;
-
-        if (!id) {
-            throw new ValidationError("Category ID is required");
-        }
 
         if (!name || !slug || !type) {
             throw new ValidationError("Name, slug, and type are required");
@@ -119,12 +116,9 @@ export const updateCategorySpecification = async (
     next: NextFunction
 ) => {
     try {
-        const { id, specId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const specId = getParamAsString(req.params.specId, "Specification ID");
         const { name, slug, type, isRequired, displayOrder, dependsOn } = req.body;
-
-        if (!id || !specId) {
-            throw new ValidationError("Category ID and Specification ID are required");
-        }
 
         const specification = await prisma.categorySpecification.findFirst({
             where: {
@@ -188,7 +182,8 @@ export const deleteCategorySpecification = async (
     next: NextFunction
 ) => {
     try {
-        const { id, specId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const specId = getParamAsString(req.params.specId, "Specification ID");
 
         const specification = await prisma.categorySpecification.findFirst({
             where: {
@@ -222,7 +217,8 @@ export const getSpecificationOptions = async (
     next: NextFunction
 ) => {
     try {
-        const { id, specId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const specId = getParamAsString(req.params.specId, "Specification ID");
 
         const specification = await prisma.categorySpecification.findFirst({
             where: {
@@ -255,12 +251,9 @@ export const createSpecificationOption = async (
     next: NextFunction
 ) => {
     try {
-        const { id, specId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const specId = getParamAsString(req.params.specId, "Specification ID");
         const { label, value, displayOrder, isActive, metadata } = req.body;
-
-        if (!id || !specId) {
-            throw new ValidationError("Category ID and Specification ID are required");
-        }
 
         if (!label || !value) {
             throw new ValidationError("Label and value are required");
@@ -322,12 +315,10 @@ export const updateSpecificationOption = async (
     next: NextFunction
 ) => {
     try {
-        const { id, specId, optionId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const specId = getParamAsString(req.params.specId, "Specification ID");
+        const optionId = getParamAsString(req.params.optionId, "Option ID");
         const { label, value, displayOrder, isActive, metadata } = req.body;
-
-        if (!id || !specId || !optionId) {
-            throw new ValidationError("Category ID, Specification ID, and Option ID are required");
-        }
 
         const option = await prisma.categorySpecificationOption.findFirst({
             where: {
@@ -399,11 +390,9 @@ export const deleteSpecificationOption = async (
     next: NextFunction
 ) => {
     try {
-        const { id, specId, optionId } = req.params;
-
-        if (!id || !specId || !optionId) {
-            throw new ValidationError("Category ID, Specification ID, and Option ID are required");
-        }
+        const id = getParamAsString(req.params.id, "Category ID");
+        const specId = getParamAsString(req.params.specId, "Specification ID");
+        const optionId = getParamAsString(req.params.optionId, "Option ID");
 
         const option = await prisma.categorySpecificationOption.findFirst({
             where: {
@@ -449,7 +438,7 @@ export const getCategoryPricingRules = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
 
         const category = await prisma.category.findUnique({
             where: { id },
@@ -482,7 +471,7 @@ export const createCategoryPricingRule = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
         const {
             ruleType,
             specificationValues,
@@ -494,10 +483,6 @@ export const createCategoryPricingRule = async (
             isActive,
             priority,
         } = req.body;
-
-        if (!id) {
-            throw new ValidationError("Category ID is required");
-        }
 
         if (!ruleType || !specificationValues) {
             throw new ValidationError("Rule type and specification values are required");
@@ -541,7 +526,8 @@ export const updateCategoryPricingRule = async (
     next: NextFunction
 ) => {
     try {
-        const { id, ruleId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const ruleId = getParamAsString(req.params.ruleId, "Rule ID");
         const {
             ruleType,
             specificationValues,
@@ -595,7 +581,8 @@ export const deleteCategoryPricingRule = async (
     next: NextFunction
 ) => {
     try {
-        const { id, ruleId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const ruleId = getParamAsString(req.params.ruleId, "Rule ID");
 
         const pricingRule = await prisma.categoryPricingRule.findFirst({
             where: {
@@ -627,7 +614,7 @@ export const calculateCategoryPrice = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
         const { specifications, quantity, pageCount, copies } = req.body;
 
         if (!specifications || typeof specifications !== "object") {
@@ -793,7 +780,7 @@ export const getCategoryConfiguration = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
 
         const category = await prisma.category.findUnique({
             where: { id },
@@ -821,7 +808,7 @@ export const upsertCategoryConfiguration = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
         const {
             pageTitle,
             pageDescription,
@@ -831,10 +818,6 @@ export const upsertCategoryConfiguration = async (
             fileUploadRequired,
             fileUploadConfig,
         } = req.body;
-
-        if (!id) {
-            throw new ValidationError("Category ID is required");
-        }
 
         const category = await prisma.category.findUnique({
             where: { id },
@@ -884,7 +867,7 @@ export const getCategoryBySlug = async (
     next: NextFunction
 ) => {
     try {
-        const { slug } = req.params;
+        const slug = getParamAsString(req.params.slug, "Category slug");
 
         const category = await prisma.category.findUnique({
             where: {
@@ -944,7 +927,7 @@ export const getCategoryAddonsPublic = async (
     next: NextFunction
 ) => {
     try {
-        const { slug } = req.params;
+        const slug = getParamAsString(req.params.slug, "Category slug");
 
         const category = await prisma.category.findUnique({
             where: {
@@ -984,7 +967,7 @@ export const calculateCategoryPricePublic = async (
     next: NextFunction
 ) => {
     try {
-        const { slug } = req.params;
+        const slug = getParamAsString(req.params.slug, "Category slug");
         const { specifications, quantity, pageCount, copies } = req.body;
 
         if (!specifications || typeof specifications !== "object") {
@@ -1151,7 +1134,7 @@ export const getProductsBySpecifications = async (
     next: NextFunction
 ) => {
     try {
-        const { slug } = req.params;
+        const slug = getParamAsString(req.params.slug, "Category slug");
         const { specifications } = req.query;
 
         if (!specifications) {
@@ -1240,7 +1223,7 @@ export const getCategoryImages = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
 
         const category = await prisma.category.findUnique({
             where: { id },
@@ -1273,12 +1256,8 @@ export const createCategoryImage = async (
     next: NextFunction
 ) => {
     try {
-        const { id } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
         const { url, alt, isPrimary, displayOrder } = req.body;
-
-        if (!id) {
-            throw new ValidationError("Category ID is required");
-        }
 
         if (!url) {
             throw new ValidationError("Image URL is required");
@@ -1336,7 +1315,8 @@ export const updateCategoryImage = async (
     next: NextFunction
 ) => {
     try {
-        const { id, imageId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const imageId = getParamAsString(req.params.imageId, "Image ID");
         const { url, alt, isPrimary, displayOrder } = req.body;
 
         const category = await prisma.category.findUnique({
@@ -1388,7 +1368,8 @@ export const deleteCategoryImage = async (
     next: NextFunction
 ) => {
     try {
-        const { id, imageId } = req.params;
+        const id = getParamAsString(req.params.id, "Category ID");
+        const imageId = getParamAsString(req.params.imageId, "Image ID");
 
         const category = await prisma.category.findUnique({
             where: { id },
@@ -1427,7 +1408,8 @@ export const previewProductFromPricingRule = async (
     next: NextFunction
 ) => {
     try {
-        const { categoryId, ruleId } = req.params;
+        const categoryId = getParamAsString(req.params.categoryId, "Category ID");
+        const ruleId = getParamAsString(req.params.ruleId, "Rule ID");
 
         const category = await prisma.category.findUnique({
             where: { id: categoryId },
@@ -1534,7 +1516,8 @@ export const publishPricingRuleAsProduct = async (
     next: NextFunction
 ) => {
     try {
-        const { categoryId, ruleId } = req.params;
+        const categoryId = getParamAsString(req.params.categoryId, "Category ID");
+        const ruleId = getParamAsString(req.params.ruleId, "Rule ID");
         const {
             name,
             slug,
@@ -1545,6 +1528,7 @@ export const publishPricingRuleAsProduct = async (
             minOrderQuantity,
             maxOrderQuantity,
             images,
+            addonIds,
         } = req.body;
 
         const category = await prisma.category.findUnique({
@@ -1703,12 +1687,37 @@ export const publishPricingRuleAsProduct = async (
 
         // Link pricing rule to product
         await prisma.categoryPricingRule.update({
-            where: { id: ruleId },
+            where: { id: ruleId }, 
             data: {
                 productId: product.id,
                 isPublished: true,
             },
         });
+
+        // Link selected addons to product
+        if (addonIds && Array.isArray(addonIds) && addonIds.length > 0) {
+            // Verify all addon IDs are valid ADDON rules for this category
+            const addonRules = await prisma.categoryPricingRule.findMany({
+                where: {
+                    id: { in: addonIds },
+                    categoryId: category.id,
+                    ruleType: 'ADDON',
+                },
+            });
+
+            if (addonRules.length !== addonIds.length) {
+                throw new ValidationError("Some addon IDs are invalid or not ADDON rules for this category");
+            }
+
+            // Create ProductAddon entries
+            await prisma.productAddon.createMany({
+                data: addonIds.map((addonId: string) => ({
+                    productId: product.id,
+                    addonRuleId: addonId,
+                })),
+                skipDuplicates: true,
+            });
+        }
 
         return sendSuccess(res, product, "Product published successfully", 201);
     } catch (error) {

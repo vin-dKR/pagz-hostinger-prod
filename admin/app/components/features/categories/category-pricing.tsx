@@ -4,12 +4,13 @@
  * Category Pricing Rules Management
  */
 
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Alert } from '@/app/components/ui/alert';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/app/components/ui/dialog';
 import {
     getCategoryById,
     getCategoryPricingRulesApi,
@@ -23,14 +24,15 @@ import {
     type PricingRuleType,
     type CategorySpecification,
 } from '@/lib/api/categories.service';
-import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle } from 'lucide-react';
+import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
 
 interface CategoryPricingProps {
     categoryId: string;
-}
+} 
 
 const RULE_TYPES: { value: PricingRuleType; label: string }[] = [
     { value: 'BASE_PRICE', label: 'Base Price' },
@@ -71,6 +73,19 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         isActive: true,
         priority: '0',
     });
+
+    // Publish modal state
+    const [publishModalOpen, setPublishModalOpen] = useState(false);
+    const [publishRuleId, setPublishRuleId] = useState<string | null>(null);
+    const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+    const [publishFormData, setPublishFormData] = useState({
+        stock: '1000',
+        sku: '',
+        name: '',
+        description: '',
+        shortDescription: '',
+    });
+    const [publishImages, setPublishImages] = useState<Array<{ url: string; alt?: string; isPrimary?: boolean; displayOrder?: number }>>([]);
 
     useEffect(() => {
         async function load() {
@@ -229,38 +244,95 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         });
     };
 
-    const handlePublishProduct = async (ruleId: string) => {
-        const confirmed = await confirm({
-            title: 'Publish Product',
-            description: 'Publish this pricing rule as a product? You can set stock and other details after publishing.',
-            confirmText: 'Publish',
-            cancelText: 'Cancel',
-            variant: 'default',
-            onConfirm: async () => {
-                try {
-                    setSaving(true);
-                    setError(null);
-                    // For now, publish with default values. In a full implementation, you'd show a modal/form
-                    const product = await toastPromise(
-                        publishPricingRuleAsProductApi(categoryId, ruleId, {
-                            stock: 0, // Admin can update this later
+    // Get available addons for the category
+    const availableAddons = useMemo(() => {
+        return rules.filter(rule => rule.ruleType === 'ADDON' && rule.isActive);
+    }, [rules]);
+
+    const handlePublishProduct = (ruleId: string) => {
+        const rule = rules.find(r => r.id === ruleId);
+        if (!rule) return;
+        
+        setPublishRuleId(ruleId);
+        setSelectedAddonIds([]);
+        setPublishFormData({
+            stock: '1000',
+            sku: '',
+            name: '',
+            description: '',
+            shortDescription: '',
+        });
+        
+        // Initialize with category images (if available)
+        const categoryImages = category?.images || [];
+        const initialImages = categoryImages.map((img, index) => ({
+            url: img.url,
+            alt: img.alt || undefined,
+            isPrimary: index === 0,
+            displayOrder: index,
+        }));
+        setPublishImages(initialImages);
+        
+        setPublishModalOpen(true);
+    };
+
+    // Filter addons based on the pricing rule's specification values
+    const filteredAvailableAddons = useMemo(() => {
+        if (!publishRuleId) return availableAddons;
+        
+        const rule = rules.find(r => r.id === publishRuleId);
+        if (!rule) return availableAddons;
+        
+        const ruleSpecValues = (rule.specificationValues || {}) as Record<string, any>;
+        
+        // Filter addons that match the rule's specification values
+        return availableAddons.filter(addon => {
+            const addonSpecValues = (addon.specificationValues || {}) as Record<string, any>;
+            
+            // Check if addon's specification values match the rule's values
+            // If rule has a spec value, addon should either match it or not have that spec
+            for (const [specSlug, specValue] of Object.entries(ruleSpecValues)) {
+                if (addonSpecValues[specSlug] !== undefined && addonSpecValues[specSlug] !== specValue) {
+                    return false; // Addon has different value for this spec
+                }
+            }
+            
+            return true;
+        });
+    }, [availableAddons, publishRuleId, rules]);
+
+    const handlePublishSubmit = async () => {
+        if (!publishRuleId) return;
+
+        try {
+            setSaving(true);
+            setError(null);
+                    await toastPromise(
+                        publishPricingRuleAsProductApi(categoryId, publishRuleId, {
+                            stock: Number(publishFormData.stock) || 1000,
+                            sku: publishFormData.sku || undefined,
+                            name: publishFormData.name || undefined,
+                            description: publishFormData.description || undefined,
+                            shortDescription: publishFormData.shortDescription || undefined,
+                            images: publishImages.length > 0 ? publishImages : undefined,
+                            addonIds: selectedAddonIds,
                         }),
                         {
                             loading: 'Publishing product...',
-                            success: (data) => `Product "${data.name}" published successfully!`,
+                            success: (data: any) => `Product "${data.name}" published successfully!`,
                             error: 'Failed to publish product',
                         }
                     );
                     // Reload rules to get updated isPublished status
                     const updatedRules = await getCategoryPricingRulesApi(categoryId);
                     setRules(updatedRules);
-                } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Failed to publish product');
-                } finally {
-                    setSaving(false);
-                }
-            },
-        });
+                    setPublishModalOpen(false);
+                    setPublishRuleId(null);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to publish product');
+        } finally {
+            setSaving(false);
+        }
     };
 
     if (loading) {
@@ -286,6 +358,152 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
     return (
         <>
             {ConfirmDialog}
+            {/* Publish Product Modal */}
+            <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogClose onClose={() => setPublishModalOpen(false)} />
+                    <DialogHeader>
+                        <DialogTitle>Publish Product</DialogTitle>
+                        <DialogDescription>
+                            Configure product details and select available addons for this product.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="publish-name">Product Name (optional)</Label>
+                                <Input
+                                    id="publish-name"
+                                    value={publishFormData.name}
+                                    onChange={(e) => setPublishFormData(prev => ({ ...prev, name: e.target.value }))}
+                                    placeholder="Auto-generated if not provided"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="publish-sku">SKU (optional)</Label>
+                                <Input
+                                    id="publish-sku"
+                                    value={publishFormData.sku}
+                                    onChange={(e) => setPublishFormData(prev => ({ ...prev, sku: e.target.value }))}
+                                    placeholder="Stock keeping unit"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="publish-stock">Stock</Label>
+                            <Input
+                                id="publish-stock"
+                                type="number"
+                                value={publishFormData.stock}
+                                onChange={(e) => setPublishFormData(prev => ({ ...prev, stock: e.target.value }))}
+                                min="0"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="publish-description">Description (optional)</Label>
+                            <textarea
+                                id="publish-description"
+                                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                value={publishFormData.description}
+                                onChange={(e) => setPublishFormData(prev => ({ ...prev, description: e.target.value }))}
+                                rows={3}
+                                placeholder="Product description"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="publish-short-description">Short Description (optional)</Label>
+                            <Input
+                                id="publish-short-description"
+                                value={publishFormData.shortDescription}
+                                onChange={(e) => setPublishFormData(prev => ({ ...prev, shortDescription: e.target.value }))}
+                                placeholder="Brief description for listings"
+                            />
+                        </div>
+                        
+
+                        {filteredAvailableAddons.length > 0 && (
+                            <div className="space-y-2">
+                                <Label>Available Addons</Label>
+                                {filteredAvailableAddons.length < availableAddons.length && (
+                                    <p className="text-xs text-blue-600">
+                                        Showing {filteredAvailableAddons.length} of {availableAddons.length} addons (filtered by product specifications)
+                                    </p>
+                                )}
+                                <div className="rounded-md border border-gray-200 bg-gray-50/60 p-4 space-y-2 max-h-60 overflow-y-auto">
+                                    {filteredAvailableAddons.map((addon) => {
+                                        const specValues = (addon.specificationValues || {}) as Record<string, any>;
+                                        const specText = Object.entries(specValues)
+                                            .map(([key, val]) => {
+                                                const spec = specs.find(s => s.slug === key);
+                                                if (spec) {
+                                                    const option = spec.options.find(o => o.value === val);
+                                                    return option ? option.label : val;
+                                                }
+                                                return val;
+                                            })
+                                            .join(', ');
+                                        const rangeText = addon.minQuantity != null || addon.maxQuantity != null
+                                            ? ` (${addon.minQuantity ?? 0}-${addon.maxQuantity ?? '∞'} pages)`
+                                            : '';
+                                        const priceText = addon.priceModifier != null
+                                            ? `₹${Number(addon.priceModifier).toFixed(2)}`
+                                            : addon.basePrice != null
+                                                ? `₹${Number(addon.basePrice).toFixed(2)}`
+                                                : 'Free';
+                                        return (
+                                            <div key={addon.id} className="flex items-start gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    id={`addon-${addon.id}`}
+                                                    checked={selectedAddonIds.includes(addon.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedAddonIds(prev => [...prev, addon.id]);
+                                                        } else {
+                                                            setSelectedAddonIds(prev => prev.filter(id => id !== addon.id));
+                                                        }
+                                                    }}
+                                                    className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <label htmlFor={`addon-${addon.id}`} className="flex-1 text-sm cursor-pointer">
+                                                    <div className="font-medium text-gray-900">
+                                                        {priceText}
+                                                        {rangeText}
+                                                    </div>
+                                                    {specText && (
+                                                        <div className="text-xs text-gray-500 mt-0.5">
+                                                            {specText}
+                                                        </div>
+                                                    )}
+                                                </label>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <p className="text-xs text-gray-500">
+                                    Select which addons should be available for this product.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setPublishModalOpen(false)}
+                            disabled={saving}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handlePublishSubmit}
+                            isLoading={saving}
+                            disabled={saving}
+                        >
+                            Publish Product
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
             <div className="space-y-6">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">
