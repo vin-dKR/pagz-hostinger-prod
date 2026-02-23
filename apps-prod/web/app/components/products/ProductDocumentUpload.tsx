@@ -46,7 +46,6 @@ export default function ProductDocumentUpload({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const uploadAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
     const pendingCallbackRef = useRef<{ files: File[]; quantity: number; details: FileDetail[] } | null>(null);
-    console.log("---uploadedFilesS3", uploadedFilesS3)
 
     // Sync state changes to parent component using useEffect (only for upload status changes)
     useEffect(() => {

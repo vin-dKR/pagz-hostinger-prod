@@ -16,6 +16,8 @@ export interface CreateRazorpayOrderFromCartRequest {
         quantity: number;
         customDesignUrl?: string;
         customText?: string;
+        addons?: string[];
+        hasAddon?: boolean;
         metadata?: {
             pageCount?: number;
             copies?: number;

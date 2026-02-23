@@ -145,12 +145,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 }
             });
 
-            console.log('🔍 Price Calculation - Using combination:', {
-                specifications: combinationLog,
-                quantity: totalQuantity,
-                selectedSpecifications: selectedSpecifications,
-            });
-
             // Always use totalQuantity which already includes copies multiplication
             const result = await calculateCategoryPrice(categorySlug, {
                 specifications: selectedSpecifications,
@@ -197,20 +191,49 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         if (!category) return;
 
         try {
-            // When matching a published product, ignore addon-only specification keys
-            const addonSpecSlugs = new Set<string>();
-            availableAddons.forEach((addon) => {
-                const specValues = (addon.specificationValues || {}) as Record<string, any>;
-                Object.keys(specValues).forEach((slug) => addonSpecSlugs.add(slug));
-            });
+            // Identify which specifications are used in published product pricing rules
+            // vs addon-only specifications
+            const productSpecSlugs = new Set<string>();
+            const addonOnlySpecSlugs = new Set<string>();
 
+            // Extract specs from published product rules (SPECIFICATION_COMBINATION with isPublished=true)
+            category.pricingRules
+                .filter(rule => 
+                    rule.ruleType === 'SPECIFICATION_COMBINATION' && 
+                    rule.isPublished === true &&
+                    rule.isActive === true
+                )
+                .forEach(rule => {
+                    const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
+                    Object.keys(ruleSpecs).forEach(slug => productSpecSlugs.add(slug));
+                });
+
+            // Extract specs from addon rules (ADDON type)
+            category.pricingRules
+                .filter(rule => rule.ruleType === 'ADDON' && rule.isActive === true)
+                .forEach(rule => {
+                    const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
+                    Object.keys(ruleSpecs).forEach(slug => {
+                        // Only mark as addon-only if it's NOT in product specs
+                        if (!productSpecSlugs.has(slug)) {
+                            addonOnlySpecSlugs.add(slug);
+                        }
+                    });
+                });
+
+            // Build specs for product matching: exclude specs that are ONLY in addon rules
+            // Include specs that are in product rules (even if they're also in addons)
             const specsForProduct: Record<string, any> = {};
             Object.entries(selectedSpecifications).forEach(([slug, value]) => {
-                if (!addonSpecSlugs.has(slug)) {
+                // Exclude only if it's addon-only (not in product specs at all)
+                if (!addonOnlySpecSlugs.has(slug)) {
                     specsForProduct[slug] = value;
                 }
             });
-
+            
+            console.log('🔍 Selected specifications:', selectedSpecifications);
+            console.log('🔍 Product spec slugs (from published rules):', Array.from(productSpecSlugs));
+            console.log('🔍 Addon-only spec slugs (not in products):', Array.from(addonOnlySpecSlugs));
             console.log('🔍 Product match - using specifications:', specsForProduct);
 
             const products = await getProductsBySpecifications(categorySlug, specsForProduct);
@@ -228,7 +251,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 setMatchingProduct(null);
             }
         }
-    }, [category, categorySlug, selectedSpecifications, availableAddons]);
+    }, [category, categorySlug, selectedSpecifications]);
 
 
     // Calculate price and check for products whenever selections or quantity change
@@ -325,7 +348,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
     // Handle specification selection change
     const handleSpecificationChange = (specSlug: string, value: string) => {
-        console.log('🔧 Spec change', { specSlug, value });
         setSelectedSpecifications(prev => {
             const updated = { ...prev };
 
@@ -812,6 +834,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                     })
                                     : [];
 
+                            // Get the selected option label for display
+                            const selectedOption = selectedValue
+                                ? availableOptions.find(opt => opt.value === selectedValue)
+                                : null;
+                            const selectedOptionLabel = selectedOption?.label || selectedValue || '';
+
                             return (
                                 <div key={spec.id} className="space-y-2">
                                     <label htmlFor={`spec-${spec.slug}`} className="block text-sm font-medium text-gray-700 font-hkgb">
@@ -848,7 +876,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                                     </div>
 
-                                    {matchingAddons.length > 0 && (
+                                    {/* Only show Page Range Pricing for non-required specifications */}
+                                    {!spec.isRequired && matchingAddons.length > 0 && selectedValue && (
                                         <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
                                             <p className="text-xs font-semibold text-blue-900 mb-2">Page Range Pricing:</p>
                                             {matchingAddons.map((addon) => {
@@ -857,7 +886,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                 const price = addon.priceModifier != null ? Number(addon.priceModifier) : 0;
                                                 return (
                                                     <p key={addon.id} className="text-xs text-blue-700">
-                                                        {min}-{max} pages → ₹{price}
+                                                        {min}-{max} pages {selectedOptionLabel} → ₹{price.toFixed(2)}
                                                     </p>
                                                 );
                                             })}

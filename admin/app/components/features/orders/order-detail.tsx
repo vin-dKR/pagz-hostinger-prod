@@ -244,10 +244,82 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                     </div>
                                 </div>
                                 <div className="pt-4 border-t">
-                                    <div className="flex justify-between text-sm mb-2">
-                                        <span className="text-gray-600">Subtotal</span>
-                                        <span>{formatCurrency(order.subtotal || 0)}</span>
-                                    </div>
+                                    {/* Use stored values from database, with fallback calculation */}
+                                    {(() => {
+                                        // Use stored subtotal from database (base price only)
+                                        const baseSubtotal = order.subtotal !== null && order.subtotal !== undefined
+                                            ? Number(order.subtotal)
+                                            : order.items.reduce((sum, item) => {
+                                                return sum + (Number(item.price) * item.quantity);
+                                            }, 0);
+                                        
+                                        // Use stored addonsSubtotal from database, fallback to calculating if not stored
+                                        const addonsSubtotal = (() => {
+                                            // First try database value
+                                            if (order.addonsSubtotal !== null && order.addonsSubtotal !== undefined && order.addonsSubtotal > 0) {
+                                                return Number(order.addonsSubtotal);
+                                            }
+                                            // Fallback: calculate from items' addons
+                                            return order.items.reduce((sum, item) => {
+                                                const addons = Array.isArray((item as any).addons) ? (item as any).addons : [];
+                                                const pageCount = (item as any).metadata?.pageCount || 1;
+                                                const copies = (item as any).metadata?.copies || 1;
+                                                const effectivePages = pageCount > 1 ? pageCount * copies : null;
+                                                
+                                                const itemAddonsTotal = addons.reduce((addonSum: number, addon: any) => {
+                                                    // Check page range if addon has minQuantity/maxQuantity
+                                                    const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
+                                                    if (hasPageRange && effectivePages != null) {
+                                                        const inRange = 
+                                                            (addon.minQuantity == null || effectivePages >= addon.minQuantity) &&
+                                                            (addon.maxQuantity == null || effectivePages <= addon.maxQuantity);
+                                                        if (!inRange) {
+                                                            return addonSum; // Skip this addon if not in range
+                                                        }
+                                                    }
+                                                    
+                                                    const rawPrice =
+                                                        addon.priceModifier !== null && addon.priceModifier !== undefined
+                                                            ? Number(addon.priceModifier)
+                                                            : addon.basePrice !== null && addon.basePrice !== undefined
+                                                                ? Number(addon.basePrice)
+                                                                : 0;
+                                                    
+                                                    // Calculate multiplier based on quantity multiplier and page count
+                                                    let multiplier = 1;
+                                                    if (addon.quantityMultiplier) {
+                                                        if (effectivePages != null) {
+                                                            multiplier = effectivePages;
+                                                        } else {
+                                                            multiplier = item.quantity;
+                                                        }
+                                                    }
+                                                    
+                                                    return addonSum + rawPrice * multiplier;
+                                                }, 0);
+                                                return sum + itemAddonsTotal;
+                                            }, 0);
+                                        })();
+                                        
+                                        return (
+                                            <>
+                                                <div className="flex justify-between text-sm mb-2">
+                                                    <span className="text-gray-600">Base Price Subtotal</span>
+                                                    <span>{formatCurrency(baseSubtotal)}</span>
+                                                </div>
+                                                {addonsSubtotal > 0 && (
+                                                    <div className="flex justify-between text-sm mb-2">
+                                                        <span className="text-gray-600">Addons Subtotal</span>
+                                                        <span>{formatCurrency(addonsSubtotal)}</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between text-sm font-medium mb-2 pt-1 border-t border-gray-200">
+                                                    <span className="text-gray-700">Subtotal</span>
+                                                    <span className="text-gray-900">{formatCurrency(baseSubtotal + addonsSubtotal)}</span>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                     {order.discountAmount && order.discountAmount > 0 && (
                                         <div className="flex justify-between text-sm mb-2 text-green-600">
                                             <span>Discount</span>
@@ -440,7 +512,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                         )}
                                         {Array.isArray((item as any).addons) && (item as any).addons.length > 0 && (
                                             <div className="mt-2 p-2 bg-purple-50 rounded border border-purple-200">
-                                                <p className="text-xs font-semibold text-purple-900 mb-1">Addon Pricing (from rules):</p>
+                                                <p className="text-xs font-semibold text-purple-900 mb-1">Addons:</p>
                                                 {((item as any).addons as any[]).map((addon, idx) => {
                                                     const rawPrice =
                                                         addon.priceModifier !== null && addon.priceModifier !== undefined
@@ -450,13 +522,21 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                                 : 0;
                                                     const multiplier = addon.quantityMultiplier ? item.quantity : 1;
                                                     const total = rawPrice * multiplier;
+                                                    const specValues = (addon.specificationValues || {}) as Record<string, any>;
+                                                    const specDetails = Object.entries(specValues)
+                                                        .map(([key, value]) => `${key}: ${value}`)
+                                                        .join(', ');
                                                     return (
-                                                        <div key={idx} className="flex justify-between text-[11px] text-purple-700">
-                                                            <span>Addon #{idx + 1}</span>
-                                                            <span>
-                                                                ₹{rawPrice.toFixed(2)}
-                                                                {multiplier > 1 && ` × ${multiplier} = ₹${total.toFixed(2)}`}
-                                                            </span>
+                                                        <div key={idx} className="mb-2 last:mb-0 p-2 bg-white rounded border border-purple-200">
+                                                            <div className="flex justify-between items-start mb-1">
+                                                                <span className="text-xs font-medium text-purple-900">
+                                                                    {specDetails || `Addon #${idx + 1}`}
+                                                                </span>
+                                                                <span className="text-xs text-purple-700 font-semibold">
+                                                                    ₹{rawPrice.toFixed(2)}
+                                                                    {multiplier > 1 && ` × ${multiplier} = ₹${total.toFixed(2)}`}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}

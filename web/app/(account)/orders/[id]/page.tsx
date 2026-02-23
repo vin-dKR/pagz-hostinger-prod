@@ -30,6 +30,13 @@ interface OrderItem {
     customDesignUrl?: string[]; // Array of S3 URLs
     variant?: string;
     addonsTotal?: number;
+    addons?: Array<{
+        id: string;
+        specificationValues?: Record<string, any>;
+        priceModifier?: number | null;
+        basePrice?: number | null;
+        quantityMultiplier: boolean;
+    }>;
 }
 
 interface OrderStatusHistoryDisplay {
@@ -45,6 +52,7 @@ interface OrderDetails {
     status: "Delivered" | "Shipped" | "Processing" | "Cancelled" | "Pending Review" | "Accepted" | "Rejected";
     total: number;
     subtotal: number;
+    addonsSubtotal?: number;
     shipping: number;
     tax: number;
     discount: number;
@@ -131,7 +139,55 @@ function transformOrder(order: Order): OrderDetails {
         date: formatDate(order.createdAt),
         status: statusMap[order.status] || "Processing",
         total: Number(order.total),
+        // Use stored subtotal from database (base price only)
         subtotal: Number(order.subtotal || 0),
+        // Use stored addonsSubtotal from database, fallback to calculating if not stored
+        addonsSubtotal: (() => {
+            // First try database value
+            if (order.addonsSubtotal !== undefined && order.addonsSubtotal !== null && order.addonsSubtotal > 0) {
+                return Number(order.addonsSubtotal);
+            }
+            // Fallback: calculate from items' addons
+            return order.items.reduce((sum: number, item: any) => {
+                const addons = Array.isArray(item.addons) ? item.addons : [];
+                const pageCount = item.metadata?.pageCount || 1;
+                const copies = item.metadata?.copies || 1;
+                const effectivePages = pageCount > 1 ? pageCount * copies : null;
+                
+                const addonsTotal = addons.reduce((addonSum: number, addon: any) => {
+                    // Check page range if addon has minQuantity/maxQuantity
+                    const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
+                    if (hasPageRange && effectivePages != null) {
+                        const inRange = 
+                            (addon.minQuantity == null || effectivePages >= addon.minQuantity) &&
+                            (addon.maxQuantity == null || effectivePages <= addon.maxQuantity);
+                        if (!inRange) {
+                            return addonSum; // Skip this addon if not in range
+                        }
+                    }
+                    
+                    const rawPrice =
+                        addon.priceModifier !== null && addon.priceModifier !== undefined
+                            ? Number(addon.priceModifier)
+                            : addon.basePrice !== null && addon.basePrice !== undefined
+                                ? Number(addon.basePrice)
+                                : 0;
+                    
+                    // Calculate multiplier based on quantity multiplier and page count
+                    let multiplier = 1;
+                    if (addon.quantityMultiplier) {
+                        if (effectivePages != null) {
+                            multiplier = effectivePages;
+                        } else {
+                            multiplier = item.quantity;
+                        }
+                    }
+                    
+                    return addonSum + rawPrice * multiplier;
+                }, 0);
+                return sum + addonsTotal;
+            }, 0);
+        })(),
         shipping: Number(order.shippingCharges || 0),
         tax: 0, // Tax is typically included in subtotal or calculated separately
         discount: Number(order.discountAmount || 0),
@@ -158,6 +214,13 @@ function transformOrder(order: Order): OrderDetails {
                 customDesignUrl: item.customDesignUrl,
                 variant: item.variant?.name,
                 addonsTotal: addonsTotal > 0 ? addonsTotal : undefined,
+                addons: addons.length > 0 ? addons.map((addon: any) => ({
+                    id: addon.id,
+                    specificationValues: addon.specificationValues || {},
+                    priceModifier: addon.priceModifier,
+                    basePrice: addon.basePrice,
+                    quantityMultiplier: addon.quantityMultiplier,
+                })) : undefined,
             } as OrderItem;
         }),
         shippingAddress: {
@@ -348,9 +411,35 @@ function OrderDetailsPageContent({
                                                     </Link>
                                                 </div>
                                                 {typeof item.addonsTotal === "number" && item.addonsTotal > 0 && (
-                                                    <p className="text-xs text-gray-600">
-                                                        Addons: <span className="font-medium">₹{item.addonsTotal.toFixed(2)}</span>
-                                                    </p>
+                                                    <div className="mt-2 space-y-1">
+                                                        <p className="text-xs text-gray-600">
+                                                            Addons: <span className="font-medium">₹{item.addonsTotal.toFixed(2)}</span>
+                                                        </p>
+                                                        {item.addons && item.addons.length > 0 && (
+                                                            <div className="mt-1 p-2 bg-purple-50 rounded border border-purple-200">
+                                                                {item.addons.map((addon, idx) => {
+                                                                    const specValues = addon.specificationValues || {};
+                                                                    const specDetails = Object.entries(specValues)
+                                                                        .map(([key, value]) => `${key}: ${value}`)
+                                                                        .join(', ');
+                                                                    const rawPrice =
+                                                                        addon.priceModifier !== null && addon.priceModifier !== undefined
+                                                                            ? Number(addon.priceModifier)
+                                                                            : addon.basePrice !== null && addon.basePrice !== undefined
+                                                                                ? Number(addon.basePrice)
+                                                                                : 0;
+                                                                    const multiplier = addon.quantityMultiplier ? item.quantity : 1;
+                                                                    const total = rawPrice * multiplier;
+                                                                    return (
+                                                                        <div key={idx} className="text-xs text-purple-700 mb-1 last:mb-0">
+                                                                            {specDetails || `Addon #${idx + 1}`}: ₹{rawPrice.toFixed(2)}
+                                                                            {multiplier > 1 && ` × ${multiplier} = ₹${total.toFixed(2)}`}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
@@ -472,10 +561,28 @@ function OrderDetailsPageContent({
                             <div className="space-y-3">
                                 <div className="flex justify-between text-sm">
                                     <span className="text-gray-600">
-                                        Subtotal
+                                        Base Price Subtotal
                                     </span>
                                     <span className="text-gray-900 font-medium">
                                         ₹{order.subtotal.toFixed(2)}
+                                    </span>
+                                </div>
+                                {(order.addonsSubtotal && order.addonsSubtotal > 0) ? (
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">
+                                            Addons Subtotal
+                                        </span>
+                                        <span className="text-gray-900 font-medium">
+                                            ₹{order.addonsSubtotal.toFixed(2)}
+                                        </span>
+                                    </div>
+                                ) : null}
+                                <div className="flex justify-between text-sm font-medium border-t border-gray-200 pt-2">
+                                    <span className="text-gray-700">
+                                        Subtotal
+                                    </span>
+                                    <span className="text-gray-900">
+                                        ₹{(order.subtotal + (order.addonsSubtotal || 0)).toFixed(2)}
                                     </span>
                                 </div>
                                 {order.shipping > 0 && (

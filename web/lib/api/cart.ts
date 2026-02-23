@@ -14,6 +14,7 @@ export interface AddonRule {
     id: string;
     categoryId: string;
     ruleType: RuleType;
+    specificationValues?: Record<string, any>;
     basePrice?: number | null;
     priceModifier?: number | null;
     quantityMultiplier: boolean;

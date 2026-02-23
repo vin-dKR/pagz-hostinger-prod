@@ -5,6 +5,7 @@ import {
     deleteProduct,
     addVariant,
     createCategoties,
+    updateCategory,
     deleteCategory,
     getAdminCategories,
     getAdminProducts,
@@ -134,6 +135,7 @@ router.get("/dashboard/overview", getDashboardOverview);
 // Product & Category Management (admin only)
 router.get("/categories", getAdminCategories);
 router.post("/categories", createCategoties);
+router.put("/categories/:id", updateCategory);
 router.delete("/categories/:id", deleteCategory);
 
 // Admin Products

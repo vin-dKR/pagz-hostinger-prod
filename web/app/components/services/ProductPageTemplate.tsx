@@ -160,6 +160,47 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                 )}
                             </div>
 
+
+
+                            {/* Features */}
+                            {productData.features && productData.features.length > 0 && (
+                                <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100">
+                                    <h3 className="font-semibold text-gray-900 mb-4">Features</h3>
+                                    <ProductFeatures features={productData.features} />
+                                </div>
+                            )}
+
+                            {/* File Upload Section */}
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
+                                <ProductDocumentUpload
+                                    onFileSelect={(files: File[], pageCount: number, fileDetails?: FileDetail[]) => {
+                                        // Use the new callback if provided, otherwise use legacy callback
+                                        if (onFileSelectWithQuantity) {
+                                            onFileSelectWithQuantity(files, pageCount, fileDetails);
+                                        } else {
+                                            // Legacy: pass first file to onFileSelect
+                                            const firstFile: File | null = files.length > 0 && files[0] ? files[0] : null;
+                                            onFileSelect(firstFile);
+                                        }
+                                    }}
+                                    onQuantityChange={(calculatedQuantity: number) => {
+                                        // Call the quantity change callback if provided
+                                        if (onQuantityChange && calculatedQuantity > 0) {
+                                            onQuantityChange(calculatedQuantity);
+                                        }
+                                    }}
+                                    maxSizeMB={50}
+                                    uploadedFilesS3={uploadedFilesS3}
+                                    setUploadedFilesS3={setUploadedFilesS3}
+                                />
+                            </div>
+
+                            {/* Configuration Options */}
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Customize Your Order</h3>
+                                {children}
+                            </div>
+
                             {/* Price Section */}
                             <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100">
                                 <PriceBreakdown
@@ -199,45 +240,6 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                 <div className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
                                     Inclusive of all taxes
                                 </div>
-                            </div>
-
-                            {/* Features */}
-                            {productData.features && productData.features.length > 0 && (
-                                <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100">
-                                    <h3 className="font-semibold text-gray-900 mb-4">Features</h3>
-                                    <ProductFeatures features={productData.features} />
-                                </div>
-                            )}
-
-                            {/* File Upload Section */}
-                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
-                                <ProductDocumentUpload
-                                    onFileSelect={(files: File[], pageCount: number, fileDetails?: FileDetail[]) => {
-                                        // Use the new callback if provided, otherwise use legacy callback
-                                        if (onFileSelectWithQuantity) {
-                                            onFileSelectWithQuantity(files, pageCount, fileDetails);
-                                        } else {
-                                            // Legacy: pass first file to onFileSelect
-                                            const firstFile: File | null = files.length > 0 && files[0] ? files[0] : null;
-                                            onFileSelect(firstFile);
-                                        }
-                                    }}
-                                    onQuantityChange={(calculatedQuantity: number) => {
-                                        // Call the quantity change callback if provided
-                                        if (onQuantityChange && calculatedQuantity > 0) {
-                                            onQuantityChange(calculatedQuantity);
-                                        }
-                                    }}
-                                    maxSizeMB={50}
-                                    uploadedFilesS3={uploadedFilesS3}
-                                    setUploadedFilesS3={setUploadedFilesS3}
-                                />
-                            </div>
-
-                            {/* Configuration Options */}
-                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
-                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Customize Your Order</h3>
-                                {children}
                             </div>
 
                             {/* Action Buttons */}

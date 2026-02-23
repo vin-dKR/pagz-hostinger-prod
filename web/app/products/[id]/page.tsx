@@ -109,7 +109,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
 
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [uploadedFileDetails, setUploadedFileDetails] = useState<FileDetail[]>([]);
-    
+
     // Addon state
     const [availableAddons, setAvailableAddons] = useState<ProductAddon[]>([]);
     const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
@@ -170,7 +170,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                 if (addonsResponse.success && addonsResponse.data) {
                     setAvailableAddons(addonsResponse.data);
                 }
-                
+
                 // Fetch category specifications to get spec names for addon labels
                 if (product.category.slug) {
                     try {
@@ -192,9 +192,9 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
     // Filter available addons based on page count
     const filteredAddons = useMemo(() => {
         if (!availableAddons || availableAddons.length === 0) return [];
-        
+
         const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
-        
+
         return availableAddons.filter((addon) => {
             // Check page range if configured
             const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
@@ -211,11 +211,11 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
     const addonPrices = useMemo(() => {
         let total = 0;
         const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
-        
+
         for (const addonId of selectedAddonIds) {
             const addon = filteredAddons.find(a => a.id === addonId);
             if (!addon) continue;
-            
+
             const price = Number(addon.priceModifier ?? addon.basePrice ?? 0);
             if (addon.quantityMultiplier && effectivePages) {
                 total += price * effectivePages;
@@ -223,7 +223,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                 total += price;
             }
         }
-        
+
         return total;
     }, [selectedAddonIds, filteredAddons, pageCount, copies]);
 
@@ -874,68 +874,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                     discount={discount}
                                 />
 
-                                {/* Price Breakdown */}
-                                {basePrice > 0 && totalQuantity > 0 && (
-                                    <div className="mt-4 pt-4 border-t border-gray-200">
-                                        <PriceBreakdown
-                                            items={(() => { 
-                                                const items: Array<{ label: string; value: number }> = [];
-                                                
-                                                // Base price
-                                                const baseTotal = basePrice * totalQuantity;
-                                                items.push({
-                                                    label: `Base Price${pageCount > 0 ? ` (${pageCount} pages × ${copies} ${copies === 1 ? 'copy' : 'copies'})` : ''}`,
-                                                    value: baseTotal,
-                                                });
-                                                
-                                                // Addon prices
-                                                const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
-                                                for (const addonId of selectedAddonIds) {
-                                                    const addon = filteredAddons.find(a => a.id === addonId);
-                                                    if (!addon) continue;
-                                                    
-                                                    const price = Number(addon.priceModifier ?? addon.basePrice ?? 0);
-                                                    const rangeText = addon.minQuantity != null || addon.maxQuantity != null
-                                                        ? ` (${addon.minQuantity ?? 0}-${addon.maxQuantity ?? '∞'} pages)`
-                                                        : '';
-                                                    const finalPrice = addon.quantityMultiplier && effectivePages
-                                                        ? price * effectivePages
-                                                        : price;
-                                                    
-                                                    // Build addon label with specification names
-                                                    const specValues = addon.specificationValues || {};
-                                                    const specParts: string[] = [];
-                                                    for (const [specSlug, specValue] of Object.entries(specValues)) {
-                                                        const spec = categorySpecs.find(s => s.slug === specSlug);
-                                                        if (spec) {
-                                                            const option = spec.options.find(o => o.value === specValue);
-                                                            if (option) {
-                                                                specParts.push(`${spec.name}: ${option.label}`);
-                                                            } else {
-                                                                specParts.push(`${spec.name}: ${specValue}`);
-                                                            }
-                                                        } else {
-                                                            specParts.push(String(specValue));
-                                                        }
-                                                    }
-                                                    const specText = specParts.length > 0 ? ` - ${specParts.join(', ')}` : '';
-                                                    
-                                                    items.push({
-                                                        label: `Addon${specText}${rangeText}`,
-                                                        value: Number(finalPrice),
-                                                    });
-                                                }
-                                                
-                                                return items;
-                                            })()}
-                                            total={totalPrice}
-                                            basePrice={basePrice}
-                                            pageCount={pageCount > 0 ? pageCount : undefined}
-                                            copies={pageCount > 0 ? copies : (isCopiesMode ? copies : undefined)}
-                                            quantity={totalQuantity}
-                                        />
-                                    </div>
-                                )}
+
 
                                 {/* Stock Status */}
                                 {product.stock <= 0 ? (
@@ -1064,7 +1003,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                                     const finalPrice = addon.quantityMultiplier && effectivePages
                                                         ? addonPrice * effectivePages
                                                         : addonPrice;
-                                                    
+
                                                     // Build addon label with specification names
                                                     const specValues = addon.specificationValues || {};
                                                     const specParts: string[] = [];
@@ -1082,7 +1021,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                                         }
                                                     }
                                                     const specText = specParts.length > 0 ? specParts.join(', ') : '';
-                                                    
+
                                                     return (
                                                         <div key={addon.id} className="flex items-start gap-3">
                                                             <input
@@ -1130,6 +1069,69 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                                     )}
                                 </div>
                             </div>
+
+                            {/* Price Breakdown */}
+                            {basePrice > 0 && totalQuantity > 0 && (
+                                <div className="mt-4 pt-4 border-t border-gray-200">
+                                    <PriceBreakdown
+                                        items={(() => {
+                                            const items: Array<{ label: string; value: number }> = [];
+
+                                            // Base price
+                                            const baseTotal = basePrice * totalQuantity;
+                                            items.push({
+                                                label: `Base Price${pageCount > 0 ? ` (${pageCount} pages × ${copies} ${copies === 1 ? 'copy' : 'copies'})` : ''}`,
+                                                value: baseTotal,
+                                            });
+
+                                            // Addon prices
+                                            const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
+                                            for (const addonId of selectedAddonIds) {
+                                                const addon = filteredAddons.find(a => a.id === addonId);
+                                                if (!addon) continue;
+
+                                                const price = Number(addon.priceModifier ?? addon.basePrice ?? 0);
+                                                const rangeText = addon.minQuantity != null || addon.maxQuantity != null
+                                                    ? ` (${addon.minQuantity ?? 0}-${addon.maxQuantity ?? '∞'} pages)`
+                                                    : '';
+                                                const finalPrice = addon.quantityMultiplier && effectivePages
+                                                    ? price * effectivePages
+                                                    : price;
+
+                                                // Build addon label with specification names
+                                                const specValues = addon.specificationValues || {};
+                                                const specParts: string[] = [];
+                                                for (const [specSlug, specValue] of Object.entries(specValues)) {
+                                                    const spec = categorySpecs.find(s => s.slug === specSlug);
+                                                    if (spec) {
+                                                        const option = spec.options.find(o => o.value === specValue);
+                                                        if (option) {
+                                                            specParts.push(`${spec.name}: ${option.label}`);
+                                                        } else {
+                                                            specParts.push(`${spec.name}: ${specValue}`);
+                                                        }
+                                                    } else {
+                                                        specParts.push(String(specValue));
+                                                    }
+                                                }
+                                                const specText = specParts.length > 0 ? ` - ${specParts.join(', ')}` : '';
+
+                                                items.push({
+                                                    label: `Addon${specText}${rangeText}`,
+                                                    value: Number(finalPrice),
+                                                });
+                                            }
+
+                                            return items;
+                                        })()}
+                                        total={totalPrice}
+                                        basePrice={basePrice}
+                                        pageCount={pageCount > 0 ? pageCount : undefined}
+                                        copies={pageCount > 0 ? copies : (isCopiesMode ? copies : undefined)}
+                                        quantity={totalQuantity}
+                                    />
+                                </div>
+                            )}
 
                             {/* Action Buttons - Desktop */}
                             <div className="hidden sm:block space-y-3">

@@ -20,6 +20,7 @@ export interface OrderItemAddon {
     id: string;
     categoryId: string;
     ruleType: 'BASE_PRICE' | 'SPECIFICATION_COMBINATION' | 'QUANTITY_TIER' | 'ADDON';
+    specificationValues?: Record<string, any>;
     basePrice?: number | null;
     priceModifier?: number | null;
     quantityMultiplier: boolean;
@@ -62,6 +63,7 @@ export interface Order {
     userId: string;
     addressId: string;
     subtotal?: number;
+    addonsSubtotal?: number;
     discountAmount?: number;
     shippingCharges?: number;
     total: number;

@@ -562,7 +562,9 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                         </div>
 
                                         {/* Dependency: Applies to parent spec values */}
-                                        {(() => {
+
+                                        {/* // WIP */}
+                                        {/* {(() => {
                                             // Find if there's a "size" spec (or any parent spec we want to depend on)
                                             const parentSpec = specs.find(s => s.slug === 'size' || s.slug === 'paper-size');
                                             if (!parentSpec || selectedSpecId === parentSpec.id) return null;
@@ -615,7 +617,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                     </p>
                                                 </div>
                                             );
-                                        })()}
+                                        })()} */}
 
                                         <div className="flex justify-end gap-2">
                                             {optionForm.id && (

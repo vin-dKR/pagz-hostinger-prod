@@ -254,6 +254,72 @@ export const createCategoties = async (req: Request, res: Response, next: NextFu
 }
 
 /**
+ * Update category basic information
+ */
+export const updateCategory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const id = getParamAsString(req.params.id, "Category ID");
+        const { name, slug, description, parentId } = req.body;
+
+        // Check if category exists
+        const category = await prisma.category.findUnique({
+            where: { id },
+        });
+
+        if (!category) {
+            throw new NotFoundError("Category not found");
+        }
+
+        // If slug is being changed, check for conflicts
+        if (slug && slug !== category.slug) {
+            const existing = await prisma.category.findFirst({
+                where: {
+                    slug,
+                    id: { not: id },
+                },
+            });
+
+            if (existing) {
+                throw new ValidationError("A category with this slug already exists");
+            }
+        }
+
+        // Build update data
+        const updateData: any = {};
+        if (name !== undefined) updateData.name = name;
+        if (slug !== undefined) updateData.slug = slug;
+        if (description !== undefined) updateData.description = description || null;
+        if (parentId !== undefined) {
+            if (parentId === null || parentId === '') {
+                updateData.parentId = null;
+            } else {
+                // Verify parent category exists
+                const parent = await prisma.category.findUnique({
+                    where: { id: parentId },
+                });
+                if (!parent) {
+                    throw new NotFoundError("Parent category not found");
+                }
+                // Prevent circular reference
+                if (parentId === id) {
+                    throw new ValidationError("Category cannot be its own parent");
+                }
+                updateData.parentId = parentId;
+            }
+        }
+
+        const updated = await prisma.category.update({
+            where: { id },
+            data: updateData,
+        });
+
+        return sendSuccess(res, updated, "Category updated successfully", 200);
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
  * Delete a category and all its products
  */
 export const deleteCategory = async (req: Request, res: Response, next: NextFunction) => {

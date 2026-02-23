@@ -33,6 +33,8 @@ export interface CategoryPricingRule {
     maxQuantity?: number;
     isActive: boolean;
     priority: number;
+    isPublished?: boolean;
+    productId?: string | null;
 }
 
 export interface CategoryConfiguration {

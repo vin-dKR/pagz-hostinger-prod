@@ -86,13 +86,13 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  parent                Category?                  @relation("CategoryToCategory", fields: [parentId], references: [id])
-  children              Category[]                 @relation("CategoryToCategory")
-  products              Product[]
-  specifications        CategorySpecification[]
-  pricingRules          CategoryPricingRule[]
-  configuration         CategoryConfiguration?
-  images                CategoryImage[]
+  parent         Category?               @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children       Category[]              @relation("CategoryToCategory")
+  products       Product[]
+  specifications CategorySpecification[]
+  pricingRules   CategoryPricingRule[]
+  configuration  CategoryConfiguration?
+  images         CategoryImage[]
 
   @@index([parentId])
   @@index([isActive])
@@ -102,18 +102,18 @@ model Category {
 
 // Category Specification model (Defines what specifications a category has)
 model CategorySpecification {
-  id          String   @id @default(uuid())
-  categoryId  String
-  name        String   // e.g., "Paper Size", "Paper Type", "Print Color"
-  slug        String   // e.g., "paper-size", "paper-type"
-  type        SpecificationType
-  isRequired  Boolean  @default(false)
-  displayOrder Int     @default(0)
-  dependsOn   Json?    // For conditional specifications, e.g., paper type depends on paper size
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String            @id @default(uuid())
+  categoryId   String
+  name         String // e.g., "Paper Size", "Paper Type", "Print Color"
+  slug         String // e.g., "paper-size", "paper-type"
+  type         SpecificationType
+  isRequired   Boolean           @default(false)
+  displayOrder Int               @default(0)
+  dependsOn    Json? // For conditional specifications, e.g., paper type depends on paper size
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
-  category Category                  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category Category                      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   options  CategorySpecificationOption[]
 
   @@unique([categoryId, slug])
@@ -124,15 +124,15 @@ model CategorySpecification {
 
 // Category Specification Option model (Options for SELECT-type specifications)
 model CategorySpecificationOption {
-  id             String   @id @default(uuid())
+  id              String   @id @default(uuid())
   specificationId String
-  label          String   // e.g., "A4", "70 Gsm", "Black & White"
-  value          String   // e.g., "a4", "70-gsm", "bw"
-  displayOrder   Int      @default(0)
-  isActive       Boolean  @default(true)
-  metadata       Json?    // For additional data like icons, descriptions
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  label           String // e.g., "A4", "70 Gsm", "Black & White"
+  value           String // e.g., "a4", "70-gsm", "bw"
+  displayOrder    Int      @default(0)
+  isActive        Boolean  @default(true)
+  metadata        Json? // For additional data like icons, descriptions
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   specification CategorySpecification @relation(fields: [specificationId], references: [id], onDelete: Cascade)
 
@@ -145,26 +145,26 @@ model CategorySpecificationOption {
 
 // Category Pricing Rule model (Pricing rules based on specification combinations)
 model CategoryPricingRule {
-  id                  String   @id @default(uuid())
+  id                  String          @id @default(uuid())
   categoryId          String
   ruleType            PricingRuleType
-  specificationValues  Json     // Maps specification slugs to selected values
-  basePrice            Decimal? @db.Decimal(10, 2)
-  priceModifier        Decimal? @db.Decimal(10, 2) // For addons like binding, lamination
-  quantityMultiplier   Boolean  @default(false) // Whether price multiplies by quantity
-  minQuantity          Int?     // For quantity tiers
-  maxQuantity          Int?     // For quantity tiers
-  isActive             Boolean  @default(true)
-  priority             Int      @default(0) // For rule precedence (higher = evaluated first)
-  productId            String?  @unique // Link to Product when published
-  isPublished          Boolean  @default(false) // Whether this rule is published as a product
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  specificationValues Json // Maps specification slugs to selected values
+  basePrice           Decimal?        @db.Decimal(10, 2)
+  priceModifier       Decimal?        @db.Decimal(10, 2) // For addons like binding, lamination
+  quantityMultiplier  Boolean         @default(false) // Whether price multiplies by quantity
+  minQuantity         Int? // For quantity tiers
+  maxQuantity         Int? // For quantity tiers
+  isActive            Boolean         @default(true)
+  priority            Int             @default(0) // For rule precedence (higher = evaluated first)
+  productId           String?         @unique // Link to Product when published
+  isPublished         Boolean         @default(false) // Whether this rule is published as a product
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
-  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  product   Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
-  cartItems CartItem[] @relation("CartItemAddons")
-  orderItems OrderItem[] @relation("OrderItemAddons")
+  category      Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product       Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  cartItems     CartItem[]     @relation("CartItemAddons")
+  orderItems    OrderItem[]    @relation("OrderItemAddons")
   productAddons ProductAddon[]
 
   @@index([categoryId])
@@ -179,17 +179,17 @@ model CategoryPricingRule {
 
 // Category Configuration model (Category-specific UI and behavior settings)
 model CategoryConfiguration {
-  id                String   @id @default(uuid())
-  categoryId        String   @unique
-  pageTitle         String?
-  pageDescription   String?
-  features          Json?    // JSON Array (list of feature strings)
-  breadcrumbConfig  Json?    // Breadcrumb structure
-  layoutConfig      Json?    // UI layout preferences
-  fileUploadRequired Boolean @default(false)
-  fileUploadConfig  Json?    // Allowed types, max size, etc.
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  categoryId         String   @unique
+  pageTitle          String?
+  pageDescription    String?
+  features           Json? // JSON Array (list of feature strings)
+  breadcrumbConfig   Json? // Breadcrumb structure
+  layoutConfig       Json? // UI layout preferences
+  fileUploadRequired Boolean  @default(false)
+  fileUploadConfig   Json? // Allowed types, max size, etc.
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
@@ -217,55 +217,55 @@ model CategoryImage {
 
 // Enums for Category Specifications
 enum SpecificationType {
-  SELECT       // Single selection dropdown
+  SELECT // Single selection dropdown
   MULTI_SELECT // Multiple selection
-  TEXT         // Text input
-  NUMBER       // Number input
-  BOOLEAN      // Checkbox
+  TEXT // Text input
+  NUMBER // Number input
+  BOOLEAN // Checkbox
 }
 
 // Enums for Pricing Rules
 enum PricingRuleType {
-  BASE_PRICE              // Base price for the category
+  BASE_PRICE // Base price for the category
   SPECIFICATION_COMBINATION // Price based on specific specification combinations
-  QUANTITY_TIER           // Quantity-based pricing tiers
-  ADDON                   // Addon pricing (binding, lamination, etc.)
+  QUANTITY_TIER // Quantity-based pricing tiers
+  ADDON // Addon pricing (binding, lamination, etc.)
 }
 
 // Product model
 model Product {
-  id               String   @id @default(uuid())
-  name             String
-  slug             String?  @unique // Made nullable for migration, populate from name later
-  description      String?
-  shortDescription String? // Brief description for listings
-  basePrice        Decimal  @db.Decimal(10, 2)
-  sellingPrice     Decimal? @db.Decimal(10, 2) // Discounted price
-  mrp              Decimal? @db.Decimal(10, 2) // Maximum Retail Price
-  categoryId       String
-  brandId          String?
-  sku              String?  @unique // Stock Keeping Unit
-  stock            Int      @default(0) // Available quantity
-  minOrderQuantity Int      @default(1)
-  maxOrderQuantity Int? // Null means no limit
-  weight           Decimal? @db.Decimal(10, 2) // in kg
-  dimensions       String? // e.g., "10x5x2 cm"
-  isActive         Boolean  @default(true)
-  isFeatured       Boolean  @default(false)
-  isNewArrival     Boolean  @default(false)
-  isBestSeller     Boolean  @default(false)
-  rating           Decimal? @db.Decimal(3, 2) // Average rating (0-5)
-  totalReviews     Int      @default(0)
-  totalSold        Int      @default(0)
-  returnPolicy     String? // Return policy text
-  warranty         String? // Warranty information
-  generatedFromPricingRule Boolean @default(false) // Track if product was generated from category
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                       String   @id @default(uuid())
+  name                     String
+  slug                     String?  @unique // Made nullable for migration, populate from name later
+  description              String?
+  shortDescription         String? // Brief description for listings
+  basePrice                Decimal  @db.Decimal(10, 2)
+  sellingPrice             Decimal? @db.Decimal(10, 2) // Discounted price
+  mrp                      Decimal? @db.Decimal(10, 2) // Maximum Retail Price
+  categoryId               String
+  brandId                  String?
+  sku                      String?  @unique // Stock Keeping Unit
+  stock                    Int      @default(0) // Available quantity
+  minOrderQuantity         Int      @default(1)
+  maxOrderQuantity         Int? // Null means no limit
+  weight                   Decimal? @db.Decimal(10, 2) // in kg
+  dimensions               String? // e.g., "10x5x2 cm"
+  isActive                 Boolean  @default(true)
+  isFeatured               Boolean  @default(false)
+  isNewArrival             Boolean  @default(false)
+  isBestSeller             Boolean  @default(false)
+  rating                   Decimal? @db.Decimal(3, 2) // Average rating (0-5)
+  totalReviews             Int      @default(0)
+  totalSold                Int      @default(0)
+  returnPolicy             String? // Return policy text
+  warranty                 String? // Warranty information
+  generatedFromPricingRule Boolean  @default(false) // Track if product was generated from category
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   category       Category                @relation(fields: [categoryId], references: [id])
   brand          Brand?                  @relation(fields: [brandId], references: [id])
-  pricingRule    CategoryPricingRule?    // One-to-one relation to pricing rule
+  pricingRule    CategoryPricingRule? // One-to-one relation to pricing rule
   variants       ProductVariant[]
   images         ProductImage[]
   specifications ProductSpecification[]
@@ -390,7 +390,8 @@ model Order {
   id              String        @id @default(uuid())
   userId          String
   addressId       String
-  subtotal        Decimal?      @db.Decimal(10, 2) // Before discount - nullable for migration, populate from total later
+  subtotal        Decimal?      @db.Decimal(10, 2) // Base price subtotal (product prices only)
+  addonsSubtotal  Decimal?      @db.Decimal(10, 2) // Addons price subtotal
   discountAmount  Decimal?      @db.Decimal(10, 2) // Discount from coupon/offer
   shippingCharges Decimal?      @db.Decimal(10, 2)
   total           Decimal       @db.Decimal(10, 2) // Final amount
@@ -420,18 +421,18 @@ model Order {
 
 // OrderItem model
 model OrderItem {
-  id              String   @id @default(uuid())
+  id              String                @id @default(uuid())
   orderId         String
   productId       String
   variantId       String?
   quantity        Int
-  price           Decimal  @db.Decimal(10, 2) // Price at time of order
-  customDesignUrl Json?    // Array of S3 URLs for multiple files
+  price           Decimal               @db.Decimal(10, 2) // Price at time of order
+  customDesignUrl Json? // Array of S3 URLs for multiple files
   customText      String?
-  hasAddon        Boolean  @default(false)
+  hasAddon        Boolean               @default(false)
   addons          CategoryPricingRule[] @relation("OrderItemAddons")
-  metadata        Json?    // Additional pricing metadata (pageCount, copies, addons, breakdown)
-  createdAt       DateTime @default(now())
+  metadata        Json? // Additional pricing metadata (pageCount, copies, addons, breakdown)
+  createdAt       DateTime              @default(now())
 
   order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product         @relation(fields: [productId], references: [id])
@@ -503,18 +504,18 @@ model Cart {
 
 // Cart Item model
 model CartItem {
-  id              String   @id @default(uuid())
+  id              String                @id @default(uuid())
   cartId          String
   productId       String
   variantId       String?
-  quantity        Int      @default(1)
-  customDesignUrl Json?    // Array of S3 URLs for multiple files
+  quantity        Int                   @default(1)
+  customDesignUrl Json? // Array of S3 URLs for multiple files
   customText      String?
-  hasAddon        Boolean  @default(false)
+  hasAddon        Boolean               @default(false)
   addons          CategoryPricingRule[] @relation("CartItemAddons")
-  metadata        Json?    // Pricing metadata (pageCount, copies, selectedAddons, breakdown)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  metadata        Json? // Pricing metadata (pageCount, copies, selectedAddons, breakdown)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   cart    Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
   product Product         @relation(fields: [productId], references: [id])
@@ -550,7 +551,7 @@ model Review {
   rating             Int // 1-5 stars
   title              String?
   comment            String?
-  images             Json?    // Review images
+  images             Json? // Review images
   isVerifiedPurchase Boolean  @default(false) // Verified purchase badge
   isHelpful          Int      @default(0) // Helpful votes count
   isApproved         Boolean  @default(false) // Admin approval
@@ -696,13 +697,13 @@ model RecentlyViewedProduct {
 
 // Product Addon model (Junction table for Products and Addon Pricing Rules)
 model ProductAddon {
-  id        String   @id @default(uuid())
-  productId String
+  id          String   @id @default(uuid())
+  productId   String
   addonRuleId String // CategoryPricingRule ID where ruleType = 'ADDON'
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
-  product   Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
-  addonRule CategoryPricingRule  @relation(fields: [addonRuleId], references: [id], onDelete: Cascade)
+  product   Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  addonRule CategoryPricingRule @relation(fields: [addonRuleId], references: [id], onDelete: Cascade)
 
   @@unique([productId, addonRuleId])
   @@index([productId])

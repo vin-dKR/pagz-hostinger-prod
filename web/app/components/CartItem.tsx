@@ -38,7 +38,6 @@ export default function CartItem({
     const product = item.product;
     const variant = item.variant;
     const productName = product?.name || 'Unknown Product';
-    console.log("---------more about the items", item)
 
     // Get uploaded files from cart item (S3 URLs already stored)
     const uploadedFileUrls = Array.isArray(item.customDesignUrl)

@@ -65,6 +65,7 @@ export interface Order {
     addressId: string;
     items: OrderItem[];
     subtotal?: number | null;
+    addonsSubtotal?: number | null;
     discountAmount?: number | null;
     shippingCharges?: number | null;
     total: number;

@@ -36,7 +36,6 @@ function CheckoutPageContent() {
         couponError,
         applyCoupon,
         removeCoupon,
-        tax: allTax,
         grandTotal: allGrandTotal,
         loading,
         error,
@@ -132,15 +131,10 @@ function CheckoutPageContent() {
         return selectedOption?.price || deliveryFee;
     }, [selectedShippingId, shippingOptions, deliveryFee]);
 
-    // Recalculate tax and total with selected shipping (for selected items only)
-    const calculatedTax = useMemo(() => {
-        const taxableAmount = (subtotal || 0) - discountAmount;
-        return taxableAmount * 0.18;
-    }, [subtotal, discountAmount]);
-
+    // Recalculate total with selected shipping (for selected items only)
     const calculatedTotal = useMemo(() => {
-        return (subtotal || 0) - discountAmount + selectedShippingFee + calculatedTax;
-    }, [subtotal, discountAmount, selectedShippingFee, calculatedTax]);
+        return (subtotal || 0) - discountAmount + selectedShippingFee;
+    }, [subtotal, discountAmount, selectedShippingFee]);
 
     async function loadRazorpayScript(): Promise<boolean> {
         if (typeof window === "undefined") return false;
@@ -171,17 +165,27 @@ function CheckoutPageContent() {
 
             // 1) Create Razorpay order directly from cart (order created in DB only after payment success)
             const rpOrderResp = await createRazorpayOrderFromCart({
-                items: cartItems.map((item: any) => ({
-                    productId: item.productId,
-                    variantId: item.variantId,
-                    quantity: item.quantity,
-                    customDesignUrl: item.customDesignUrl,
-                    customText: item.customText,
-                    metadata:
-                        item.metadata && Array.isArray(item.metadata.priceBreakdown)
-                            ? item.metadata
-                            : undefined,
-                })),
+                items: cartItems.map((item: any) => {
+                    // Extract addon IDs from cart item
+                    // Try from addons relation first, then from metadata
+                    let addonIds: string[] = [];
+                    if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
+                        addonIds = item.addons.map((addon: any) => addon.id).filter((id: any): id is string => typeof id === 'string');
+                    } else if (item.metadata?.selectedAddons && Array.isArray(item.metadata.selectedAddons)) {
+                        addonIds = item.metadata.selectedAddons.filter((id: any): id is string => typeof id === 'string');
+                    }
+
+                    return {
+                        productId: item.productId,
+                        variantId: item.variantId,
+                        quantity: item.quantity,
+                        customDesignUrl: item.customDesignUrl,
+                        customText: item.customText,
+                        addons: addonIds.length > 0 ? addonIds : undefined,
+                        hasAddon: addonIds.length > 0,
+                        metadata: item.metadata || undefined,
+                    };
+                }),
                 addressId: selectedAddressId,
                 amount: calculatedTotal,
                 couponCode: appliedCoupon?.coupon?.code,
@@ -402,7 +406,6 @@ function CheckoutPageContent() {
                             discount={discountAmount || 0}
                             couponApplied={appliedCoupon ? discountAmount : 0}
                             shipping={selectedShippingFee || 0}
-                            tax={calculatedTax || 0}
                             grandTotal={calculatedTotal || 0}
                             itemCount={itemCount}
                             onPay={handlePay}

@@ -90,14 +90,9 @@ function CartPageContent() {
     const couponApplied = 0;
     const shippingFee = 15; // Same as checkout for now
 
-    const tax = useMemo(() => {
-        const taxableAmount = subtotal || 0;
-        return taxableAmount * 0.18;
-    }, [subtotal]);
-
     const grandTotal = useMemo(() => {
-        return (subtotal || 0) + shippingFee + tax;
-    }, [subtotal, shippingFee, tax]);
+        return (subtotal || 0) + shippingFee;
+    }, [subtotal, shippingFee]);
 
 
     const handleQuantityChange = async (id: string, quantity: number) => {
@@ -397,7 +392,6 @@ function CartPageContent() {
                                         discount={discount}
                                         couponApplied={couponApplied}
                                         shipping={shippingFee}
-                                        tax={tax}
                                         grandTotal={grandTotal}
                                         itemCount={selectedItemsList.length}
                                         showCheckoutActions={false}

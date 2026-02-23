@@ -10,7 +10,6 @@ interface BillingSummaryProps {
     discount: number;
     couponApplied: number;
     shipping: number;
-    tax: number;
     grandTotal: number;
     itemCount: number;
     showCheckoutActions?: boolean;
@@ -25,7 +24,6 @@ export default function BillingSummary({
     discount,
     couponApplied,
     shipping,
-    tax,
     grandTotal,
     showCheckoutActions = true,
     onPay,
@@ -75,11 +73,6 @@ export default function BillingSummary({
                 <div className="flex justify-between text-sm sm:text-base text-gray-600">
                     <span>Shipping</span>
                     <span className="font-hkgb font-medium">₹{shipping.toFixed(2)}</span>
-                </div>
-
-                <div className="flex justify-between text-sm sm:text-base text-gray-600">
-                    <span>Tax</span>
-                    <span className="font-hkgb font-medium">₹{tax.toFixed(2)}</span>
                 </div>
 
                 <hr className="border-gray-200 my-3 sm:my-4" />

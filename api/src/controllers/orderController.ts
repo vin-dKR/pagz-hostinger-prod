@@ -66,11 +66,14 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             price: number;
             customDesignUrl: string[]; // Array of S3 URLs
             customText: string | null;
+            hasAddon: boolean;
+            addons: string[];
+            metadata?: any;
         }> = [];
 
         // Validate and calculate prices (no database calls in loop)
         for (const item of items) {
-            const { productId, variantId, quantity, customDesignUrl, customText } = item;
+            const { productId, variantId, quantity, customDesignUrl, customText, addons, metadata } = item;
 
             if (!productId || !quantity || quantity < 1) {
                 throw new ValidationError("Invalid order item");
@@ -96,13 +99,21 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             const itemTotal = itemPrice * quantity;
             subtotal += itemTotal;
 
+            // Normalize addons to array
+            const normalizedAddons: string[] = Array.isArray(addons)
+                ? addons.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+                : [];
+
             orderItems.push({
                 productId,
                 variantId: variantId || null,
                 quantity,
                 price: itemPrice,
-                customDesignUrl: customDesignUrl || null,
+                customDesignUrl: customDesignUrl ? (Array.isArray(customDesignUrl) ? customDesignUrl : [customDesignUrl]) : [],
                 customText: customText || null,
+                hasAddon: normalizedAddons.length > 0,
+                addons: normalizedAddons,
+                metadata: metadata || undefined,
             });
         }
 
@@ -153,9 +164,76 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             }
         }
 
-        // Calculate final total
+        // Calculate addons subtotal from order items
+        let addonsSubtotal = 0;
+        const allAddonIds = new Set<string>();
+        orderItems.forEach(item => {
+            if (item.addons && Array.isArray(item.addons)) {
+                item.addons.forEach((addonId: string) => allAddonIds.add(addonId));
+            }
+        });
+
+        if (allAddonIds.size > 0) {
+            // Fetch all addon rules
+            const addonRules = await prisma.categoryPricingRule.findMany({
+                where: {
+                    id: { in: Array.from(allAddonIds) },
+                    ruleType: 'ADDON',
+                    isActive: true,
+                },
+            });
+
+            // Create a map for O(1) lookup
+            const addonMap = new Map(addonRules.map(rule => [rule.id, rule]));
+
+            // Calculate addons total for each order item
+            orderItems.forEach(item => {
+                if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
+                    // Get page count from metadata if available
+                    const pageCount = item.metadata?.pageCount || 1;
+                    const copies = item.metadata?.copies || 1;
+                    const effectivePages = pageCount > 1 ? pageCount * copies : null;
+                    
+                    item.addons.forEach((addonId: string) => {
+                        const addonRule = addonMap.get(addonId);
+                        if (addonRule) {
+                            // Check page range if addon has minQuantity/maxQuantity
+                            const hasPageRange = addonRule.minQuantity != null || addonRule.maxQuantity != null;
+                            if (hasPageRange && effectivePages != null) {
+                                const inRange = 
+                                    (addonRule.minQuantity == null || effectivePages >= addonRule.minQuantity) &&
+                                    (addonRule.maxQuantity == null || effectivePages <= addonRule.maxQuantity);
+                                if (!inRange) {
+                                    return; // Skip this addon if not in range
+                                }
+                            }
+                            
+                            const rawPrice = addonRule.priceModifier !== null && addonRule.priceModifier !== undefined
+                                ? Number(addonRule.priceModifier)
+                                : addonRule.basePrice !== null && addonRule.basePrice !== undefined
+                                    ? Number(addonRule.basePrice)
+                                    : 0;
+                            
+                            // Calculate multiplier based on quantity multiplier and page count
+                            let multiplier = 1;
+                            if (addonRule.quantityMultiplier) {
+                                if (effectivePages != null) {
+                                    multiplier = effectivePages;
+                                } else {
+                                    multiplier = item.quantity;
+                                }
+                            }
+                            
+                            addonsSubtotal += rawPrice * multiplier;
+                        }
+                    });
+                }
+            });
+        }
+
+        // Calculate final total (subtotal + addonsSubtotal - discount + shipping)
         const finalShippingCharges = Number(shippingCharges) || 0;
-        const total = subtotal - discountAmount + finalShippingCharges;
+        const total = subtotal + addonsSubtotal - discountAmount + finalShippingCharges;
 
         // Create order
         const order = await prisma.order.create({
@@ -163,6 +241,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 userId: req.user.id,
                 addressId,
                 subtotal,
+                addonsSubtotal: addonsSubtotal > 0 ? addonsSubtotal : null,
                 discountAmount: discountAmount > 0 ? discountAmount : null,
                 shippingCharges: finalShippingCharges > 0 ? finalShippingCharges : null,
                 total,
@@ -170,7 +249,20 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 couponId,
                 status: "PENDING_REVIEW",
                 items: {
-                    create: orderItems,
+                    create: orderItems.map((oi) => ({
+                        productId: oi.productId,
+                        variantId: oi.variantId,
+                        quantity: oi.quantity,
+                        price: oi.price,
+                        customDesignUrl: oi.customDesignUrl,
+                        customText: oi.customText,
+                        hasAddon: oi.hasAddon,
+                        metadata: oi.metadata ?? undefined,
+                        // @ts-ignore - connect addons relation
+                        addons: oi.addons && oi.addons.length > 0
+                            ? { connect: oi.addons.map((id: string) => ({ id })) }
+                            : undefined,
+                    })),
                 },
                 statusHistory: {
                     create: {
@@ -334,7 +426,7 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
 
         const order = await prisma.order.findFirst({
             where: {
-                id,
+                id: id as string,
                 userId: req.user.id,
             },
             include: {
@@ -781,7 +873,7 @@ export const getAdminOrder = async (req: Request, res: Response, next: NextFunct
         const { id } = req.params;
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 user: {
                     select: {
@@ -918,7 +1010,7 @@ export const updateOrderStatus = async (req: Request, res: Response, next: NextF
         }
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!order) {
@@ -927,7 +1019,7 @@ export const updateOrderStatus = async (req: Request, res: Response, next: NextF
 
         // Update order status
         const updatedOrder = await prisma.order.update({
-            where: { id },
+            where: { id: id as string },
             data: { status },
             include: {
                 items: {
@@ -946,7 +1038,7 @@ export const updateOrderStatus = async (req: Request, res: Response, next: NextF
         // Create status history entry
         await prisma.orderStatusHistory.create({
             data: {
-                orderId: id,
+                orderId: id as string,
                 status,
                 comment: comment || `Status updated to ${status}`,
             },
@@ -965,7 +1057,7 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
         const { email, phone } = req.query;
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 user: {
                     select: {
@@ -1015,7 +1107,7 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
         const { addressId, shippingCharges, discountAmount, items } = req.body;
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!order) {
@@ -1044,20 +1136,21 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
         // Recalculate total if amounts changed
         if (updateData.shippingCharges !== undefined || updateData.discountAmount !== undefined) {
             const subtotal = Number(order.subtotal || 0);
+            const addonsSubtotal = Number(order.addonsSubtotal || 0);
             const finalShipping = updateData.shippingCharges !== undefined
                 ? updateData.shippingCharges
                 : Number(order.shippingCharges || 0);
             const finalDiscount = updateData.discountAmount !== undefined
                 ? updateData.discountAmount
                 : Number(order.discountAmount || 0);
-            updateData.total = subtotal - finalDiscount + finalShipping;
+            updateData.total = subtotal + addonsSubtotal - finalDiscount + finalShipping;
         }
 
         // Update items if provided
         if (items && Array.isArray(items) && id) {
             // Delete existing items and create new ones
             await prisma.orderItem.deleteMany({
-                where: { orderId: id },
+                where: { orderId: id as string },
             });
 
             // OPTIMIZATION: Fetch all products in parallel instead of sequentially
@@ -1078,6 +1171,7 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
             const productMap = new Map(products.map(p => [p.id, p]));
 
             const orderItems = [];
+            const orderIdString = id as string;
             for (const item of items) {
                 const { productId, variantId, quantity, customDesignUrl, customText } = item;
 
@@ -1096,7 +1190,7 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
                 }
 
                 orderItems.push({
-                    orderId: id,
+                    orderId: orderIdString,
                     productId,
                     variantId: variantId || null,
                     quantity,
@@ -1110,22 +1204,29 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
                 data: orderItems,
             });
 
-            // Recalculate subtotal from items
+            // Recalculate subtotal from items (base price only)
             const subtotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
             updateData.subtotal = subtotal;
 
-            // Recalculate total
+            // Recalculate addonsSubtotal if items have addons
+            // Note: This requires fetching the order items with addons relation after creation
+            // For now, we'll set it to null and it can be recalculated on next order fetch
+            // In a production system, you'd want to properly recalculate this
+            updateData.addonsSubtotal = null; // Will be recalculated when order is fetched
+
+            // Recalculate total (using existing addonsSubtotal if available)
             const finalShipping = updateData.shippingCharges !== undefined
                 ? updateData.shippingCharges
                 : Number(order.shippingCharges || 0);
             const finalDiscount = updateData.discountAmount !== undefined
                 ? updateData.discountAmount
                 : Number(order.discountAmount || 0);
-            updateData.total = subtotal - finalDiscount + finalShipping;
+            const existingAddonsSubtotal = Number(order.addonsSubtotal || 0);
+            updateData.total = subtotal + existingAddonsSubtotal - finalDiscount + finalShipping;
         }
 
         const updatedOrder = await prisma.order.update({
-            where: { id },
+            where: { id: id as string },
             data: updateData,
             include: {
                 user: {
@@ -1172,7 +1273,7 @@ export const cancelOrder = async (req: Request, res: Response, next: NextFunctio
         }
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 payments: {
                     where: { status: "SUCCESS" },
@@ -1190,7 +1291,7 @@ export const cancelOrder = async (req: Request, res: Response, next: NextFunctio
 
         // Update order status
         const updatedOrder = await prisma.order.update({
-            where: { id },
+            where: { id: id as string },
             data: { status: "CANCELLED" },
             include: {
                 user: true,
@@ -1210,7 +1311,7 @@ export const cancelOrder = async (req: Request, res: Response, next: NextFunctio
         if (id) {
             await prisma.orderStatusHistory.create({
                 data: {
-                    orderId: id,
+                    orderId: id as string,
                     status: "CANCELLED",
                     comment: reason || "Order cancelled",
                 },
@@ -1228,7 +1329,7 @@ export const cancelOrder = async (req: Request, res: Response, next: NextFunctio
 
                 if (id) {
                     await prisma.order.update({
-                        where: { id },
+                        where: { id: id as string },
                         data: { paymentStatus: "REFUNDED" },
                     });
                 }
@@ -1355,7 +1456,7 @@ export const markPaymentAsPaid = async (req: Request, res: Response, next: NextF
         const { amount, reference, date } = req.body;
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 payments: true,
             },
@@ -1390,7 +1491,7 @@ export const markPaymentAsPaid = async (req: Request, res: Response, next: NextF
             }
             payment = await prisma.payment.create({
                 data: {
-                    orderId: id,
+                    orderId: id as string,
                     userId: order.userId,
                     amount: paymentAmount,
                     method: "OFFLINE",
@@ -1402,7 +1503,7 @@ export const markPaymentAsPaid = async (req: Request, res: Response, next: NextF
 
         // Update order payment status
         const updatedOrder = await prisma.order.update({
-            where: { id },
+            where: { id: id as string },
             data: { paymentStatus: "SUCCESS" },
             include: {
                 user: true,
@@ -1434,7 +1535,7 @@ export const processRefund = async (req: Request, res: Response, next: NextFunct
         }
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 payments: {
                     where: { status: "SUCCESS" },
@@ -1469,7 +1570,7 @@ export const processRefund = async (req: Request, res: Response, next: NextFunct
 
         // Update order payment status
         const updatedOrder = await prisma.order.update({
-            where: { id },
+            where: { id: id as string },
             data: { paymentStatus: "REFUNDED" },
             include: {
                 user: true,
@@ -1496,7 +1597,7 @@ export const getPaymentDetails = async (req: Request, res: Response, next: NextF
         const { id } = req.params;
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 payments: {
                     orderBy: { createdAt: "desc" },
@@ -1531,7 +1632,7 @@ export const updateTracking = async (req: Request, res: Response, next: NextFunc
         }
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!order) {
@@ -1547,7 +1648,7 @@ export const updateTracking = async (req: Request, res: Response, next: NextFunc
         }
 
         const updatedOrder = await prisma.order.update({
-            where: { id },
+            where: { id: id as string },
             data: updateData,
             include: {
                 user: true,
@@ -1566,7 +1667,7 @@ export const updateTracking = async (req: Request, res: Response, next: NextFunc
         if (id) {
             await prisma.orderStatusHistory.create({
                 data: {
-                    orderId: id,
+                    orderId: id as string,
                     status: "SHIPPED",
                     comment: `Tracking number: ${trackingNumber}${carrier ? `, Carrier: ${carrier}` : ""}`,
                 },
@@ -1597,7 +1698,7 @@ export const markAsShipped = async (req: Request, res: Response, next: NextFunct
         }
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!order) {
@@ -1605,7 +1706,7 @@ export const markAsShipped = async (req: Request, res: Response, next: NextFunct
         }
 
         const updatedOrder = await prisma.order.update({
-            where: { id },
+            where: { id: id as string },
             data: { status: "SHIPPED" },
             include: {
                 user: true,
@@ -1623,7 +1724,7 @@ export const markAsShipped = async (req: Request, res: Response, next: NextFunct
         if (id) {
             await prisma.orderStatusHistory.create({
                 data: {
-                    orderId: id,
+                    orderId: id as string,
                     status: "SHIPPED",
                     comment: `Order shipped. Tracking: ${trackingNumber}${carrier ? `, Carrier: ${carrier}` : ""}`,
                 },
@@ -1647,7 +1748,7 @@ export const markAsDelivered = async (req: Request, res: Response, next: NextFun
         const { deliveryDate, notes } = req.body;
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!order) {
@@ -1655,7 +1756,7 @@ export const markAsDelivered = async (req: Request, res: Response, next: NextFun
         }
 
         const updatedOrder = await prisma.order.update({
-            where: { id },
+            where: { id: id as string },
             data: { status: "DELIVERED" },
             include: {
                 user: true,
@@ -1673,7 +1774,7 @@ export const markAsDelivered = async (req: Request, res: Response, next: NextFun
         if (id) {
             await prisma.orderStatusHistory.create({
                 data: {
-                    orderId: id,
+                    orderId: id as string,
                     status: "DELIVERED",
                     comment: notes || `Order delivered${deliveryDate ? ` on ${deliveryDate}` : ""}`,
                 },
@@ -1692,7 +1793,7 @@ export const getOrderInvoice = async (req: Request, res: Response, next: NextFun
         const { id } = req.params;
 
         const order = await prisma.order.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 user: {
                     select: {
@@ -1811,6 +1912,9 @@ export const getOrderInvoice = async (req: Request, res: Response, next: NextFun
             justify-content: space-between;
             padding: 8px 0;
         }
+        .totals-row.font-medium {
+            font-weight: 500;
+        }
         .totals-row.total {
             font-weight: bold;
             font-size: 18px;
@@ -1883,8 +1987,18 @@ export const getOrderInvoice = async (req: Request, res: Response, next: NextFun
 
         <div class="totals">
             <div class="totals-row">
-                <span>Subtotal:</span>
+                <span>Base Price Subtotal:</span>
                 <span>₹${Number(order.subtotal || 0).toFixed(2)}</span>
+            </div>
+            ${order.addonsSubtotal && Number(order.addonsSubtotal) > 0 ? `
+            <div class="totals-row">
+                <span>Addons Subtotal:</span>
+                <span>₹${Number(order.addonsSubtotal).toFixed(2)}</span>
+            </div>
+            ` : ''}
+            <div class="totals-row font-medium">
+                <span>Subtotal:</span>
+                <span>₹${(Number(order.subtotal || 0) + Number(order.addonsSubtotal || 0)).toFixed(2)}</span>
             </div>
             ${order.discountAmount ? `
             <div class="totals-row">

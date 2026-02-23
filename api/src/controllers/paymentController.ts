@@ -241,14 +241,14 @@ export const verifyPayment = async (req: Request, res: Response, next: NextFunct
                     quantity: number;
                     price: number;
                     customDesignUrl: string[];
-                    customText: string | null;
+                    customText: string | null; 
                     hasAddon: boolean;
                     addons: string[];
                     metadata?: any;
                 }> = [];
 
                 for (const item of items) {
-                    const { productId, variantId, quantity, customDesignUrl, customText, metadata } = item;
+                    const { productId, variantId, quantity, customDesignUrl, customText, addons, metadata } = item;
 
                     if (!productId || !quantity || quantity < 1) {
                         throw new ValidationError("Invalid order item");
@@ -297,10 +297,12 @@ export const verifyPayment = async (req: Request, res: Response, next: NextFunct
                         }
                     }
 
-                    // Extract addon metadata if present
-                    const selectedAddons: string[] = Array.isArray(metadata?.selectedAddons)
-                        ? (metadata.selectedAddons as string[])
-                        : [];
+                    // Extract addons from item.addons if present, otherwise from metadata
+                    const selectedAddons: string[] = Array.isArray(item.addons)
+                        ? (item.addons as string[]).filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+                        : Array.isArray(metadata?.selectedAddons)
+                            ? (metadata.selectedAddons as string[])
+                            : [];
 
                     // Create order item with S3 URLs from cart (files already uploaded)
                     orderItems.push({
@@ -360,8 +362,75 @@ export const verifyPayment = async (req: Request, res: Response, next: NextFunct
                     }
                 }
 
-                // Calculate final total
-                const total = subtotal - discountAmount + shippingCharges;
+                // Calculate addons subtotal from order items
+                let addonsSubtotal = 0;
+                const allAddonIds = new Set<string>();
+                orderItems.forEach(item => {
+                    if (item.addons && Array.isArray(item.addons)) {
+                        item.addons.forEach((addonId: string) => allAddonIds.add(addonId));
+                    }
+                });
+
+                if (allAddonIds.size > 0) {
+                    // Fetch all addon rules
+                    const addonRules = await prisma.categoryPricingRule.findMany({
+                        where: {
+                            id: { in: Array.from(allAddonIds) },
+                            ruleType: 'ADDON',
+                            isActive: true,
+                        },
+                    });
+
+                    // Create a map for O(1) lookup
+                    const addonMap = new Map(addonRules.map(rule => [rule.id, rule]));
+
+                    // Calculate addons total for each order item
+                    orderItems.forEach(item => {
+                        if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
+                            // Get page count from metadata if available
+                            const pageCount = item.metadata?.pageCount || 1;
+                            const copies = item.metadata?.copies || 1;
+                            const effectivePages = pageCount > 1 ? pageCount * copies : null;
+                            
+                            item.addons.forEach((addonId: string) => {
+                                const addonRule = addonMap.get(addonId);
+                                if (addonRule) {
+                                    // Check page range if addon has minQuantity/maxQuantity
+                                    const hasPageRange = addonRule.minQuantity != null || addonRule.maxQuantity != null;
+                                    if (hasPageRange && effectivePages != null) {
+                                        const inRange = 
+                                            (addonRule.minQuantity == null || effectivePages >= addonRule.minQuantity) &&
+                                            (addonRule.maxQuantity == null || effectivePages <= addonRule.maxQuantity);
+                                        if (!inRange) {
+                                            return; // Skip this addon if not in range
+                                        }
+                                    }
+                                    
+                                    const rawPrice = addonRule.priceModifier !== null && addonRule.priceModifier !== undefined
+                                        ? Number(addonRule.priceModifier)
+                                        : addonRule.basePrice !== null && addonRule.basePrice !== undefined
+                                            ? Number(addonRule.basePrice)
+                                            : 0;
+                                    
+                                    // Calculate multiplier based on quantity multiplier and page count
+                                    let multiplier = 1;
+                                    if (addonRule.quantityMultiplier) {
+                                        if (effectivePages != null) {
+                                            multiplier = effectivePages;
+                                        } else {
+                                            multiplier = item.quantity;
+                                        }
+                                    }
+                                    
+                                    addonsSubtotal += rawPrice * multiplier;
+                                }
+                            });
+                        }
+                    });
+                }
+
+                // Calculate final total (subtotal + addonsSubtotal - discount + shipping)
+                const total = subtotal + addonsSubtotal - discountAmount + shippingCharges;
 
                 // Create order with S3 URLs from cart items (files already uploaded to S3 when user selected them)
                 order = await prisma.order.create({
@@ -369,6 +438,7 @@ export const verifyPayment = async (req: Request, res: Response, next: NextFunct
                         userId: req.user.id,
                         addressId,
                         subtotal,
+                        addonsSubtotal: addonsSubtotal > 0 ? addonsSubtotal : null,
                         discountAmount: discountAmount > 0 ? discountAmount : null,
                         shippingCharges: shippingCharges > 0 ? shippingCharges : null,
                         total,
@@ -385,7 +455,12 @@ export const verifyPayment = async (req: Request, res: Response, next: NextFunct
                                 price: oi.price,
                                 customDesignUrl: oi.customDesignUrl,
                                 customText: oi.customText,
+                                hasAddon: oi.hasAddon,
                                 metadata: oi.metadata ?? undefined,
+                                // @ts-ignore - connect addons relation
+                                addons: oi.addons && oi.addons.length > 0
+                                    ? { connect: oi.addons.map((id: string) => ({ id })) }
+                                    : undefined,
                             })),
                         },
                         statusHistory: {
@@ -680,27 +755,145 @@ async function handleOrderPaid(payload: any) {
 // Admin: Get all payments
 export const getAdminPayments = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const payments = await prisma.payment.findMany({
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                    },
-                },
-                order: {
-                    select: {
-                        id: true,
-                        status: true,
-                        total: true,
-                    },
-                },
-            },
-            orderBy: { createdAt: "desc" },
-        });
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const skip = (page - 1) * limit;
 
-        return sendSuccess(res, payments);
+        const status = req.query.status as string | string[];
+        const method = req.query.method as string;
+        const dateFrom = req.query.dateFrom as string;
+        const dateTo = req.query.dateTo as string;
+        const minAmount = req.query.minAmount as string;
+        const maxAmount = req.query.maxAmount as string;
+        const userId = req.query.userId as string;
+        const orderId = req.query.orderId as string;
+        const search = req.query.search as string;
+        const sortBy = (req.query.sortBy as string) || 'createdAt';
+        const sortOrder = (req.query.sortOrder as string) || 'desc';
+
+        const where: any = {};
+
+        // Status filter (supports array for multi-select)
+        if (status) {
+            if (Array.isArray(status)) {
+                where.status = { in: status };
+            } else {
+                where.status = status;
+            }
+        }
+
+        // Payment method filter
+        if (method) {
+            where.method = method;
+        }
+
+        // Date range filters
+        if (dateFrom || dateTo) {
+            where.createdAt = {};
+            if (dateFrom) {
+                where.createdAt.gte = new Date(dateFrom);
+            }
+            if (dateTo) {
+                where.createdAt.lte = new Date(dateTo);
+            }
+        }
+
+        // Amount range filters
+        if (minAmount || maxAmount) {
+            where.amount = {};
+            if (minAmount) {
+                where.amount.gte = parseFloat(minAmount);
+            }
+            if (maxAmount) {
+                where.amount.lte = parseFloat(maxAmount);
+            }
+        }
+
+        // User filter
+        if (userId) {
+            where.userId = userId;
+        }
+
+        // Order filter
+        if (orderId) {
+            where.orderId = orderId;
+        }
+
+        // Search functionality - search by payment ID, razorpay IDs, user email/name
+        if (search) {
+            const searchConditions: any[] = [
+                { id: { contains: search } },
+                { razorpayOrderId: { contains: search } },
+                { razorpayPaymentId: { contains: search } },
+                {
+                    user: {
+                        OR: [
+                            { email: { contains: search } },
+                            { name: { contains: search } },
+                        ],
+                    },
+                },
+            ];
+
+            where.OR = searchConditions;
+        }
+
+        // Sorting
+        const orderBy: any = {};
+        if (sortBy === 'amount') {
+            orderBy.amount = sortOrder;
+        } else if (sortBy === 'status') {
+            orderBy.status = sortOrder;
+        } else if (sortBy === 'updatedAt') {
+            orderBy.updatedAt = sortOrder;
+        } else {
+            orderBy.createdAt = sortOrder;
+        }
+
+        const [payments, total] = await Promise.all([
+            prisma.payment.findMany({
+                where,
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phone: true,
+                        },
+                    },
+                    order: {
+                        select: {
+                            id: true,
+                            status: true,
+                            total: true,
+                            createdAt: true,
+                        },
+                    },
+                    coupon: {
+                        select: {
+                            id: true,
+                            code: true,
+                            name: true,
+                        },
+                    },
+                },
+                skip,
+                take: limit,
+                orderBy,
+            }),
+            prisma.payment.count({ where }),
+        ]);
+
+        return sendSuccess(res, {
+            payments,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
+        });
     } catch (error) {
         next(error);
     }
@@ -813,7 +1006,7 @@ export const getAdminPayment = async (req: Request, res: Response, next: NextFun
         }
 
         const payment = await prisma.payment.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 user: {
                     select: {
