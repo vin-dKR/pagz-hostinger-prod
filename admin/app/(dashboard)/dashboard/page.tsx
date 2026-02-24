@@ -14,7 +14,14 @@ import { RecentCoupons } from '@/app/components/features/dashboard/recent-coupon
 import { getDashboardOverview } from '@/lib/server/dashboard-data';
 
 export default async function DashboardPage() {
-    const data = await getDashboardOverview();
+    let data;
+    try {
+        data = await getDashboardOverview();
+    } catch (error) {
+        console.error('[DASHBOARD] Error loading dashboard data:', error);
+        // Set data to null so components show loading states
+        data = null;
+    }
 
     return (
         <div className="space-y-8 max-w-[1600px]">

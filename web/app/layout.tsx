@@ -6,6 +6,7 @@ import { ProductConfigProvider } from "@/contexts/ProductConfigContext";
 import { CartProvider } from "@/contexts/CartContext";
 import { ToastProvider } from "./components/providers/toast-provider";
 import { QueryProvider } from "./components/providers/query-provider";
+import ChunkErrorHandler from "./components/shared/ChunkErrorHandler";
 
 export const metadata: Metadata = {
     title: "PAGZ - Custom Printing Solutions",
@@ -20,6 +21,7 @@ export default function RootLayout({
     return (
         <html lang="en">
             <body className={`flex flex-col min-h-screen font-hkgr`}>
+                <ChunkErrorHandler />
                 <QueryProvider>
                     <ToastProvider>
                         <AuthProvider>

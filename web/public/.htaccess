@@ -1,0 +1,56 @@
+# Next.js Static Files Configuration for Hostinger/Apache
+# This ensures _next/static files are served correctly
+# 
+# IMPORTANT: If using Node.js server (npm run start), this file may not be needed.
+# Only use if Apache is serving static files directly (not proxying to Node.js).
+
+# Enable rewrite engine
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Handle Next.js static files - serve directly if they exist
+  RewriteCond %{REQUEST_URI} ^/_next/static
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteRule ^(.*)$ $1 [L]
+
+  # Handle Next.js image optimization
+  RewriteCond %{REQUEST_URI} ^/_next/image
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteRule ^(.*)$ $1 [L]
+
+  # If using Apache as reverse proxy to Node.js, proxy all requests
+  # Uncomment the following if Apache is proxying to Node.js on port 3000:
+  # RewriteCond %{REQUEST_FILENAME} !-f
+  # RewriteCond %{REQUEST_FILENAME} !-d
+  # RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
+</IfModule>
+
+# Cache static assets
+<IfModule mod_expires.c>
+  ExpiresActive On
+  
+  # Cache static chunks for 1 year (they have hashes, so safe to cache)
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType image/png "access plus 1 year"
+  ExpiresByType image/jpg "access plus 1 year"
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/gif "access plus 1 year"
+  ExpiresByType image/webp "access plus 1 year"
+  ExpiresByType image/svg+xml "access plus 1 year"
+  ExpiresByType font/woff "access plus 1 year"
+  ExpiresByType font/woff2 "access plus 1 year"
+</IfModule>
+
+# Enable compression
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+  # Allow loading of Next.js chunks
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set X-XSS-Protection "1; mode=block"
+</IfModule>

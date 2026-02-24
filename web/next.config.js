@@ -1,5 +1,52 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+    // Production optimizations
+    compress: true,
+    
+    // Ensure static files are generated correctly
+    generateEtags: true,
+    
+    // Power optimization for better chunk loading
+    poweredByHeader: false,
+    
+    // Optimize production builds
+    swcMinify: true,
+    
+    // Improve chunk loading reliability
+    // This helps with chunk loading errors in production
+    webpack: (config, { isServer }) => {
+        if (!isServer) {
+            // Client-side webpack config
+            config.optimization = {
+                ...config.optimization,
+                // Split chunks more aggressively to avoid large chunks
+                splitChunks: {
+                    chunks: 'all',
+                    cacheGroups: {
+                        default: false,
+                        vendors: false,
+                        // Vendor chunks
+                        vendor: {
+                            name: 'vendor',
+                            chunks: 'all',
+                            test: /node_modules/,
+                            priority: 20,
+                        },
+                        // Common chunks
+                        common: {
+                            name: 'common',
+                            minChunks: 2,
+                            chunks: 'all',
+                            priority: 10,
+                            reuseExistingChunk: true,
+                        },
+                    },
+                },
+            };
+        }
+        return config;
+    },
+    
     images: {
         // Enable modern image formats for better compression
         formats: ["image/avif", "image/webp"],
