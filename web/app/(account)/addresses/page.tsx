@@ -146,7 +146,7 @@ function AddressesPageContent() {
             <>
                 {ConfirmDialog}
                 <div className="flex-1">
-                    <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-8 sm:p-12 text-center">
+                    <div className="bg-gray-50/50 rounded-2xl border border-red-100 p-8 sm:p-12 text-center">
                         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
                             <MapPin className="text-red-600 w-8 h-8" />
                         </div>
@@ -201,7 +201,7 @@ function AddressesPageContent() {
 
                 {/* Add/Edit Address Form */}
                 {(showAddForm || editingId) && (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+                    <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6 mb-4 sm:mb-6">
                         <div className="flex items-center justify-between mb-4 sm:mb-6">
                             <h2 className="text-lg sm:text-xl font-hkgb text-gray-900">
                                 {editingId ? "Edit Address" : "Add New Address"}
@@ -223,7 +223,7 @@ function AddressesPageContent() {
                         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
                             {/* User Info Display */}
                             {user && (
-                                <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
+                                <div className="bg-gray-50/50 rounded-xl p-3 sm:p-4">
                                     <p className="text-sm text-gray-600 mb-1">
                                         <strong>Name:</strong> {user.name || user.email}
                                     </p>
@@ -341,7 +341,7 @@ function AddressesPageContent() {
 
                 {/* Addresses List */}
                 {addresses.length === 0 ? (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 sm:p-12 text-center">
+                    <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-8 sm:p-12 text-center">
                         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
                             <MapPin className="text-gray-400 w-8 h-8" />
                         </div>
@@ -361,7 +361,7 @@ function AddressesPageContent() {
                         {addresses.map((address) => (
                             <div
                                 key={address.id}
-                                className={`bg-white rounded-2xl border shadow-sm p-4 sm:p-6 relative hover:shadow-md transition-all duration-300 ${address.isDefault
+                                className={`bg-gray-50/50 rounded-2xl border p-4 sm:p-6 relative hover:shadow-md transition-all duration-300 ${address.isDefault
                                     ? "border-[#008ECC]"
                                     : "border-gray-100 hover:border-gray-200"
                                     }`}
@@ -401,7 +401,7 @@ function AddressesPageContent() {
                                         onClick={() => handleSetDefault(address.id)}
                                         disabled={address.isDefault}
                                         className={`flex-1 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg transition-all cursor-pointer ${address.isDefault
-                                            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                            ? "bg-blue-500 text-white cursor-not-allowed"
                                             : "border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
                                             }`}
                                     >
@@ -428,7 +428,7 @@ function AddressesPageContent() {
                 )}
 
                 {/* Help Text */}
-                <div className="mt-6 sm:mt-8 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                <div className="mt-6 sm:mt-8 bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6">
                     <div className="flex items-start gap-3">
                         <MapPin className="w-5 h-5 text-[#008ECC] mt-0.5 shrink-0" />
                         <div>

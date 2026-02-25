@@ -47,7 +47,7 @@ export default function ServicesPage() {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-5 lg:gap-6 w-full">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                            <div key={i} className="bg-white rounded-lg md:rounded-xl shadow-sm p-3 sm:p-4 md:p-5 lg:p-6 animate-pulse w-full min-w-0 flex flex-col">
+                            <div key={i} className="bg-white rounded-lg md:rounded-xl p-3 sm:p-4 md:p-5 lg:p-6 animate-pulse w-full min-w-0 flex flex-col">
                                 <div className="h-32 sm:h-36 md:h-40 lg:h-44 xl:h-48 bg-gray-200 rounded-lg mb-3 md:mb-4 flex-shrink-0" />
                                 <div className="h-4 sm:h-5 md:h-6 bg-gray-200 rounded mb-1.5 md:mb-2" />
                                 <div className="h-3 sm:h-4 bg-gray-200 rounded w-3/4" />
@@ -102,7 +102,7 @@ export default function ServicesPage() {
                                 <Link
                                     key={category.id}
                                     href={`/services/${category.slug}`}
-                                    className="group bg-white rounded-lg md:rounded-xl shadow-sm overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer w-full min-w-0 flex flex-col"
+                                    className="group bg-white rounded-lg md:rounded-xl overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer w-full min-w-0 flex flex-col"
                                 >
                                     {/* Image */}
                                     <div className="relative h-32 sm:h-36 md:h-40 lg:h-44 xl:h-48 w-full bg-gray-100 overflow-hidden flex-shrink-0">

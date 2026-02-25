@@ -177,7 +177,6 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             itemCount: cartItems.length,
         });
     } catch (error) {
-        console.log("server err-----------------", error)
         next(error);
     }
 };

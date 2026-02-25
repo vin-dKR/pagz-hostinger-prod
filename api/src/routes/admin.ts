@@ -28,6 +28,7 @@ import {
     markAsShipped,
     markAsDelivered,
     getOrderInvoice,
+    getOrderInvoicePDF,
     exportOrders,
 } from "../controllers/orderController.js";
 import { getDashboardOverview } from "../controllers/dashboardController.js";
@@ -158,6 +159,7 @@ router.put("/orders/:id", updateOrder);
 router.patch("/orders/:id/status", updateOrderStatus);
 router.post("/orders/:id/cancel", cancelOrder);
 router.get("/orders/:id/invoice", getOrderInvoice);
+router.get("/orders/:id/invoice/pdf", getOrderInvoicePDF);
 
 // Payment Management (admin only)
 router.get("/orders/:id/payment", getPaymentDetails);

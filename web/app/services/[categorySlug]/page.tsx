@@ -620,10 +620,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 setCopies(1);
                 // Refresh cart to update count
                 await refetchCart();
-                // Optionally reload to update UI
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1000);
+                // Redirect to cart page
+                router.push('/cart');
             } else {
                 toastError(response.error || 'Failed to add product to cart. Please try again.');
             }

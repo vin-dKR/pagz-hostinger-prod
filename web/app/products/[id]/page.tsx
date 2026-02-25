@@ -333,6 +333,8 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
             toastSuccess("Product added to cart successfully!");
             // Update cart context instead of reloading page
             await refetchCart();
+            // Redirect to cart page
+            router.push('/cart');
         } else {
             toastError("Failed to add product to cart. Please try again.");
         }

@@ -4,6 +4,7 @@ import {
     getMyOrders,
     getOrder,
     trackOrder,
+    getOrderInvoicePDF,
 } from "../controllers/orderController.js";
 import { customerAuth } from "../middleware/auth.js";
 import { createAddress, updateAddress, deleteAddress } from "../controllers/addressController.js";
@@ -442,5 +443,6 @@ router.get("/orders", getMyOrders);
  *                   type: string
  */
 router.get("/orders/:id", getOrder);
+router.get("/orders/:id/invoice/pdf", getOrderInvoicePDF);
 
 export default router;

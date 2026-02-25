@@ -61,7 +61,7 @@ export default function ProductActions({
                 <button
                     onClick={handleAddToCartClick}
                     disabled={addToCartDisabled}
-                    className="flex-1 px-4 py-3 bg-[#008ECC] text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-3 bg-[#008ECC] text-white rounded-xl font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
                 >
                     {isUploadingFiles ? (
                         <CircularLoader size={16} />
@@ -85,7 +85,7 @@ export default function ProductActions({
                 <button
                     onClick={onBuyNow}
                     disabled={buyNowDisabled}
-                    className="flex-1 px-4 py-3 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
                 >
                     {isUploadingFiles ? (
                         <CircularLoader size={16} />
@@ -109,7 +109,7 @@ export default function ProductActions({
             <button
                 onClick={handleAddToCartClick}
                 disabled={addToCartDisabled}
-                className="flex-1 px-8 py-4 bg-[#008ECC] text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-3 cursor-pointer"
+                className="flex-1 px-8 py-4 bg-[#008ECC] text-white rounded-xl font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-3 cursor-pointer"
             >
                 {isUploadingFiles ? (
                     <CircularLoader size={20} />
@@ -135,7 +135,7 @@ export default function ProductActions({
             <button
                 onClick={onBuyNow}
                 disabled={buyNowDisabled}
-                className="flex-1 px-8 py-4 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                className="flex-1 px-8 py-4 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
             >
                 {isUploadingFiles ? (
                     <CircularLoader size={20} />

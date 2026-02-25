@@ -31,7 +31,6 @@ export default function CategoryProducts() {
                 // Take first 8 categories for the main display (show 4 on mobile, 8 on desktop)
                 setCategories(data.slice(0, 8));
             } catch (err: any) {
-                console.log("----", err)
                 console.error('Failed to fetch categories:', err);
                 setError(err.message || 'Failed to load categories');
             } finally {

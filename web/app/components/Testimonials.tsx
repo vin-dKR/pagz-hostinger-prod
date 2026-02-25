@@ -96,7 +96,7 @@ export default function Testimonials() {
                     <div className="hidden sm:flex items-center gap-2">
                         <button
                             onClick={scrollLeft}
-                            className="w-11 h-11 bg-white border border-gray-200 hover:bg-gray-50 rounded-full flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow"
+                            className="w-11 h-11 bg-gray-50/50 border border-gray-100 hover:bg-gray-50 rounded-full flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow"
                             aria-label="Previous testimonials"
                         >
                             <svg
@@ -146,7 +146,7 @@ export default function Testimonials() {
                             {testimonials.map((testimonial) => (
                                 <div
                                     key={testimonial.id}
-                                    className="shrink-0 w-[320px] sm:w-[380px] bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200 p-6 sm:p-8"
+                                    className="shrink-0 w-[320px] sm:w-[380px] bg-gray-50/50 rounded-2xl border border-gray-100 transition-all duration-200 p-6 sm:p-8"
                                 >
                                     {/* Customer Name */}
                                     <div className="flex items-center gap-2 mb-4 sm:mb-6">

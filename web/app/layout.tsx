@@ -10,7 +10,7 @@ import ChunkErrorHandler from "./components/shared/ChunkErrorHandler";
 
 export const metadata: Metadata = {
     title: "PAGZ - Custom Printing Solutions",
-    description: "Your trusted partner for custom printing solutions. Quality products, fast delivery.",
+    description: "PAGZ is your trusted partner for all custom printing solutions. We offer high-quality printing services including business cards, letterheads, bill books, pamphlets, maps, photo printing, book printing, and much more. With fast delivery, competitive pricing, and exceptional customer service, we help bring your printing needs to life. Order online today and experience the best in custom printing services.",
 };
 
 export default function RootLayout({

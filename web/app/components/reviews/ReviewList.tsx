@@ -169,7 +169,7 @@ export default function ReviewList({
                 <div className="flex justify-end">
                     <button
                         onClick={() => setShowReviewForm(true)}
-                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
                     >
                         Write a Review
                     </button>

@@ -355,7 +355,6 @@ export default function ProductDocumentUpload({
     };
 
     const handleRemove = async (fileId: string) => {
-        console.log("---file to be deleted", fileId)
         const fileToRemove = uploadedFilesS3?.find((fd) => fd.id === fileId);
         if (!fileToRemove) return;
 

@@ -12,9 +12,7 @@ import {
     type Cart,
     type CartItem,
     type CartResponse,
-    type UpdateCartItemData,
 } from '@/lib/api/cart';
-import { useAuth } from '@/contexts/AuthContext';
 
 export interface UseCartReturn {
     cart: Cart | null;
@@ -64,7 +62,6 @@ export function useCart(): UseCartReturn {
                 setCart(null);
             }
         } catch (err) {
-            console.log("cart err", err)
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
             setError(errorMessage);
             setCart(null);

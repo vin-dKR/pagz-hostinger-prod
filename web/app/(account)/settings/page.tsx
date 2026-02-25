@@ -166,7 +166,7 @@ function SettingsPageContent() {
     if (!user) {
         return (
             <div className="flex-1">
-                <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-8 sm:p-12 text-center">
+                <div className="bg-gray-50/50 rounded-2xl border border-red-100 p-8 sm:p-12 text-center">
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
                         <AlertTriangle className="text-red-600 w-8 h-8" />
                     </div>
@@ -207,7 +207,7 @@ function SettingsPageContent() {
                 )}
 
                 {/* Account Information Section */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6 mb-4 sm:mb-6">
                     <div className="flex items-center gap-3 mb-4 sm:mb-6">
                         <User className="w-5 h-5 sm:w-6 sm:h-6 text-[#008ECC]" />
                         <h2 className="text-lg sm:text-xl font-hkgb text-gray-900">
@@ -263,7 +263,7 @@ function SettingsPageContent() {
                 </div>
 
                 {/* Password Section */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6 mb-4 sm:mb-6">
                     <div className="flex items-center gap-3 mb-4 sm:mb-6">
                         <Lock className="w-5 h-5 sm:w-6 sm:h-6 text-[#008ECC]" />
                         <h2 className="text-lg sm:text-xl font-hkgb text-gray-900">
@@ -361,7 +361,7 @@ function SettingsPageContent() {
                 </div>
 
                 {/* Notification Preferences */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6 mb-4 sm:mb-6">
                     <div className="flex items-center gap-3 mb-4 sm:mb-6">
                         <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-[#008ECC]" />
                         <h2 className="text-lg sm:text-xl font-hkgb text-gray-900">
@@ -409,7 +409,7 @@ function SettingsPageContent() {
                 </div>
 
                 {/* Danger Zone */}
-                <div className="bg-white rounded-2xl border-2 border-red-200 shadow-sm p-4 sm:p-6">
+                <div className="bg-gray-50/50 rounded-2xl border-2 border-red-200 p-4 sm:p-6">
                     <div className="flex items-center gap-3 mb-4">
                         <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-red-600" />
                         <h2 className="text-lg sm:text-xl font-hkgb text-red-600">

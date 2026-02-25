@@ -344,7 +344,7 @@ function CartPageContent() {
                             )}
 
                             {items.length === 0 ? (
-                                <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 lg:p-12 text-center">
+                                <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-100 p-6 sm:p-8 lg:p-12 text-center">
                                     <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 sm:mb-5 rounded-full bg-gray-50 flex items-center justify-center">
                                         <ShoppingCart className="text-gray-400 w-6 h-6 sm:w-8 sm:h-8" strokeWidth={1.5} />
                                     </div>
@@ -354,7 +354,7 @@ function CartPageContent() {
                                     </p>
                                     <Link
                                         href="/products"
-                                        className="inline-flex items-center justify-center px-5 sm:px-6 py-2.5 sm:py-3 bg-blue-500 text-white rounded-lg hover:bg-[#008ECC] active:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow font-medium text-sm sm:text-base"
+                                        className="inline-flex items-center justify-center px-5 sm:px-6 py-2.5 sm:py-3 bg-blue-500 border border-blue-600 text-white rounded-xl hover:bg-blue-600 transition-all duration-200 font-medium text-sm sm:text-base"
                                     >
                                         Continue Shopping
                                     </Link>

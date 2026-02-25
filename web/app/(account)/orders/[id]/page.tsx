@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { getOrder, type Order, type OrderStatusHistory } from "@/lib/api/orders";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
+import { downloadInvoicePDF } from "@/lib/api/invoice";
+import { toastSuccess, toastError } from "@/lib/utils/toast";
 
 interface OrderItem {
     id: string;
@@ -257,6 +259,7 @@ function OrderDetailsPageContent({
     const [order, setOrder] = useState<OrderDetails | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [downloadingInvoice, setDownloadingInvoice] = useState(false);
 
     useEffect(() => {
         async function fetchOrder() {
@@ -281,6 +284,19 @@ function OrderDetailsPageContent({
         fetchOrder();
     }, [id]);
 
+    const handleDownloadInvoice = async () => {
+        if (!order) return;
+        setDownloadingInvoice(true);
+        try {
+            await downloadInvoicePDF(order.id);
+            toastSuccess('Invoice downloaded successfully');
+        } catch (err) {
+            toastError(err instanceof Error ? err.message : 'Failed to download invoice');
+        } finally {
+            setDownloadingInvoice(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex-1 flex items-center justify-center min-h-[400px]">
@@ -293,7 +309,7 @@ function OrderDetailsPageContent({
         return (
             <>
                 <div className="flex-1">
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 sm:p-12 text-center">
+                    <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-8 sm:p-12 text-center">
                         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
                             <Package className="text-gray-400 w-8 h-8" />
                         </div>
@@ -352,11 +368,11 @@ function OrderDetailsPageContent({
                     {/* Left Column - Order Items & Timeline */}
                     <div className="lg:col-span-2 space-y-4 sm:space-y-6">
                         {/* Order Items */}
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6">
                             <h2 className="text-lg sm:text-xl font-hkgb text-gray-900 mb-4">
                                 Order Items ({order.items.length})
                             </h2>
-                            <div className="space-y-4">
+                            <div className="space-y-4 bg-white">
                                 {order.items.map((item) => (
                                     <div
                                         key={item.id}
@@ -449,7 +465,7 @@ function OrderDetailsPageContent({
                         </div>
 
                         {/* Order Status Timeline */}
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6">
                             <h2 className="text-lg sm:text-xl font-hkgb text-gray-900 mb-4">
                                 Order Status Timeline
                             </h2>
@@ -517,7 +533,7 @@ function OrderDetailsPageContent({
 
                         {/* Tracking Information */}
                         {order.trackingNumber && (
-                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                            <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6">
                                 <div className="flex items-center gap-3 mb-4">
                                     <Truck className="text-[#008ECC] w-5 h-5 sm:w-6 sm:h-6" />
                                     <h2 className="text-lg sm:text-xl font-hkgb text-gray-900">
@@ -554,7 +570,7 @@ function OrderDetailsPageContent({
                     {/* Right Column - Order Summary & Details */}
                     <div className="space-y-4 sm:space-y-6">
                         {/* Order Summary */}
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6">
                             <h2 className="text-lg sm:text-xl font-hkgb text-gray-900 mb-4">
                                 Order Summary
                             </h2>
@@ -627,7 +643,7 @@ function OrderDetailsPageContent({
                         </div>
 
                         {/* Shipping Address */}
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6">
                             <div className="flex items-center gap-3 mb-4">
                                 <MapPin className="text-[#008ECC] w-5 h-5 sm:w-6 sm:h-6" />
                                 <h2 className="text-lg sm:text-xl font-hkgb text-gray-900">
@@ -656,7 +672,7 @@ function OrderDetailsPageContent({
                         </div>
 
                         {/* Payment Information */}
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6">
                             <div className="flex items-center gap-3 mb-4">
                                 <CreditCard className="text-[#008ECC] w-5 h-5 sm:w-6 sm:h-6" />
                                 <h2 className="text-lg sm:text-xl font-hkgb text-gray-900">
@@ -684,17 +700,11 @@ function OrderDetailsPageContent({
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
+                        <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6">
                             <h2 className="text-lg sm:text-xl font-hkgb text-gray-900 mb-4">
                                 Order Actions
                             </h2>
                             <div className="space-y-3">
-                                {/* Primary Actions */}
-                                {order.status === "Delivered" && (
-                                    <button className="w-full px-4 py-2.5 bg-[#008ECC] text-white rounded-lg hover:bg-[#0077B3] transition-colors font-medium text-sm">
-                                        Reorder All Items
-                                    </button>
-                                )}
                                 {order.status === "Shipped" && (
                                     <button className="w-full px-4 py-2.5 bg-[#008ECC] text-white rounded-lg hover:bg-[#0077B3] transition-colors font-medium text-sm">
                                         Track Order
@@ -707,22 +717,35 @@ function OrderDetailsPageContent({
                                 )}
 
                                 {/* Secondary Actions */}
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button className="flex items-center justify-center gap-2 px-3 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">
-                                        <Download className="w-4 h-4" />
-                                        Invoice
+                                <div className="flex flex-col gap-2 ">
+                                    <button 
+                                        onClick={handleDownloadInvoice}
+                                        disabled={downloadingInvoice}
+                                        className="bg-blue-500 flex items-center justify-center gap-2 px-3 py-2.5 border border-blue-600 text-white rounded-xl hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {downloadingInvoice ? (
+                                            <>
+                                                <BarsSpinner />
+                                                Downloading...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Download className="w-4 h-4" />
+                                                Invoice
+                                            </>
+                                        )}
                                     </button>
-                                    <button className="flex items-center justify-center gap-2 px-3 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">
-                                        <Printer className="w-4 h-4" />
-                                        Print
-                                    </button>
-                                </div>
-
                                 {/* Tertiary Actions */}
-                                <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">
+                                <a 
+                                    href="https://wa.me/1234567890" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="bg-white w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-medium"
+                                >
                                     <HelpCircle className="w-4 h-4" />
                                     Need Help?
-                                </button>
+                                </a>
+                                </div>
                             </div>
                         </div>
                     </div>

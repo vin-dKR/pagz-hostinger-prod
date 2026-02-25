@@ -9,11 +9,13 @@ const nextConfig = {
     // Power optimization for better chunk loading
     poweredByHeader: false,
     
-    // Optimize production builds
-    swcMinify: true,
+    // Turbopack configuration (Next.js 16+ uses Turbopack by default)
+    // Empty config silences the warning, webpack config will still work for production builds
+    turbopack: {},
     
     // Improve chunk loading reliability
     // This helps with chunk loading errors in production
+    // Note: This webpack config is used for production builds, Turbopack is used for dev
     webpack: (config, { isServer }) => {
         if (!isServer) {
             // Client-side webpack config

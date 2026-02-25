@@ -46,7 +46,7 @@ export default function ProfileSidebar() {
         <>
             {/* Mobile Header with Toggle Button */}
             <div className="lg:hidden mb-4">
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#008ECC] to-blue-400 flex items-center justify-center">
@@ -78,7 +78,7 @@ export default function ProfileSidebar() {
             <aside className="hidden lg:block w-64 shrink-0">
                 {/* Profile Summary - Desktop Only */}
                 {!isProfilePage && (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+                    <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 mb-4">
                         <div className="flex items-center gap-3 mb-3">
                             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#008ECC] to-blue-400 flex items-center justify-center">
                                 <User className="w-6 h-6 text-white" />
@@ -104,7 +104,7 @@ export default function ProfileSidebar() {
                 )}
 
                 {/* Primary Navigation */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 overflow-hidden">
                     <nav className="flex flex-col p-1 gap-1">
                         {tabs.map((tab) => {
                             const Icon = tab.icon;
@@ -164,7 +164,7 @@ export default function ProfileSidebar() {
                     />
 
                     {/* Sidebar Panel */}
-                    <div className="fixed inset-y-0 left-0 w-80 bg-white z-50 lg:hidden shadow-xl transform transition-transform duration-300 ease-in-out">
+                    <div className="fixed inset-y-0 left-0 w-80 bg-gray-50/50 z-50 lg:hidden shadow-xl transform transition-transform duration-300 ease-in-out">
                         <div className="h-full flex flex-col">
                             {/* Mobile Menu Header */}
                             <div className="p-4 border-b border-gray-100">
@@ -272,7 +272,7 @@ export default function ProfileSidebar() {
 
             {/* Mobile Bottom Navigation (Alternative) */}
             {!isMobileMenuOpen && (
-                <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-30">
+                <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-gray-50/50 border-t border-gray-100 z-30">
                     <div className="flex items-center justify-around p-2">
                         {tabs.map((tab) => {
                             const Icon = tab.icon;
@@ -281,7 +281,7 @@ export default function ProfileSidebar() {
                                 <Link
                                     key={tab.id}
                                     href={tab.href}
-                                    className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${active
+                                    className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-200 ${active
                                         ? "text-[#008ECC]"
                                         : "text-gray-600"
                                         }`}

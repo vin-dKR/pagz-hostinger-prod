@@ -274,11 +274,15 @@ export const getDashboardOverview = async (req: Request, res: Response, next: Ne
             expiresAt: coupon.validUntil ? coupon.validUntil.toISOString() : null,
         }));
 
-        // Time series data (last 30 days)
+        // Time series data (last 30 days including today)
+        const todayEnd = new Date(now);
+        todayEnd.setHours(23, 59, 59, 999);
+        
         const ordersLast30DaysRaw = await prisma.order.findMany({
             where: {
                 createdAt: {
                     gte: last30DaysStart,
+                    lte: todayEnd, // Include today's orders
                 },
                 paymentStatus: "SUCCESS",
             },
@@ -293,7 +297,12 @@ export const getDashboardOverview = async (req: Request, res: Response, next: Ne
         const ordersCountByDate = new Map<string, number>();
 
         for (const order of ordersLast30DaysRaw) {
-            const dateKey = order.createdAt.toISOString().slice(0, 10); // YYYY-MM-DD
+            // Use local date to avoid timezone issues
+            const orderDate = new Date(order.createdAt);
+            const year = orderDate.getFullYear();
+            const month = String(orderDate.getMonth() + 1).padStart(2, '0');
+            const day = String(orderDate.getDate()).padStart(2, '0');
+            const dateKey = `${year}-${month}-${day}`;
 
             revenueByDate.set(
                 dateKey,
@@ -308,11 +317,21 @@ export const getDashboardOverview = async (req: Request, res: Response, next: Ne
         const revenueLast30Days: Array<{ date: string; revenue: number }> = [];
         const ordersLast30Days: Array<{ date: string; count: number }> = [];
 
+        // Generate last 30 days including today
+        // Start from 29 days ago and go up to today (30 days total)
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        
         for (let i = 0; i < 30; i++) {
             const current = new Date(last30DaysStart);
             current.setDate(last30DaysStart.getDate() + i);
+            current.setHours(0, 0, 0, 0);
 
-            const dateKey = current.toISOString().slice(0, 10);
+            // Format date as YYYY-MM-DD in local timezone to avoid timezone issues
+            const year = current.getFullYear();
+            const month = String(current.getMonth() + 1).padStart(2, '0');
+            const day = String(current.getDate()).padStart(2, '0');
+            const dateKey = `${year}-${month}-${day}`;
 
             revenueLast30Days.push({
                 date: dateKey,

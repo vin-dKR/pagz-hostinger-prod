@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
+import { imageLoader } from "@/lib/utils/image-loader";
 import ProductRating from "./ProductRating";
 import PriceDisplay from "./PriceDisplay";
 
@@ -32,13 +34,29 @@ export default function RelatedProducts({ products }: RelatedProductsProps) {
                             <Link
                                 key={product.id}
                                 href={`/products/${product.id}`}
-                                className="shrink-0 w-64 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden"
+                                className="shrink-0 w-64 bg-gray-50/50 rounded-xl border border-gray-100 transition-all duration-200 overflow-hidden"
                             >
                                 {/* Product Image */}
-                                <div className="relative aspect-square bg-gray-100">
-                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                                        <span className="text-gray-400 text-sm">Product Image</span>
-                                    </div>
+                                <div className="relative aspect-square bg-gray-100 overflow-hidden">
+                                    {product.image ? (
+                                        <Image
+                                            src={product.image}
+                                            alt={product.name || 'Product image'}
+                                            fill
+                                            className="object-cover"
+                                            sizes="(max-width: 768px) 50vw, 25vw"
+                                            loader={imageLoader}
+                                        />
+                                    ) : (
+                                        <Image
+                                            src={'/images/pagz-logo.png'}
+                                            alt={product.name || 'Product image'}
+                                            fill
+                                            className="object-cover"
+                                            sizes="(max-width: 768px) 50vw, 25vw"
+                                            loader={imageLoader}
+                                        />
+                                    )}
                                 </div>
 
                                 {/* Product Info */}

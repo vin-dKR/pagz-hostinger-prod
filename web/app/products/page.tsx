@@ -250,7 +250,6 @@ function ProductsPageChild() {
 
     const handleAddToCart = (productId: string) => {
         // Handle add to cart logic
-        console.log("Add to cart:", productId);
     };
 
     // Loading state

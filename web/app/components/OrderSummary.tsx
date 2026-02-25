@@ -18,7 +18,6 @@ export default function OrderSummary({
 
     const handleApplyPromo = () => {
         // Handle promo code application
-        console.log("Apply promo code:", promoCode);
     };
 
     return (

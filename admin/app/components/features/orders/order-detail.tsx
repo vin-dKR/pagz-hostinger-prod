@@ -18,7 +18,6 @@ import { Label } from '@/app/components/ui/label';
 import {
     getOrder,
     updateOrderStatus,
-    getOrderInvoice,
     markAsShipped,
     markAsDelivered,
     markPaymentAsPaid,
@@ -26,13 +25,13 @@ import {
     type Order,
     type OrderStatus
 } from '@/lib/api/orders.service';
+import { downloadInvoicePDF, getInvoicePDFBlobUrl } from '@/lib/api/invoice.service';
 import { formatCurrency, formatDateTime } from '@/lib/utils/format';
 import { OrderStatusBadge, PaymentStatusBadge } from './status-badge';
 import {
     ArrowLeft,
     Copy,
     Download,
-    Printer,
     Mail,
     Package,
     Truck,
@@ -42,7 +41,7 @@ import {
     User
 } from 'lucide-react';
 import Link from 'next/link';
-import { toastError, toastSuccess, toastWarning, toastPromise } from '@/lib/utils/toast';
+import { toastError, toastSuccess, toastWarning } from '@/lib/utils/toast';
 import Image from 'next/image';
 import { imageLoader } from '@/lib/utils/image-loader';
 
@@ -56,6 +55,9 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
     const [shippingModalOpen, setShippingModalOpen] = useState(false);
     const [paymentModalOpen, setPaymentModalOpen] = useState(false);
     const [refundModalOpen, setRefundModalOpen] = useState(false);
+    const [invoicePdfUrl, setInvoicePdfUrl] = useState<string | null>(null);
+    const [loadingInvoice, setLoadingInvoice] = useState(false);
+    const [downloadingInvoice, setDownloadingInvoice] = useState(false);
 
     useEffect(() => {
         if (!initialOrder) {
@@ -112,19 +114,46 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
         }
     };
 
-    const handlePrintInvoice = async () => {
+    const handleDownloadInvoice = async () => {
+        setDownloadingInvoice(true);
         try {
-            const invoiceHtml = await getOrderInvoice(orderId);
-            const printWindow = window.open('', '_blank');
-            if (printWindow) {
-                printWindow.document.write(invoiceHtml);
-                printWindow.document.close();
-                printWindow.print();
-            }
+            await downloadInvoicePDF(orderId);
+            toastSuccess('Invoice downloaded successfully');
         } catch (err) {
-            toastError(err instanceof Error ? err.message : 'Failed to load invoice');
+            toastError(err instanceof Error ? err.message : 'Failed to download invoice');
+        } finally {
+            setDownloadingInvoice(false);
         }
     };
+
+    const loadInvoicePDF = async () => {
+        setLoadingInvoice(true);
+        try {
+            const blobUrl = await getInvoicePDFBlobUrl(orderId);
+            setInvoicePdfUrl(blobUrl);
+        } catch (err) {
+            toastError(err instanceof Error ? err.message : 'Failed to load invoice');
+        } finally {
+            setLoadingInvoice(false);
+        }
+    };
+
+    // Load invoice PDF when invoice tab is opened
+    useEffect(() => {
+        if (activeTab === 'invoice' && !invoicePdfUrl && !loadingInvoice) {
+            setLoadingInvoice(true);
+            loadInvoicePDF();
+        }
+        
+        // Cleanup blob URL when component unmounts or tab changes
+        return () => {
+            if (invoicePdfUrl && activeTab !== 'invoice') {
+                window.URL.revokeObjectURL(invoicePdfUrl);
+                setInvoicePdfUrl(null);
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
 
     const copyOrderId = () => {
         navigator.clipboard.writeText(orderId);
@@ -191,9 +220,9 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                     <OrderStatusBadge status={order.status} />
                     <PaymentStatusBadge status={order.paymentStatus} />
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={handlePrintInvoice}>
-                            <Printer className="h-4 w-4 mr-2" />
-                            Print Invoice
+                        <Button variant="outline" onClick={handleDownloadInvoice}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download Invoice
                         </Button>
                         <Button variant="outline">
                             <Mail className="h-4 w-4 mr-2" />
@@ -766,22 +795,35 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                         <CardHeader>
                             <CardTitle className="flex items-center justify-between">
                                 <span>Invoice</span>
-                                <div className="flex gap-2">
-                                    <Button variant="outline" onClick={handlePrintInvoice}>
-                                        <Printer className="h-4 w-4 mr-2" />
-                                        Print
-                                    </Button>
-                                    <Button variant="outline">
-                                        <Download className="h-4 w-4 mr-2" />
-                                        Download PDF
-                                    </Button>
-                                </div>
+                                <Button 
+                                    variant="outline" 
+                                    onClick={handleDownloadInvoice}
+                                    isLoading={downloadingInvoice}
+                                    disabled={downloadingInvoice}
+                                >
+                                    <Download className="h-4 w-4 mr-2" />
+                                    Download Invoice
+                                </Button>
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="bg-gray-50 p-4 rounded">
-                                <p className="text-gray-600">Invoice will be displayed here. Use Print or Download to view the full invoice.</p>
-                            </div>
+                            {loadingInvoice || (activeTab === 'invoice' && !invoicePdfUrl) ? (
+                                <div className="flex items-center justify-center min-h-[600px]">
+                                    <PageLoading />
+                                </div>
+                            ) : invoicePdfUrl ? (
+                                <div className="w-full border rounded-lg overflow-hidden">
+                                    <iframe
+                                        src={invoicePdfUrl}
+                                        className="w-full h-[800px] border-0"
+                                        title="Invoice PDF"
+                                    />
+                                </div>
+                            ) : (
+                                <div className="bg-gray-50 p-4 rounded">
+                                    <p className="text-gray-600">Failed to load invoice. Please try downloading it.</p>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 </TabsContent>

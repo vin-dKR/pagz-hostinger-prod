@@ -4,9 +4,6 @@
  */
 
 import { ProductsList } from '@/app/components/features/products/products-list';
-import { Button } from '@/app/components/ui/button';
-import Link from 'next/link';
-import { Plus } from 'lucide-react';
 
 export default function ProductsPage() {
     return (
@@ -18,12 +15,6 @@ export default function ProductsPage() {
                         Manage your product catalog
                     </p>
                 </div>
-                <Link href="/products/new">
-                    <Button>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Product
-                    </Button>
-                </Link>
             </div>
 
             <ProductsList />

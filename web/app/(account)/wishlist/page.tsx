@@ -105,7 +105,7 @@ function WishlistPageContent() {
                 </div>
 
                 {/* Search Section */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6 mb-6">
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6 mb-6">
                     <div className="flex flex-col sm:flex-row gap-4">
                         {/* Search Input */}
                         <div className="flex-1 relative">
@@ -152,7 +152,7 @@ function WishlistPageContent() {
                     </div>
                 ) : filteredItems.length === 0 ? (
                     /* Empty State */
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 sm:p-12 text-center">
+                    <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-8 sm:p-12 text-center">
                         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
                             <Heart className="text-gray-400 w-8 h-8" />
                         </div>
@@ -192,7 +192,7 @@ function WishlistPageContent() {
                             return (
                                 <div
                                     key={item.id}
-                                    className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group relative"
+                                    className="bg-gray-50/50 rounded-2xl border border-gray-100 hover:shadow-md transition-all duration-300 overflow-hidden group relative"
                                 >
                                     {/* Product Image */}
                                     <Link

@@ -56,12 +56,12 @@ export default function BillingSummary({
                     </span>
                 </div>
 
-                <div className="flex justify-between text-sm sm:text-base text-gray-600">
+                {/* <div className="flex justify-between text-sm sm:text-base text-gray-600">
                     <span>Discount</span>
                     <span className={`font-medium ${discount > 0 ? 'text-red-600' : 'text-gray-600'}`}>
                         {discount > 0 ? '-' : ''}₹{discount.toFixed(2)}
                     </span>
-                </div>
+                </div> */}
 
                 <div className="flex justify-between text-sm sm:text-base text-gray-600">
                     <span>Coupon Applied</span>

@@ -147,7 +147,7 @@ export default function NewArrivalProducts() {
                         {products.map((product) => (
                             <div
                                 key={product.id}
-                                className="shrink-0 w-64 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden relative"
+                                className="shrink-0 w-64 bg-white rounded-2xl border border-gray-100 hover:shadow-md transition-all duration-200 overflow-hidden relative"
                             >
                                 {/* Product Image */}
                                 <Link href={`/products/${product.id}`} className="block relative aspect-square bg-gray-50 rounded-t-2xl overflow-hidden">
@@ -171,7 +171,7 @@ export default function NewArrivalProducts() {
                                         />
                                     )}
                                     {/* New Arrival Badge */}
-                                    <div className="absolute top-3 left-3 bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm">
+                                    <div className="absolute top-3 left-3 bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl">
                                         NEW
                                     </div>
                                 </Link>

@@ -3,6 +3,7 @@ import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { copyFile, generatePresignedUrl } from "../services/s3.js";
+import { generateInvoicePDF } from "../services/pdfGenerator.js";
 
 // Customer: Create order
 export const createOrder = async (req: Request, res: Response, next: NextFunction) => {
@@ -2037,6 +2038,178 @@ export const getOrderInvoice = async (req: Request, res: Response, next: NextFun
 
         res.setHeader('Content-Type', 'text/html');
         return res.send(invoiceHTML);
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get order invoice as PDF
+ * Works for both admin and customer (based on auth)
+ */
+export const getOrderInvoicePDF = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { id } = req.params;
+        const isAdmin = req.user?.type === "admin";
+
+        // Fetch order with all necessary relations
+        const order = await prisma.order.findUnique({
+            where: { id: id as string },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone: true,
+                    },
+                },
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                category: true,
+                                images: {
+                                    where: { isPrimary: true },
+                                    take: 1,
+                                },
+                            },
+                        },
+                        variant: true,
+                        addons: true, // CRITICAL: Include addons
+                    },
+                },
+                address: true,
+                payments: {
+                    where: { status: "SUCCESS" },
+                    take: 1,
+                    orderBy: { createdAt: "desc" },
+                },
+            },
+        });
+
+        if (!order) {
+            throw new NotFoundError("Order not found");
+        }
+
+        // Verify access: customer can only access their own orders
+        if (!isAdmin && order.userId !== req.user?.id) {
+            throw new UnauthorizedError("You don't have access to this order");
+        }
+
+        // Calculate billing summary
+        const baseSubtotal = order.subtotal !== null && order.subtotal !== undefined
+            ? Number(order.subtotal)
+            : order.items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+
+        const addonsSubtotal = order.addonsSubtotal !== null && order.addonsSubtotal !== undefined
+            ? Number(order.addonsSubtotal)
+            : order.items.reduce((sum, item) => {
+                const addons = Array.isArray((item as any).addons) ? (item as any).addons : [];
+                const itemAddonsTotal = addons.reduce((addonSum: number, addon: any) => {
+                    const rawPrice =
+                        addon.priceModifier !== null && addon.priceModifier !== undefined
+                            ? Number(addon.priceModifier)
+                            : addon.basePrice !== null && addon.basePrice !== undefined
+                                ? Number(addon.basePrice)
+                                : 0;
+                    const multiplier = addon.quantityMultiplier ? item.quantity : 1;
+                    return addonSum + rawPrice * multiplier;
+                }, 0);
+                return sum + itemAddonsTotal;
+            }, 0);
+
+        const subtotal = baseSubtotal + addonsSubtotal;
+        const discount = order.discountAmount ? Number(order.discountAmount) : 0;
+        const shipping = order.shippingCharges ? Number(order.shippingCharges) : 0;
+        const tax = 0; // Calculate tax if needed
+        const total = Number(order.total);
+
+        // Generate invoice number
+        const month = String(new Date(order.createdAt).getMonth() + 1).padStart(2, '0');
+        const invoiceNumber = `INV-${new Date(order.createdAt).getFullYear()}-${month}-${order.id.slice(0, 8).toUpperCase()}`;
+
+        // Prepare invoice data
+        const invoiceData = {
+            invoiceNumber,
+            orderDate: new Date(order.createdAt).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+            }),
+            orderId: order.id,
+            customer: {
+                name: order.user?.name || 'Customer',
+                email: order.user?.email || '',
+                phone: order.user?.phone || undefined,
+            },
+            shippingAddress: {
+                street: order.address?.street || '',
+                city: order.address?.city || '',
+                state: order.address?.state || '',
+                zipCode: order.address?.zipCode || '',
+                country: order.address?.country || 'India',
+            },
+            items: order.items.map((item: any) => {
+                const addons = Array.isArray(item.addons) ? item.addons : [];
+                return {
+                    name: item.product?.name || 'Product',
+                    variant: item.variant?.name,
+                    quantity: item.quantity,
+                    price: Number(item.price),
+                    total: Number(item.price) * item.quantity,
+                    addons: addons.length > 0 ? addons.map((addon: any) => {
+                        const specValues = (addon.specificationValues || {}) as Record<string, any>;
+                        const addonName = Object.entries(specValues)
+                            .map(([key, value]) => `${key}: ${value}`)
+                            .join(', ') || 'Addon';
+                        const rawPrice =
+                            addon.priceModifier !== null && addon.priceModifier !== undefined
+                                ? Number(addon.priceModifier)
+                                : addon.basePrice !== null && addon.basePrice !== undefined
+                                    ? Number(addon.basePrice)
+                                    : 0;
+                        const multiplier = addon.quantityMultiplier ? item.quantity : 1;
+                        return {
+                            name: addonName,
+                            price: rawPrice * multiplier,
+                        };
+                    }) : undefined,
+                };
+            }),
+            billing: {
+                baseSubtotal,
+                addonsSubtotal,
+                subtotal,
+                discount,
+                shipping,
+                tax,
+                total,
+            },
+            payment: {
+                method: order.paymentMethod === 'ONLINE' ? 'Online Payment' : 'Cash on Delivery',
+                status: order.paymentStatus,
+                transactionId: order.payments?.[0]?.razorpayPaymentId || order.payments?.[0]?.razorpayOrderId || undefined,
+            },
+            company: {
+                name: process.env.COMPANY_NAME || 'pagz',
+                address: process.env.COMPANY_ADDRESS || 'Company Address',
+                phone: process.env.COMPANY_PHONE || '+91 1234567890',
+                email: process.env.COMPANY_EMAIL || 'info@pagz.com',
+                gstin: process.env.COMPANY_GSTIN,
+            },
+        };
+
+        // Generate PDF
+        const pdfBuffer = await generateInvoicePDF(invoiceData);
+
+        // Set response headers
+        const filename = `Invoice-${invoiceNumber}.pdf`;
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', pdfBuffer.length.toString());
+
+        return res.send(pdfBuffer);
     } catch (error) {
         next(error);
     }
