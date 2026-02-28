@@ -26,7 +26,6 @@ import {
 } from '@/lib/api/categories.service';
 import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X } from 'lucide-react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
 
@@ -423,7 +422,36 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
 
                         {filteredAvailableAddons.length > 0 && (
                             <div className="space-y-2">
-                                <Label>Available Addons</Label>
+                                <div className="flex items-center justify-between">
+                                    <Label>Available Addons</Label>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                            const allSelected = filteredAvailableAddons.every(addon => selectedAddonIds.includes(addon.id));
+                                            if (allSelected) {
+                                                // Deselect all
+                                                setSelectedAddonIds(prev => prev.filter(id => !filteredAvailableAddons.some(addon => addon.id === id)));
+                                            } else {
+                                                // Select all
+                                                const addonIdsToAdd = filteredAvailableAddons.map(addon => addon.id);
+                                                setSelectedAddonIds(prev => {
+                                                    const newIds = [...prev];
+                                                    addonIdsToAdd.forEach(id => {
+                                                        if (!newIds.includes(id)) {
+                                                            newIds.push(id);
+                                                        }
+                                                    });
+                                                    return newIds;
+                                                });
+                                            }
+                                        }}
+                                        className="h-7 text-xs"
+                                    >
+                                        {filteredAvailableAddons.every(addon => selectedAddonIds.includes(addon.id)) ? 'Deselect All' : 'Select All'}
+                                    </Button>
+                                </div>
                                 {filteredAvailableAddons.length < availableAddons.length && (
                                     <p className="text-xs text-blue-600">
                                         Showing {filteredAvailableAddons.length} of {availableAddons.length} addons (filtered by product specifications)

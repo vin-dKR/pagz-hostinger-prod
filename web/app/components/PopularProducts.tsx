@@ -162,7 +162,7 @@ export default function PopularProducts() {
                                         />
                                     ) : (
                                         <Image
-                                            src={'/images/pagz-logo.png'}
+                                            src={'/images/logo.png'}
                                             alt={product.name || 'Product image'}
                                             fill
                                             className="object-cover"

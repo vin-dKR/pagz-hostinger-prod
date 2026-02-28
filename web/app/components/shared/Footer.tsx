@@ -77,13 +77,14 @@ export default function Footer() {
                         <div className="flex flex-col lg:flex-row gap-6 md:gap-8 lg:gap-12 xl:gap-24">
                             {/* Column 1: Brand Info - Fixed width */}
                             <div className="lg:w-[280px] xl:w-[350px]">
-                                <Link href="/" className="flex items-center gap-2 mb-4 md:mb-6">
+                                <Link href="/" className="flex items-center gap-2 mb-4 md:mb-6 mt-10 sm:mt-0">
                                     <Image
-                                        src="/images/pagz-logo.png"
+                                        src="/images/logo.png"
                                         alt="PAGZ logo"
-                                        width={100}
-                                        height={100}
-                                        className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28"
+                                        width={3860}
+                                        height={819}
+                                        className="w-32 h-auto sm:w-40 sm:h-auto md:w-48 md:h-auto lg:w-54 lg:h-auto"
+                                        priority
                                     />
                                 </Link>
                                 <p className="text-gray-600 text-xs sm:text-sm mb-4 md:mb-6 lg:mb-8 leading-relaxed">

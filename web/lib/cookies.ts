@@ -7,7 +7,7 @@
  * Set a cookie
  */
 export function setCookie(name: string, value: string, days: number = 7): void {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
 
     const expires = new Date();
     expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
@@ -47,7 +47,7 @@ export function getCookie(name: string): string | null {
  * Remove a cookie
  */
 export function removeCookie(name: string): void {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
 
     document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;SameSite=Strict${window.location.protocol === 'https:' ? ';Secure' : ''
         }`;

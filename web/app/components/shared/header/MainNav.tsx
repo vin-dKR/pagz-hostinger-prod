@@ -65,13 +65,13 @@ export function MainNav({
                 <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-between gap-3 sm:gap-4 py-3">
                         {/* Logo */}
-                        <Link href="/" className="flex items-center gap-2 shrink-0">
+                        <Link href="/" className="flex items-center">
                             <Image
-                                src="/images/pagz-logo.png"
+                                src="/images/logo.png"
                                 alt="PAGZ logo"
-                                width={72}
-                                height={72}
-                                className="w-16 h-16 lg:w-20 lg:h-20"
+                                width={3860}
+                                height={819}
+                                className="w-32 h-auto sm:w-40 sm:h-auto md:w-48 md:h-auto lg:w-54 lg:h-auto"
                                 priority
                             />
                         </Link>

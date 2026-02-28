@@ -12,18 +12,57 @@ export default function ChunkErrorHandler() {
     const maxRetries = 3;
 
     useEffect(() => {
+        // Also listen for script tag errors directly
+        const handleScriptError = (event: Event) => {
+            const target = event.target as HTMLScriptElement;
+            if (target?.tagName === 'SCRIPT' && target.src) {
+                const src = target.src;
+                if (src.includes('_next/static/chunks') || src.includes('_next/static')) {
+                    console.warn('[ChunkErrorHandler] Script loading error detected:', src);
+                    
+                    if (retryCountRef.current >= maxRetries) {
+                        console.error('[ChunkErrorHandler] Max retries reached for script error');
+                        return;
+                    }
+                    
+                    retryCountRef.current += 1;
+                    
+                    // Wait before retrying
+                    const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 5000);
+                    
+                    setTimeout(() => {
+                        // Clear service worker cache if present
+                        if ('serviceWorker' in navigator) {
+                            navigator.serviceWorker.getRegistrations().then(registrations => {
+                                registrations.forEach(registration => registration.unregister());
+                            });
+                        }
+                        // Force reload with cache bypass
+                        window.location.href = window.location.href.split('?')[0] + '?_cb=' + Date.now();
+                    }, delay);
+                }
+            }
+        };
+        
         // Handle chunk loading errors
         const handleChunkError = (event: ErrorEvent) => {
             const error = event.error;
             const target = event.target as HTMLElement;
             
             // Check if it's a chunk loading error
+            const errorMessage = error?.message || '';
+            const errorName = error?.name || '';
+            const scriptSrc = (target as HTMLScriptElement)?.src || target?.getAttribute('src') || '';
+            
             const isChunkError = 
-                error?.name === 'ChunkLoadError' ||
-                error?.message?.includes('Failed to load chunk') ||
-                error?.message?.includes('Loading chunk') ||
-                (error?.message && typeof error.message === 'string' && error.message.includes('chunk')) ||
-                (target?.tagName === 'SCRIPT' && target.getAttribute('src')?.includes('_next/static/chunks'));
+                errorName === 'ChunkLoadError' ||
+                errorMessage.includes('Failed to load chunk') ||
+                errorMessage.includes('Loading chunk') ||
+                errorMessage.includes('Loading failed for the <script>') ||
+                errorMessage.includes('ChunkLoadError') ||
+                (typeof errorMessage === 'string' && errorMessage.toLowerCase().includes('chunk')) ||
+                (target?.tagName === 'SCRIPT' && scriptSrc.includes('_next/static/chunks')) ||
+                (target?.tagName === 'SCRIPT' && scriptSrc.includes('_next/static'));
 
             if (isChunkError) {
                 console.warn('[ChunkErrorHandler] Chunk loading error detected:', {
@@ -58,35 +97,58 @@ export default function ChunkErrorHandler() {
                     const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 5000);
                     
                     setTimeout(() => {
+                        // Add cache-busting parameter to force fresh load
+                        const cacheBuster = `?v=${Date.now()}`;
+                        const urlWithCacheBust = chunkUrl.includes('?') 
+                            ? `${chunkUrl}&_cb=${Date.now()}` 
+                            : `${chunkUrl}${cacheBuster}`;
+                        
                         // Try to reload the chunk by creating a new script tag
                         const script = document.createElement('script');
-                        script.src = chunkUrl!;
+                        script.src = urlWithCacheBust;
                         script.async = true;
                         script.crossOrigin = 'anonymous';
+                        script.integrity = ''; // Clear integrity if present
                         
                         script.onload = () => {
                             console.log('[ChunkErrorHandler] Chunk reloaded successfully, reloading page');
                             retryCountRef.current = 0; // Reset on success
                             // Reload the page to apply the new chunk
-                            window.location.reload();
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 100);
                         };
                         
                         script.onerror = () => {
                             console.warn(`[ChunkErrorHandler] Failed to reload chunk (attempt ${retryCountRef.current}/${maxRetries})`);
                             if (retryCountRef.current >= maxRetries) {
-                                // Final attempt - reload the entire page
-                                console.warn('[ChunkErrorHandler] Max retries reached, reloading page');
-                                window.location.reload();
+                                // Final attempt - reload the entire page with cache bust
+                                console.warn('[ChunkErrorHandler] Max retries reached, reloading page with cache clear');
+                                // Clear service worker cache if present
+                                if ('serviceWorker' in navigator) {
+                                    navigator.serviceWorker.getRegistrations().then(registrations => {
+                                        registrations.forEach(registration => registration.unregister());
+                                    });
+                                }
+                                // Force reload with cache bypass
+                                window.location.href = window.location.href.split('?')[0] + '?_cb=' + Date.now();
                             }
                         };
                         
                         document.head.appendChild(script);
                     }, delay);
                 } else {
-                    // If we can't extract the URL, just reload the page after a delay
-                    console.warn('[ChunkErrorHandler] Chunk URL not found, reloading page');
+                    // If we can't extract the URL, just reload the page after a delay with cache bust
+                    console.warn('[ChunkErrorHandler] Chunk URL not found, reloading page with cache clear');
                     setTimeout(() => {
-                        window.location.reload();
+                        // Clear service worker cache if present
+                        if ('serviceWorker' in navigator) {
+                            navigator.serviceWorker.getRegistrations().then(registrations => {
+                                registrations.forEach(registration => registration.unregister());
+                            });
+                        }
+                        // Force reload with cache bypass
+                        window.location.href = window.location.href.split('?')[0] + '?_cb=' + Date.now();
                     }, 1000);
                 }
                 
@@ -96,6 +158,9 @@ export default function ChunkErrorHandler() {
             }
         };
 
+        // Listen for script errors
+        document.addEventListener('error', handleScriptError, true);
+        
         // Listen for unhandled errors (capture phase to catch script errors)
         window.addEventListener('error', handleChunkError, true);
 
@@ -103,11 +168,16 @@ export default function ChunkErrorHandler() {
         const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
             const reason = event.reason;
             
+            const reasonMessage = reason?.message || '';
+            const reasonName = reason?.name || '';
+            
             if (
-                reason?.name === 'ChunkLoadError' ||
-                reason?.message?.includes('Failed to load chunk') ||
-                reason?.message?.includes('Loading chunk') ||
-                (reason?.message && typeof reason.message === 'string' && reason.message.includes('chunk'))
+                reasonName === 'ChunkLoadError' ||
+                reasonMessage.includes('Failed to load chunk') ||
+                reasonMessage.includes('Loading chunk') ||
+                reasonMessage.includes('Loading failed for the <script>') ||
+                reasonMessage.includes('ChunkLoadError') ||
+                (typeof reasonMessage === 'string' && reasonMessage.toLowerCase().includes('chunk'))
             ) {
                 console.warn('[ChunkErrorHandler] Chunk loading promise rejection:', reason);
                 
@@ -115,13 +185,29 @@ export default function ChunkErrorHandler() {
                     retryCountRef.current += 1;
                     event.preventDefault();
                     
-                    // Try to reload the page
+                    // Try to reload the page with cache bust
                     const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 5000);
                     setTimeout(() => {
-                        window.location.reload();
+                        // Clear service worker cache if present
+                        if ('serviceWorker' in navigator) {
+                            navigator.serviceWorker.getRegistrations().then(registrations => {
+                                registrations.forEach(registration => registration.unregister());
+                            });
+                        }
+                        // Force reload with cache bypass
+                        window.location.href = window.location.href.split('?')[0] + '?_cb=' + Date.now();
                     }, delay);
                 } else {
                     console.error('[ChunkErrorHandler] Max retries reached for promise rejection');
+                    // Final attempt - clear cache and reload
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.getRegistrations().then(registrations => {
+                            registrations.forEach(registration => registration.unregister());
+                            window.location.href = window.location.href.split('?')[0] + '?_cb=' + Date.now();
+                        });
+                    } else {
+                        window.location.href = window.location.href.split('?')[0] + '?_cb=' + Date.now();
+                    }
                 }
             }
         };
@@ -130,6 +216,7 @@ export default function ChunkErrorHandler() {
 
         // Cleanup
         return () => {
+            document.removeEventListener('error', handleScriptError, true);
             window.removeEventListener('error', handleChunkError, true);
             window.removeEventListener('unhandledrejection', handleUnhandledRejection);
         };

@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
+import { useState, useEffect } from "react";
 import Header from "./Header";
 import Footer from "./Footer";
 
@@ -13,11 +14,20 @@ export default function ConditionalLayout({
 }) {
     const pathname = usePathname();
     const isAuthPage = pathname?.startsWith("/auth");
-    const { user, isAuthenticated } = useAuth();
-    const { items: cartItems } = useCart();
+    const { user, isAuthenticated, loading: authLoading } = useAuth();
+    const { items: cartItems, loading: cartLoading } = useCart();
+    const [isMounted, setIsMounted] = useState(false);
+
+    // Ensure component is mounted before using client-side values
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Create a key that changes when user or cart changes to force Header re-render
-    const headerKey = `${user?.id || 'anonymous'}-${cartItems.length}-${isAuthenticated}`;
+    // Use consistent values during SSR to prevent hydration mismatch
+    const headerKey = isMounted 
+        ? `${user?.id || 'anonymous'}-${cartItems.length}-${isAuthenticated}`
+        : 'ssr-initial';
 
     return (
         <>

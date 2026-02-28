@@ -16,7 +16,7 @@ const nextConfig = {
     // Improve chunk loading reliability
     // This helps with chunk loading errors in production
     // Note: This webpack config is used for production builds, Turbopack is used for dev
-    webpack: (config, { isServer }) => {
+    webpack: (config, { isServer, dev }) => {
         if (!isServer) {
             // Client-side webpack config
             config.optimization = {
@@ -45,8 +45,25 @@ const nextConfig = {
                     },
                 },
             };
+            
+            // Add error handling for chunk loading
+            if (!dev) {
+                config.output = {
+                    ...config.output,
+                    // Ensure chunks are properly named with hashes for cache busting
+                    chunkFilename: 'static/chunks/[name].[contenthash].js',
+                };
+            }
         }
         return config;
+    },
+    
+    // Add onDemandEntries configuration to help with chunk loading
+    onDemandEntries: {
+        // Period (in ms) where the server will keep pages in the buffer
+        maxInactiveAge: 25 * 1000,
+        // Number of pages that should be kept simultaneously without being disposed
+        pagesBufferLength: 2,
     },
     
     images: {
