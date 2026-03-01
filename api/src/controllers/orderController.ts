@@ -749,11 +749,11 @@ export const getAdminOrders = async (req: Request, res: Response, next: NextFunc
             }
         }
 
-        // Search functionality - search by order ID, user email, user name, phone, product name, address, razorpay IDs
+        // Search functionality - search by order ID, user email, user name, phone, product name, address, PhonePe IDs
         if (search) {
             const searchConditions: any[] = [
                 { id: { contains: search } },
-                { razorpayOrderId: { contains: search } },
+                { phonePeOrderId: { contains: search } },
                 {
                     user: {
                         OR: [
@@ -784,7 +784,7 @@ export const getAdminOrders = async (req: Request, res: Response, next: NextFunc
                 {
                     payments: {
                         some: {
-                            razorpayPaymentId: { contains: search },
+                            phonePeTransactionId: { contains: search },
                         },
                     },
                 },
@@ -2024,7 +2024,7 @@ export const getOrderInvoice = async (req: Request, res: Response, next: NextFun
             <h3>Payment Information</h3>
             <p><strong>Method:</strong> ${order.paymentMethod}</p>
             <p><strong>Status:</strong> ${order.paymentStatus}</p>
-            ${order.payments[0].razorpayPaymentId ? `<p><strong>Payment ID:</strong> ${order.payments[0].razorpayPaymentId}</p>` : ''}
+            ${order.payments[0].phonePeTransactionId ? `<p><strong>Payment ID:</strong> ${order.payments[0].phonePeTransactionId}</p>` : ''}
         </div>
         ` : ''}
 
@@ -2189,7 +2189,7 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
             payment: {
                 method: order.paymentMethod === 'ONLINE' ? 'Online Payment' : 'Cash on Delivery',
                 status: order.paymentStatus,
-                transactionId: order.payments?.[0]?.razorpayPaymentId || order.payments?.[0]?.razorpayOrderId || undefined,
+                transactionId: order.payments?.[0]?.phonePeTransactionId || order.payments?.[0]?.phonePeOrderId || undefined,
             },
             company: {
                 name: process.env.COMPANY_NAME || 'pagz',
@@ -2300,7 +2300,7 @@ export const exportOrders = async (req: Request, res: Response, next: NextFuncti
                 'State',
                 'Zip Code',
                 'Country',
-                'Razorpay Order ID',
+                'PhonePe Order ID',
                 'Created At',
                 'Updated At',
             ];
@@ -2326,7 +2326,7 @@ export const exportOrders = async (req: Request, res: Response, next: NextFuncti
                     address?.state || '',
                     address?.zipCode || '',
                     address?.country || '',
-                    order.razorpayOrderId || '',
+                    order.phonePeOrderId || '',
                     new Date(order.createdAt).toISOString(),
                     new Date(order.updatedAt).toISOString(),
                 ];

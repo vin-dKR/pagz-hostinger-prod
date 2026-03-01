@@ -13,9 +13,9 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useCheckout } from "@/hooks/checkout/useCheckout";
 import { useCart } from "@/contexts/CartContext";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
-import { createRazorpayOrderFromCart, verifyRazorpayPayment } from "@/lib/api/payments";
+import { createPhonePeOrder } from "@/lib/api/payments";
 import CheckoutFilesReview from "../components/CheckoutFilesReview";
-import { toastWarning, toastError, toastSuccess, toastPromise } from "@/lib/utils/toast";
+import { toastWarning, toastError, toastSuccess } from "@/lib/utils/toast";
 
 function CheckoutPageContent() {
     const searchParams = useSearchParams();
@@ -136,19 +136,6 @@ function CheckoutPageContent() {
         return (subtotal || 0) - discountAmount + selectedShippingFee;
     }, [subtotal, discountAmount, selectedShippingFee]);
 
-    async function loadRazorpayScript(): Promise<boolean> {
-        if (typeof window === "undefined") return false;
-        if ((window as any).Razorpay) return true;
-
-        return new Promise((resolve) => {
-            const script = document.createElement("script");
-            script.src = "https://checkout.razorpay.com/v1/checkout.js";
-            script.onload = () => resolve(true);
-            script.onerror = () => resolve(false);
-            document.body.appendChild(script);
-        });
-    }
-
     const handlePay = async () => {
         if (!selectedAddressId) {
             toastWarning("Please select a delivery address before proceeding to payment.");
@@ -163,11 +150,18 @@ function CheckoutPageContent() {
         try {
             setIsPaying(true);
 
-            // 1) Create Razorpay order directly from cart (order created in DB only after payment success)
-            const rpOrderResp = await createRazorpayOrderFromCart({
+            // Store selected cart item IDs in sessionStorage for removal after payment
+            const cartItemIds = cartItems
+                .filter(item => item.id !== 'buy-now-temp')
+                .map(item => item.id);
+            if (cartItemIds.length > 0) {
+                sessionStorage.setItem('pendingCartItemIds', JSON.stringify(cartItemIds));
+            }
+
+            // Create PhonePe order (returns redirect URL)
+            const response = await createPhonePeOrder({
                 items: cartItems.map((item: any) => {
                     // Extract addon IDs from cart item
-                    // Try from addons relation first, then from metadata
                     let addonIds: string[] = [];
                     if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
                         addonIds = item.addons.map((addon: any) => addon.id).filter((id: any): id is string => typeof id === 'string');
@@ -192,92 +186,21 @@ function CheckoutPageContent() {
                 shippingCharges: selectedShippingFee,
             });
 
-            if (!rpOrderResp.success || !rpOrderResp.data) {
-                throw new Error(rpOrderResp.error || "Failed to create Razorpay order");
+            if (!response.success || !response.data) {
+                throw new Error(response.error || "Failed to initiate payment");
             }
 
-            const rpData = rpOrderResp.data;
-
-            // 2) Load Razorpay checkout
-            const scriptLoaded = await loadRazorpayScript();
-            if (!scriptLoaded) {
-                throw new Error("Failed to load Razorpay checkout script");
+            // Clear buyNow data from sessionStorage if it exists
+            if (typeof window !== 'undefined' && sessionStorage.getItem('buyNow')) {
+                sessionStorage.removeItem('buyNow');
             }
 
-            const options: any = {
-                key: rpData.key,
-                amount: Math.round(rpData.amount * 100), // in paise
-                currency: rpData.currency,
-                name: "Custom Printing Store",
-                description: `Order payment`,
-                order_id: rpData.razorpayOrderId,
-                handler: async (response: any) => {
-                    try {
-                        // 3) Verify payment and create order in DB
-                        const verifyResp = await toastPromise(
-                            verifyRazorpayPayment({
-                                razorpay_order_id: response.razorpay_order_id,
-                                razorpay_payment_id: response.razorpay_payment_id,
-                                razorpay_signature: response.razorpay_signature,
-                            }),
-                            {
-                                loading: 'Verifying payment...',
-                                success: 'Payment verified successfully!',
-                                error: 'Payment verification failed. Please contact support if amount was deducted.',
-                            }
-                        );
-
-                        if (!verifyResp.success || !verifyResp.data || !verifyResp.data.verified) {
-                            toastError("Payment verification failed. If amount was deducted, please contact support.");
-                            return;
-                        }
-
-                        const orderId = verifyResp.data.orderId;
-
-                        // Files are already uploaded to S3 and stored in cart items
-                        // Order items are created with S3 URLs from cart items during payment verification
-
-                        // Clear buyNow data from sessionStorage if it exists
-                        if (typeof window !== 'undefined' && sessionStorage.getItem('buyNow')) {
-                            sessionStorage.removeItem('buyNow');
-                        }
-
-                        // Remove only ordered items from cart (not the entire cart)
-                        // Skip if this was a buyNow order (no cart items to remove)
-                        if (cartItems.some(item => item.id !== 'buy-now-temp')) {
-                            try {
-                                // Remove each ordered item from cart
-                                const removePromises = cartItems
-                                    .filter(item => item.id !== 'buy-now-temp')
-                                    .map(item => removeItem(item.id));
-                                await Promise.all(removePromises);
-                            } catch (clearError) {
-                                console.error("Failed to remove ordered items from cart:", clearError);
-                                // Don't block the redirect if removal fails
-                            }
-                        }
-
-                        toastSuccess('Order placed successfully!');
-                        setTimeout(() => {
-                            window.location.href = `/orders/${orderId}`;
-                        }, 1500);
-                    } catch (err) {
-                        console.error("Failed to verify payment", err);
-                        toastError("Payment verification failed. If amount was deducted, please contact support.");
-                    }
-                },
-                theme: {
-                    color: "#008ECC",
-                },
-            };
-
-            const rz = new (window as any).Razorpay(options);
-            rz.open();
+            // Redirect to PhonePe payment page
+            window.location.href = response.data.redirectUrl;
         } catch (err) {
             console.error("Payment error", err);
             const message = err instanceof Error ? err.message : "Payment failed. Please try again.";
             toastError(message);
-        } finally {
             setIsPaying(false);
         }
     };

@@ -72,7 +72,7 @@ export interface Order {
     status: OrderStatus;
     paymentMethod: PaymentMethod;
     paymentStatus: PaymentStatus;
-    razorpayOrderId?: string | null;
+    phonePeOrderId?: string | null;
     couponId?: string | null;
     address: Address;
     shippingAddress?: Address; // Alias for address for backward compatibility
@@ -115,10 +115,12 @@ export interface Payment {
     userId: string;
     amount: number;
     discountAmount?: number | null;
-    razorpayOrderId?: string | null;
-    razorpayPaymentId?: string | null;
+    phonePeOrderId?: string | null;
+    phonePeTransactionId?: string | null;
     status: PaymentStatus;
     method: PaymentMethod;
+    paymentInstrument?: string | null;
+    paymentDetails?: Record<string, any> | null;
     couponId?: string | null;
     createdAt: string;
     updatedAt: string;

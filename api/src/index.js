@@ -131,7 +131,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1", publicRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/payment", paymentRoutes);
-// Webhooks (public endpoints called by Razorpay, etc.)
+// Webhooks (public endpoints called by PhonePe, etc.)
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/v1/cart", cartRoutes);
 app.use("/api/v1/wishlist", wishlistRoutes);

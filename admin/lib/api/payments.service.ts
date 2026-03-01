@@ -14,10 +14,20 @@ export interface Payment {
   userId: string;
   amount: number;
   discountAmount?: number;
-  razorpayOrderId?: string;
-  razorpayPaymentId?: string;
+  phonePeOrderId?: string;
+  phonePeTransactionId?: string;
   status: PaymentStatus;
   method: PaymentMethod;
+  paymentInstrument?: string;
+  paymentDetails?: {
+    vpa?: string;
+    cardNetwork?: string;
+    cardType?: string;
+    last4?: string;
+    issuer?: string;
+    bankName?: string;
+    walletType?: string;
+  };
   couponId?: string;
   createdAt: string;
   updatedAt: string;
