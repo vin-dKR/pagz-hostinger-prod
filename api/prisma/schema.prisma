@@ -398,7 +398,7 @@ model Order {
   status          OrderStatus   @default(PENDING_REVIEW)
   paymentMethod   PaymentMethod
   paymentStatus   PaymentStatus @default(PENDING)
-  razorpayOrderId String?       @unique
+  phonePeOrderId  String?       @unique
   couponId        String? // Applied coupon
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -415,7 +415,7 @@ model Order {
   @@index([createdAt])
   @@index([userId, status])
   @@index([status, createdAt])
-  @@index([razorpayOrderId])
+  @@index([phonePeOrderId])
   @@map("orders")
 }
 
@@ -467,10 +467,12 @@ model Payment {
   userId            String
   amount            Decimal       @db.Decimal(10, 2)
   discountAmount    Decimal?      @db.Decimal(10, 2) // Discount from coupon
-  razorpayOrderId   String?       @unique
-  razorpayPaymentId String?       @unique
+  phonePeOrderId      String?       @unique
+  phonePeTransactionId String?      @unique
   status            PaymentStatus @default(PENDING)
   method            PaymentMethod
+  paymentInstrument String?       // UPI, CARD, NETBANKING, WALLET
+  paymentDetails    Json?         // { vpa, cardNetwork, last4, bankName, etc. }
   couponId          String? // Applied coupon
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -483,9 +485,29 @@ model Payment {
   @@index([orderId])
   @@index([status])
   @@index([userId, status])
-  @@index([razorpayOrderId])
-  @@index([razorpayPaymentId])
+  @@index([phonePeOrderId])
+  @@index([phonePeTransactionId])
   @@map("payments")
+}
+
+// PendingPayment model (stores cart data during PhonePe redirect)
+model PendingPayment {
+  id              String   @id @default(uuid())
+  merchantOrderId String   @unique
+  userId          String
+  addressId       String
+  items           Json
+  amount          Decimal  @db.Decimal(10, 2)
+  couponCode      String?
+  shippingCharges Decimal? @db.Decimal(10, 2)
+  status          String   @default("PENDING")
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+
+  @@index([merchantOrderId])
+  @@index([userId])
+  @@index([status])
+  @@map("pending_payments")
 }
 
 // Cart model (Shopping Cart)

@@ -353,23 +353,51 @@ export function PaymentDetail({ paymentId, initialPayment }: { paymentId: string
                             <CardTitle>Transaction Details</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {payment.razorpayOrderId || payment.razorpayPaymentId ? (
+                            {payment.phonePeOrderId || payment.phonePeTransactionId ? (
                                 <div className="space-y-4">
-                                    {payment.razorpayOrderId && (
+                                    {payment.phonePeOrderId && (
                                         <div>
-                                            <div className="text-sm text-gray-600">Razorpay Order ID</div>
-                                            <div className="font-mono text-sm">{payment.razorpayOrderId}</div>
+                                            <div className="text-sm text-gray-600">PhonePe Order ID</div>
+                                            <div className="font-mono text-sm">{payment.phonePeOrderId}</div>
                                         </div>
                                     )}
-                                    {payment.razorpayPaymentId && (
+                                    {payment.phonePeTransactionId && (
                                         <div>
-                                            <div className="text-sm text-gray-600">Razorpay Payment ID</div>
-                                            <div className="font-mono text-sm">{payment.razorpayPaymentId}</div>
+                                            <div className="text-sm text-gray-600">PhonePe Transaction ID</div>
+                                            <div className="font-mono text-sm">{payment.phonePeTransactionId}</div>
+                                        </div>
+                                    )}
+                                    {payment.paymentInstrument && (
+                                        <div>
+                                            <div className="text-sm text-gray-600">Payment Method</div>
+                                            <div className="font-medium text-sm">{payment.paymentInstrument}</div>
+                                        </div>
+                                    )}
+                                    {payment.paymentDetails && (
+                                        <div>
+                                            <div className="text-sm text-gray-600">Payment Details</div>
+                                            <div className="text-sm space-y-1 mt-1">
+                                                {payment.paymentDetails.vpa && (
+                                                    <div><span className="text-gray-500">UPI ID:</span> <span className="font-mono">{payment.paymentDetails.vpa}</span></div>
+                                                )}
+                                                {payment.paymentDetails.cardNetwork && (
+                                                    <div><span className="text-gray-500">Card:</span> {payment.paymentDetails.cardNetwork}{payment.paymentDetails.last4 ? ` ****${payment.paymentDetails.last4}` : ''}</div>
+                                                )}
+                                                {payment.paymentDetails.cardType && (
+                                                    <div><span className="text-gray-500">Type:</span> {payment.paymentDetails.cardType}</div>
+                                                )}
+                                                {payment.paymentDetails.bankName && (
+                                                    <div><span className="text-gray-500">Bank:</span> {payment.paymentDetails.bankName}</div>
+                                                )}
+                                                {payment.paymentDetails.walletType && (
+                                                    <div><span className="text-gray-500">Wallet:</span> {payment.paymentDetails.walletType}</div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
                             ) : (
-                                <div className="text-gray-500">No Razorpay transaction details available</div>
+                                <div className="text-gray-500">No PhonePe transaction details available</div>
                             )}
                         </CardContent>
                     </Card>

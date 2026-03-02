@@ -70,7 +70,7 @@ export interface Order {
     status: OrderStatus;
     paymentMethod: PaymentMethod;
     paymentStatus: PaymentStatus;
-    razorpayOrderId?: string;
+    phonePeOrderId?: string;
     couponId?: string;
     createdAt: string;
     updatedAt: string;

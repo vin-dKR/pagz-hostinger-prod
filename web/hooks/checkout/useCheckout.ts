@@ -72,7 +72,7 @@ export function useCheckout(): UseCheckoutReturn {
     } = useCart();
 
     // Fixed delivery fee (can be calculated based on subtotal or location)
-    const deliveryFee = 15;
+    const deliveryFee = 0;
 
     // Use buyNow data if available, otherwise use cart
     const effectiveCartItems = useMemo(() => {

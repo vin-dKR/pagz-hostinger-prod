@@ -707,9 +707,16 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                         <p className="text-sm text-gray-500">
                                                             {formatDateTime(payment.createdAt)}
                                                         </p>
-                                                        {payment.razorpayPaymentId && (
+                                                        {payment.phonePeTransactionId && (
                                                             <p className="text-xs text-gray-400 font-mono mt-1">
-                                                                ID: {payment.razorpayPaymentId}
+                                                                ID: {payment.phonePeTransactionId}
+                                                            </p>
+                                                        )}
+                                                        {payment.paymentInstrument && (
+                                                            <p className="text-xs text-gray-500 mt-1">
+                                                                via {payment.paymentInstrument}
+                                                                {payment.paymentDetails?.vpa ? ` (${payment.paymentDetails.vpa})` : ''}
+                                                                {payment.paymentDetails?.cardNetwork ? ` (${payment.paymentDetails.cardNetwork}${payment.paymentDetails?.last4 ? ` ****${payment.paymentDetails.last4}` : ''})` : ''}
                                                             </p>
                                                         )}
                                                     </div>
