@@ -44,6 +44,11 @@ function CheckoutPageContent() {
     const { removeItem } = useCart();
     const [isPaying, setIsPaying] = useState(false);
 
+    // Check if this is a buyNow flow (has buy-now-temp item)
+    const isBuyNowFlow = useMemo(() => {
+        return allCartItems.some(item => item.id === 'buy-now-temp');
+    }, [allCartItems]);
+
     // Get selected item IDs from URL params
     const selectedItemIds = useMemo(() => {
         const itemsParam = searchParams.get('items');
@@ -52,13 +57,30 @@ function CheckoutPageContent() {
     }, [searchParams]);
 
     // Filter cart items to only show selected items
+    // If buyNow flow, ignore URL params and show all items (buyNow item)
     const cartItems = useMemo(() => {
+        // If buyNow flow, always show all items (don't filter by URL params)
+        if (isBuyNowFlow) {
+            return allCartItems;
+        }
+        
         if (!selectedItemIds) {
             // If no selection, show all items (backward compatibility)
             return allCartItems;
         }
-        return allCartItems.filter(item => selectedItemIds.has(item.id));
-    }, [allCartItems, selectedItemIds]);
+        
+        // Filter by selected item IDs
+        const filtered = allCartItems.filter(item => selectedItemIds.has(item.id));
+        
+        // If filtering resulted in empty array but we have items, 
+        // it means URL params don't match - show all items instead
+        if (filtered.length === 0 && allCartItems.length > 0) {
+            console.warn('[checkout] URL params do not match any cart items, showing all items');
+            return allCartItems;
+        }
+        
+        return filtered;
+    }, [allCartItems, selectedItemIds, isBuyNowFlow]);
 
     // Recalculate totals for selected items only
     const mrp = useMemo(() => {

@@ -1,6 +1,6 @@
 import HeroSection from "../components/HeroSection";
 import PopularProducts from "../components/PopularProducts";
-import BestSeller from "../components/BestSeller";
+// import BestSeller from "../components/BestSeller";
 import CategoryProducts from "../components/CategoryProducts";
 import Testimonials from "../components/Testimonials";
 import NewArrivalProducts from "../components/NewArrivalProducts";
@@ -13,7 +13,7 @@ export default function Home() {
             <CategoryProducts />
             <NewArrivalProducts />
             <PopularProducts />
-            <BestSeller />
+            {/* <BestSeller /> */}
             <Testimonials />
             <BottomNavigation />
         </div>

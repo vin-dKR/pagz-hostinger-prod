@@ -768,6 +768,294 @@ export const getAdminPayments = async (req: Request, res: Response, next: NextFu
 
 /**
  * @openapi
+ * /api/v1/admin/payments/statistics:
+ *   get:
+ *     summary: Get payment statistics
+ *     description: Admin can view payment statistics including total revenue, payments by status, and period-based metrics
+ *     tags:
+ *       - Admin
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: dateFrom
+ *         in: query
+ *         required: false
+ *         description: Start date for filtering (ISO 8601 format)
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - name: dateTo
+ *         in: query
+ *         required: false
+ *         description: End date for filtering (ISO 8601 format)
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       200:
+ *         description: Payment statistics retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required:
+ *                 - success
+ *                 - data
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalPayments:
+ *                       type: integer
+ *                     payments:
+ *                       type: object
+ *                       properties:
+ *                         today:
+ *                           type: integer
+ *                         week:
+ *                           type: integer
+ *                         month:
+ *                           type: integer
+ *                     totalRevenue:
+ *                       type: number
+ *                     revenue:
+ *                       type: object
+ *                       properties:
+ *                         today:
+ *                           type: number
+ *                         week:
+ *                           type: number
+ *                         month:
+ *                           type: number
+ *                     paymentsByStatus:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           status:
+ *                             type: string
+ *                           count:
+ *                             type: integer
+ *                     paymentsByMethod:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           method:
+ *                             type: string
+ *                           count:
+ *                             type: integer
+ *                     pendingPaymentsCount:
+ *                       type: integer
+ *                     averagePaymentValue:
+ *                       type: number
+ *                     successfulPaymentsCount:
+ *                       type: integer
+ *                     failedPaymentsCount:
+ *                       type: integer
+ *       401:
+ *         description: Unauthorized - Admin authentication required
+ */
+// Admin: Get payment statistics
+export const getPaymentStatistics = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const dateFrom = req.query.dateFrom as string;
+        const dateTo = req.query.dateTo as string;
+
+        const where: any = {};
+        if (dateFrom || dateTo) {
+            where.createdAt = {};
+            if (dateFrom) {
+                where.createdAt.gte = new Date(dateFrom);
+            }
+            if (dateTo) {
+                where.createdAt.lte = new Date(dateTo);
+            }
+        }
+
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        // Total payments
+        const totalPayments = await prisma.payment.count({ where });
+
+        // Get amounts for each status
+        const [pendingData, successfulData, failedData, refundedData] = await Promise.all([
+            Promise.all([
+                prisma.payment.count({ where: { ...where, status: "PENDING" } }),
+                prisma.payment.aggregate({
+                    where: { ...where, status: "PENDING" },
+                    _sum: { amount: true },
+                }),
+            ]),
+            Promise.all([
+                prisma.payment.count({ where: { ...where, status: "SUCCESS" } }),
+                prisma.payment.aggregate({
+                    where: { ...where, status: "SUCCESS" },
+                    _sum: { amount: true },
+                }),
+            ]),
+            Promise.all([
+                prisma.payment.count({ where: { ...where, status: "FAILED" } }),
+                prisma.payment.aggregate({
+                    where: { ...where, status: "FAILED" },
+                    _sum: { amount: true },
+                }),
+            ]),
+            Promise.all([
+                prisma.payment.count({ where: { ...where, status: "REFUNDED" } }),
+                prisma.payment.aggregate({
+                    where: { ...where, status: "REFUNDED" },
+                    _sum: { amount: true },
+                }),
+            ]),
+        ]);
+
+        const pendingPayments = pendingData[0];
+        const pendingAmount = Number(pendingData[1]._sum.amount || 0);
+        const successfulPayments = successfulData[0];
+        const successfulAmount = Number(successfulData[1]._sum.amount || 0);
+        const failedPayments = failedData[0];
+        const failedAmount = Number(failedData[1]._sum.amount || 0);
+        const refundedPayments = refundedData[0];
+        const refundedAmount = Number(refundedData[1]._sum.amount || 0);
+
+        // Total amount (all payments, not just successful)
+        const totalAmountResult = await prisma.payment.aggregate({
+            where,
+            _sum: { amount: true },
+        });
+        const totalAmount = Number(totalAmountResult._sum.amount || 0);
+
+        // Average transaction value (from successful payments)
+        const avgTransactionValue = await prisma.payment.aggregate({
+            where: { ...where, status: "SUCCESS" },
+            _avg: { amount: true },
+        });
+
+        // Payments by status (with amounts)
+        const paymentsByStatusData = await prisma.payment.groupBy({
+            by: ["status"],
+            where,
+            _count: { status: true },
+            _sum: { amount: true },
+        });
+
+        // Payments by method (with amounts)
+        const paymentsByMethodData = await prisma.payment.groupBy({
+            by: ["method"],
+            where,
+            _count: { method: true },
+            _sum: { amount: true },
+        });
+
+        // Convert to objects as expected by frontend
+        const byStatus: Record<string, { count: number; amount: number }> = {};
+        paymentsByStatusData.forEach((item) => {
+            if (item.status) {
+                byStatus[item.status] = {
+                    count: item._count.status,
+                    amount: Number(item._sum.amount || 0),
+                };
+            }
+        });
+
+        const byMethod: Record<string, { count: number; amount: number }> = {};
+        paymentsByMethodData.forEach((item) => {
+            if (item.method) {
+                byMethod[item.method] = {
+                    count: item._count.method,
+                    amount: Number(item._sum.amount || 0),
+                };
+            }
+        });
+
+        // Recent payments (last 10)
+        const recentPayments = await prisma.payment.findMany({
+            where,
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone: true,
+                    },
+                },
+                order: {
+                    select: {
+                        id: true,
+                        status: true,
+                        total: true,
+                        createdAt: true,
+                    },
+                },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+        });
+
+        // Daily stats for last 30 days
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(now.getDate() - 30);
+        const dailyPayments = await prisma.payment.findMany({
+            where: {
+                ...where,
+                createdAt: { gte: thirtyDaysAgo },
+            },
+            select: {
+                amount: true,
+                createdAt: true,
+            },
+        });
+
+        // Group by date
+        const dailyStatsMap = new Map<string, { count: number; amount: number }>();
+        dailyPayments.forEach((payment) => {
+            const dateStr = new Date(payment.createdAt).toISOString().split("T")[0];
+            if (dateStr) {
+                const existing = dailyStatsMap.get(dateStr) || { count: 0, amount: 0 };
+                dailyStatsMap.set(dateStr, {
+                    count: existing.count + 1,
+                    amount: existing.amount + Number(payment.amount),
+                });
+            }
+        });
+
+        const dailyStats = Array.from(dailyStatsMap.entries())
+            .map(([date, data]) => ({ date, ...data }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        return sendSuccess(res, {
+            totalPayments,
+            totalAmount,
+            successfulPayments,
+            successfulAmount,
+            pendingPayments,
+            pendingAmount,
+            failedPayments,
+            failedAmount,
+            refundedPayments,
+            refundedAmount,
+            averageTransactionValue: Number(avgTransactionValue._avg.amount || 0),
+            byStatus,
+            byMethod,
+            recentPayments,
+            dailyStats,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * @openapi
  * /api/v1/admin/payments/{id}:
  *   get:
  *     summary: Get single payment by ID

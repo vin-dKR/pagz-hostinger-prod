@@ -48,20 +48,100 @@ export interface UseCheckoutReturn {
 export function useCheckout(): UseCheckoutReturn {
     // Check for direct buy now data in sessionStorage
     const [buyNowData, setBuyNowData] = useState<any | null>(null);
+    const [shouldUseBuyNow, setShouldUseBuyNow] = useState<boolean>(false);
 
-    useEffect(() => {
+    // Function to read and validate buyNow data
+    const readBuyNowData = useCallback(() => {
         if (typeof window !== 'undefined') {
             const stored = sessionStorage.getItem('buyNow');
             if (stored) {
                 try {
-                    setBuyNowData(JSON.parse(stored));
+                    const parsed = JSON.parse(stored);
+                    // Validate that buyNow data has required fields
+                    if (parsed && parsed.product && parsed.productId) {
+                        setBuyNowData(parsed);
+                    } else {
+                        console.warn('[useCheckout] Invalid buyNow data, clearing');
+                        sessionStorage.removeItem('buyNow');
+                        setBuyNowData(null);
+                    }
                 } catch (err) {
                     console.error('Failed to parse buyNow data:', err);
                     sessionStorage.removeItem('buyNow');
+                    setBuyNowData(null);
                 }
+            } else {
+                setBuyNowData(null);
             }
         }
     }, []);
+
+    // Check URL params on mount to determine if coming from cart
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const itemsParam = urlParams.get('items');
+        
+        // If URL has items param, user is coming from cart - don't use buyNow
+        if (itemsParam) {
+            setShouldUseBuyNow(false);
+            // Clear buyNow data if it exists (will be cleared after readBuyNowData runs)
+        } else {
+            // No URL params - will use buyNow if available (set after readBuyNowData)
+        }
+    }, []); // Run only on mount
+
+    // Read buyNow data on mount
+    useEffect(() => {
+        readBuyNowData();
+    }, [readBuyNowData]);
+
+    // Update shouldUseBuyNow based on buyNowData and URL params
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const itemsParam = urlParams.get('items');
+        
+        // If URL has items param, user is coming from cart - clear buyNow and use cart
+        if (itemsParam) {
+            if (buyNowData) {
+                console.log('[useCheckout] Coming from cart, clearing buyNow data');
+                sessionStorage.removeItem('buyNow');
+                setBuyNowData(null);
+            }
+            setShouldUseBuyNow(false);
+        } else {
+            // No URL params means direct Buy Now - use buyNow data if available
+            setShouldUseBuyNow(buyNowData !== null);
+        }
+    }, [buyNowData]);
+
+    // Listen for storage changes and window focus to catch buyNow updates
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === 'buyNow') {
+                readBuyNowData();
+            }
+        };
+
+        const handleFocus = () => {
+            // Re-read buyNow data when window regains focus
+            // This catches cases where buyNow was updated in the same window
+            readBuyNowData();
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        window.addEventListener('focus', handleFocus);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('focus', handleFocus);
+        };
+    }, [readBuyNowData]);
 
     // Cart hook (only used if not buyNow)
     const {
@@ -74,9 +154,10 @@ export function useCheckout(): UseCheckoutReturn {
     // Fixed delivery fee (can be calculated based on subtotal or location)
     const deliveryFee = 0;
 
-    // Use buyNow data if available, otherwise use cart
+    // Use buyNow data only if shouldUseBuyNow is true (direct Buy Now, not from cart)
+    // Otherwise, use cart items
     const effectiveCartItems = useMemo(() => {
-        if (buyNowData && buyNowData.product) {
+        if (shouldUseBuyNow && buyNowData && buyNowData.product) {
             // Convert buyNow data to cart item format
             return [{
                 id: 'buy-now-temp',
@@ -95,11 +176,11 @@ export function useCheckout(): UseCheckoutReturn {
             }];
         }
         return cartItems;
-    }, [buyNowData, cartItems]);
+    }, [shouldUseBuyNow, buyNowData, cartItems]);
 
     // Calculate MRP (Maximum Retail Price) - sum of all MRP prices
     const mrp = useMemo(() => {
-        if (buyNowData && buyNowData.product) {
+        if (shouldUseBuyNow && buyNowData && buyNowData.product) {
             const product = buyNowData.product;
             const mrpPrice = Number(product?.mrp || 0);
             return mrpPrice * (buyNowData.quantity || 1);
@@ -110,12 +191,12 @@ export function useCheckout(): UseCheckoutReturn {
             const mrpPrice = Number(product?.mrp || 0);
             return sum + mrpPrice * item.quantity;
         }, 0);
-    }, [buyNowData, effectiveCartItems]);
+    }, [shouldUseBuyNow, buyNowData, effectiveCartItems]);
 
     // Calculate subtotal (selling price) - sum of all selling prices
     const subtotal = useMemo(() => {
         // For Buy Now, use the pre-calculated total price (includes addons if any)
-        if (buyNowData && typeof buyNowData.price === 'number') {
+        if (shouldUseBuyNow && buyNowData && typeof buyNowData.price === 'number') {
             return buyNowData.price;
         }
 
@@ -134,7 +215,7 @@ export function useCheckout(): UseCheckoutReturn {
             const itemPrice = price + variantModifier;
             return sum + itemPrice * item.quantity;
         }, 0);
-    }, [buyNowData, effectiveCartItems]);
+    }, [shouldUseBuyNow, buyNowData, effectiveCartItems]);
 
     // Addresses hook
     const {
@@ -192,7 +273,7 @@ export function useCheckout(): UseCheckoutReturn {
 
         try {
             // Prepare cart items for validation (use effective items)
-            const itemsToValidate = buyNowData ? effectiveCartItems : cartItems;
+            const itemsToValidate = shouldUseBuyNow ? effectiveCartItems : cartItems;
             const cartItemsForValidation = itemsToValidate
                 .filter((item) => item.product) // Filter out items without products
                 .map((item) => ({
@@ -267,7 +348,7 @@ export function useCheckout(): UseCheckoutReturn {
         } finally {
             setIsApplyingCoupon(false);
         }
-    }, [couponCode, subtotal, effectiveCartItems, buyNowData, cartItems]);
+    }, [couponCode, subtotal, effectiveCartItems, shouldUseBuyNow, cartItems]);
 
     // Remove coupon
     const removeCoupon = useCallback(() => {
@@ -299,8 +380,8 @@ export function useCheckout(): UseCheckoutReturn {
     const error = cartError || addressError;
 
     // Use effective cart items (buyNow or cart)
-    const finalCartItems = buyNowData ? effectiveCartItems : cartItems;
-    const finalItemCount = buyNowData ? 1 : itemCount;
+    const finalCartItems = shouldUseBuyNow ? effectiveCartItems : cartItems;
+    const finalItemCount = shouldUseBuyNow ? 1 : itemCount;
 
     return {
         // Cart data

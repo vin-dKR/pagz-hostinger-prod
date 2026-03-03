@@ -72,7 +72,7 @@ import {
     addCouponCategories,
     removeCouponCategories,
 } from "../controllers/couponController.js";
-import { getAdminPayment, getAdminPayments } from "../controllers/paymentController.js";
+import { getAdminPayment, getAdminPayments, getPaymentStatistics } from "../controllers/paymentController.js";
 import {
     deleteAdminReview,
     getAdminReviews,
@@ -213,6 +213,7 @@ router.post("/coupons/:id/categories/remove", removeCouponCategories);
 
 // Payment Management (admin only)
 router.get("/payments", getAdminPayments);
+router.get("/payments/statistics", getPaymentStatistics);
 router.get("/payments/:id", getAdminPayment);
 
 // Review Management (admin only)

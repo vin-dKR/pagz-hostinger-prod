@@ -101,7 +101,7 @@ export const useProduct = ({ productId }: UseProductOptions) => {
     // Toggle wishlist
     const toggleWishlist = useCallback(async (): Promise<boolean> => {
         if (!isAuthenticated) {
-            redirectToLoginWithReturn();
+            redirectToLoginWithReturn(); 
             return false;
         }
 
@@ -132,13 +132,15 @@ export const useProduct = ({ productId }: UseProductOptions) => {
     }, [isAuthenticated, productId, isWishlisted, router]);
 
     // Add to cart
+    // Note: Auth check is handled at the page level to allow data collection before redirect
     const handleAddToCart = useCallback(async (data: Omit<AddToCartData, 'productId'>): Promise<boolean> => {
+        if (!productId) return false;
+
+        // Auth check removed - should be done at page level before calling this
         if (!isAuthenticated) {
-            redirectToLoginWithReturn();
+            console.warn('[useProduct] handleAddToCart called without authentication - this should be handled at page level');
             return false;
         }
-
-        if (!productId) return false;
 
         setCartLoading(true);
         try {
@@ -157,19 +159,26 @@ export const useProduct = ({ productId }: UseProductOptions) => {
         } finally {
             setCartLoading(false);
         }
-    }, [isAuthenticated, productId, router]);
+    }, [isAuthenticated, productId]);
 
     // Buy now - stores product data in sessionStorage and redirects to checkout (bypasses cart)
+    // Note: Auth check is handled at the page level to allow data collection before redirect
     const handleBuyNow = useCallback(async (data: Omit<AddToCartData, 'productId'>): Promise<boolean> => {
+        if (!productId || !product) return false;
+
+        // Auth check removed - should be done at page level before calling this
         if (!isAuthenticated) {
-            redirectToLoginWithReturn();
+            console.warn('[useProduct] handleBuyNow called without authentication - this should be handled at page level');
             return false;
         }
 
-        if (!productId || !product) return false;
-
         setBuyNowLoading(true);
         try {
+            // Clear any existing buyNow data before creating new one (prevents showing old product)
+            if (typeof window !== 'undefined') {
+                sessionStorage.removeItem('buyNow');
+            }
+            
             // Store product data in sessionStorage for direct checkout (bypass cart)
             const buyNowData = {
                 productId,

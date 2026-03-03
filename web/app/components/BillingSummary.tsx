@@ -15,6 +15,7 @@ interface BillingSummaryProps {
     showCheckoutActions?: boolean;
     onPay?: () => Promise<void> | void;
     isPaying?: boolean;
+    hideCouponAndShipping?: boolean; // Hide coupon and shipping (for cart page)
 }
 
 export default function BillingSummary({
@@ -28,6 +29,7 @@ export default function BillingSummary({
     showCheckoutActions = true,
     onPay,
     isPaying = false,
+    hideCouponAndShipping = false,
 }: BillingSummaryProps) {
     const [orderComment, setOrderComment] = useState("");
     const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -63,17 +65,21 @@ export default function BillingSummary({
                     </span>
                 </div> */}
 
-                <div className="flex justify-between text-sm sm:text-base text-gray-600">
-                    <span>Coupon Applied</span>
-                    <span className={`font-medium ${couponApplied > 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                        {couponApplied > 0 ? '-' : ''}₹{couponApplied.toFixed(2)}
-                    </span>
-                </div>
+                {!hideCouponAndShipping && (
+                    <>
+                        <div className="flex justify-between text-sm sm:text-base text-gray-600">
+                            <span>Coupon Applied</span>
+                            <span className={`font-medium ${couponApplied > 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                                {couponApplied > 0 ? '-' : ''}₹{couponApplied.toFixed(2)}
+                            </span>
+                        </div>
 
-                <div className="flex justify-between text-sm sm:text-base text-gray-600">
-                    <span>Shipping</span>
-                    <span className="font-hkgb font-medium">₹{shipping.toFixed(2)}</span>
-                </div>
+                        <div className="flex justify-between text-sm sm:text-base text-gray-600">
+                            <span>Shipping</span>
+                            <span className="font-hkgb font-medium">₹{shipping.toFixed(2)}</span>
+                        </div>
+                    </>
+                )}
 
                 <hr className="border-gray-200 my-3 sm:my-4" />
 

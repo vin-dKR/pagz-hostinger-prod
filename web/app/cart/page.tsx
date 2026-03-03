@@ -88,7 +88,7 @@ function CartPageContent() {
     // Cart-level billing values (no extra discount/coupon on cart page)
     const discount = 0;
     const couponApplied = 0;
-    const shippingFee = 15; // Same as checkout for now
+    const shippingFee = 0; // Same as checkout for now
 
     const grandTotal = useMemo(() => {
         return (subtotal || 0) + shippingFee;
@@ -395,6 +395,7 @@ function CartPageContent() {
                                         grandTotal={grandTotal}
                                         itemCount={selectedItemsList.length}
                                         showCheckoutActions={false}
+                                        hideCouponAndShipping={true}
                                     />
                                     <button
                                         onClick={handleGoToCheckout}

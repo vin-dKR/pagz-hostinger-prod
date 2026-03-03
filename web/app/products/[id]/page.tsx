@@ -26,10 +26,22 @@ import { imageLoader } from "@/lib/utils/image-loader";
 import ReviewList from "../../components/reviews/ReviewList";
 import { getProductAddons, type ProductAddon } from "@/lib/api/products";
 import { getCategoryBySlug, type CategorySpecification } from "@/lib/api/categories";
+import { 
+    savePendingPurchaseData, 
+    getPendingPurchaseData, 
+    clearPendingPurchaseData,
+    prepareFilesForStorage,
+    restoreFilesFromPendingData,
+    type PendingPurchaseData
+} from "@/lib/utils/pending-purchase";
+import { redirectToLoginWithReturn } from "@/lib/utils/auth-redirect";
+import { useAuth } from "@/contexts/AuthContext";
+import { uploadOrderFilesToS3 } from "@/lib/api/uploads";
 
 export default function ProductDetailsPage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = use(params);
+    const { id } = use(params); 
     const router = useRouter();
+    const { isAuthenticated } = useAuth();
 
     // Use the product hook for all data management
     const {
@@ -189,6 +201,90 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
         fetchAddonsAndSpecs();
     }, [product?.id, product?.category]);
 
+    // Restore pending purchase data when user returns from login
+    useEffect(() => {
+        async function restorePendingPurchase() {
+            if (!isAuthenticated || !product) return;
+
+            const pendingData = getPendingPurchaseData();
+            if (!pendingData || pendingData.productId !== product.id) return;
+
+            try {
+                // Restore files
+                if (pendingData.files && pendingData.files.length > 0) {
+                    const restoredFiles = await restoreFilesFromPendingData(pendingData.files);
+                    const restoredFileDetails: FileDetail[] = [];
+                    
+                    for (let i = 0; i < pendingData.files.length; i++) {
+                        const fileData = pendingData.files[i];
+                        const file = restoredFiles[i];
+                        if (file && fileData) {
+                            restoredFileDetails.push({
+                                file,
+                                type: fileData.type,
+                                pageCount: fileData.pageCount,
+                                id: fileData.id,
+                                uploadStatus: 'pending' as const,
+                            });
+                        }
+                    }
+
+                    // Only set files that were successfully restored
+                    const validFiles = restoredFileDetails.map(fd => fd.file);
+                    setUploadedFiles(validFiles);
+                    setUploadedFileDetails(restoredFileDetails);
+                    setPageCount(pendingData.pageCount || 0);
+
+                    // Upload files to S3 now that user is authenticated
+                    restoredFileDetails.forEach(async (fileDetail) => {
+                        try {
+                            const response = await uploadOrderFilesToS3([fileDetail.file]);
+                            if (response.success && response.data?.files?.[0]?.key) {
+                                const s3Key = response.data.files[0].key;
+                                setUploadedFileDetails(prev => 
+                                    prev.map(fd => 
+                                        fd.id === fileDetail.id 
+                                            ? { ...fd, uploadStatus: 'uploaded' as const, s3Key }
+                                            : fd
+                                    )
+                                );
+                            }
+                        } catch (error) {
+                            console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
+                            setUploadedFileDetails(prev => 
+                                prev.map(fd => 
+                                    fd.id === fileDetail.id 
+                                        ? { ...fd, uploadStatus: 'error' as const }
+                                        : fd
+                                )
+                            );
+                        }
+                    });
+                }
+
+                // Restore selections
+                if (pendingData.selectedVariant) setSelectedVariant(pendingData.selectedVariant);
+                if (pendingData.selectedSize) setSelectedSize(pendingData.selectedSize);
+                if (pendingData.selectedAddons) setSelectedAddonIds(pendingData.selectedAddons);
+                if (pendingData.quantity) setQuantity(pendingData.quantity);
+                if (pendingData.copies) setCopies(pendingData.copies);
+                if (pendingData.pageCount) setPageCount(pendingData.pageCount);
+
+                // Clear pending data
+                clearPendingPurchaseData();
+
+                // Show success message
+                toastSuccess('Your selections have been restored. Click Buy Now or Add to Cart to continue.');
+            } catch (error) {
+                console.error('Failed to restore pending purchase:', error);
+                toastError('Failed to restore your selections. Please try again.');
+                clearPendingPurchaseData();
+            }
+        }
+
+        restorePendingPurchase();
+    }, [isAuthenticated, product]);
+
     // Filter available addons based on page count
     const filteredAddons = useMemo(() => {
         if (!availableAddons || availableAddons.length === 0) return [];
@@ -276,6 +372,51 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
             return;
         }
 
+        // Check authentication - if not authenticated, save data and redirect
+        if (!isAuthenticated) {
+            try {
+                // Prepare files for storage
+                const preparedFiles = uploadedFileDetails.length > 0
+                    ? await prepareFilesForStorage(
+                          uploadedFiles,
+                          uploadedFileDetails.map(fd => ({
+                              id: fd.id,
+                              type: fd.type,
+                              pageCount: fd.pageCount,
+                          }))
+                      )
+                    : [];
+
+                const purchaseData: PendingPurchaseData = {
+                    type: 'product',
+                    productId: product.id,
+                    files: preparedFiles,
+                    selectedVariant,
+                    selectedSize,
+                    selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
+                    quantity: totalQuantity,
+                    copies,
+                    pageCount,
+                    metadata: {
+                        pageCount: pageCount > 0 ? pageCount : undefined,
+                        copies: pageCount > 0 ? copies : undefined,
+                        selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
+                    },
+                    currentPrice,
+                    totalPrice,
+                    timestamp: Date.now(),
+                    returnUrl: window.location.pathname + window.location.search,
+                };
+
+                await savePendingPurchaseData(purchaseData);
+                redirectToLoginWithReturn(window.location.pathname + window.location.search);
+            } catch (error) {
+                console.error('Failed to save pending purchase data:', error);
+                toastError('Failed to save your selections. Please try again.');
+            }
+            return;
+        }
+
         // Get S3 keys from already uploaded files (files are uploaded immediately when selected)
         let s3Keys: string[] = [];
         if (uploadedFileDetails.length > 0) {
@@ -299,16 +440,35 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                 .map(fd => fd.s3Key!)
                 .filter(Boolean);
 
-            // If we have files but no S3 keys, check if they're pending
+            // If we have files but no S3 keys, upload them now
             if (s3Keys.length === 0 && uploadedFileDetails.length > 0) {
                 const pendingFiles = uploadedFileDetails.filter(fd => fd.uploadStatus === 'pending');
                 if (pendingFiles.length > 0) {
+                    // Upload pending files
+                    for (const fileDetail of pendingFiles) {
+                        try {
+                            const response = await uploadOrderFilesToS3([fileDetail.file]);
+                            if (response.success && response.data?.files?.[0]?.key) {
+                                const key = response.data.files[0].key;
+                                s3Keys.push(key);
+                                setUploadedFileDetails(prev => 
+                                    prev.map(fd => 
+                                        fd.id === fileDetail.id 
+                                            ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                            : fd
+                                    )
+                                );
+                            }
+                        } catch (error) {
+                            console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
+                            toastError(`Failed to upload ${fileDetail.file.name}. Please try again.`);
+                            return;
+                        }
+                    }
+                } else {
                     toastError('Files are still being processed. Please wait a moment and try again.');
                     return;
                 }
-                // If no pending files but no keys, something went wrong
-                toastError('Files are still being processed. Please wait a moment and try again.');
-                return;
             }
         }
 
@@ -330,6 +490,8 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
         if (success) {
             // Reset uploaded files after adding to cart
             setUploadedFiles([]);
+            // Clear pending purchase data after successful add to cart
+            clearPendingPurchaseData();
             toastSuccess("Product added to cart successfully!");
             // Update cart context instead of reloading page
             await refetchCart();
@@ -343,6 +505,51 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
     // Handle buy now - use already uploaded S3 keys
     const onBuyNow = async () => {
         if (!product) return;
+
+        // Check authentication - if not authenticated, save data and redirect
+        if (!isAuthenticated) {
+            try {
+                // Prepare files for storage
+                const preparedFiles = uploadedFileDetails.length > 0
+                    ? await prepareFilesForStorage(
+                          uploadedFiles,
+                          uploadedFileDetails.map(fd => ({
+                              id: fd.id,
+                              type: fd.type,
+                              pageCount: fd.pageCount,
+                          }))
+                      )
+                    : [];
+
+                const purchaseData: PendingPurchaseData = {
+                    type: 'product',
+                    productId: product.id,
+                    files: preparedFiles,
+                    selectedVariant,
+                    selectedSize,
+                    selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
+                    quantity: totalQuantity,
+                    copies,
+                    pageCount,
+                    metadata: {
+                        pageCount: pageCount > 0 ? pageCount : undefined,
+                        copies: pageCount > 0 ? copies : undefined,
+                        selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
+                    },
+                    currentPrice,
+                    totalPrice,
+                    timestamp: Date.now(),
+                    returnUrl: window.location.pathname + window.location.search,
+                };
+
+                await savePendingPurchaseData(purchaseData);
+                redirectToLoginWithReturn(window.location.pathname + window.location.search);
+            } catch (error) {
+                console.error('Failed to save pending purchase data:', error);
+                toastError('Failed to save your selections. Please try again.');
+            }
+            return;
+        }
 
         // Get S3 keys from already uploaded files (files are uploaded immediately when selected)
         let s3Keys: string[] = [];
@@ -367,17 +574,41 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                 .map(fd => fd.s3Key!)
                 .filter(Boolean);
 
-            // If we have files but no S3 keys, check if they're pending
+            // If we have files but no S3 keys, upload them now
             if (s3Keys.length === 0 && uploadedFileDetails.length > 0) {
                 const pendingFiles = uploadedFileDetails.filter(fd => fd.uploadStatus === 'pending');
                 if (pendingFiles.length > 0) {
+                    // Upload pending files
+                    for (const fileDetail of pendingFiles) {
+                        try {
+                            const response = await uploadOrderFilesToS3([fileDetail.file]);
+                            if (response.success && response.data?.files?.[0]?.key) {
+                                const key = response.data.files[0].key;
+                                s3Keys.push(key);
+                                setUploadedFileDetails(prev => 
+                                    prev.map(fd => 
+                                        fd.id === fileDetail.id 
+                                            ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                            : fd
+                                    )
+                                );
+                            }
+                        } catch (error) {
+                            console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
+                            toastError(`Failed to upload ${fileDetail.file.name}. Please try again.`);
+                            return;
+                        }
+                    }
+                } else {
                     toastError('Files are still being processed. Please wait a moment and try again.');
                     return;
                 }
-                // If no pending files but no keys, something went wrong
-                toastError('Files are still being processed. Please wait a moment and try again.');
-                return;
             }
+        }
+
+        // Clear any existing buyNow data before creating new one (prevents showing old product)
+        if (typeof window !== 'undefined') {
+            sessionStorage.removeItem('buyNow');
         }
 
         // Add to cart with S3 URLs and redirect to checkout
@@ -399,6 +630,8 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
             // Reset uploaded files after buy now
             setUploadedFiles([]);
             setUploadedFileDetails([]);
+            // Clear pending purchase data after successful buy
+            clearPendingPurchaseData();
         } else {
             toastError("Failed to proceed. Please try again.");
         }

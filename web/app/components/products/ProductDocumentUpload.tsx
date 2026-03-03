@@ -5,7 +5,6 @@ import { Upload, File, AlertTriangle, X, Image as ImageIcon, FileText, Loader2 }
 import { uploadOrderFilesToS3, deleteOrderFile } from "@/lib/api/uploads";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { redirectToLoginWithReturn } from "@/lib/utils/auth-redirect";
 
 export interface FileDetail {
     file: File;
@@ -214,15 +213,8 @@ export default function ProductDocumentUpload({
             return;
         }
 
-        // Check authentication first
-        if (!isAuthenticated) {
-            redirectToLoginWithReturn();
-            // Reset file input
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-            }
-            return;
-        }
+        // REMOVED: Authentication check - allow file upload without authentication
+        // Files will be stored temporarily and uploaded to S3 after sign-in
 
         // Check max files limit
         if (maxFiles && files.length > maxFiles) {
@@ -234,7 +226,7 @@ export default function ProductDocumentUpload({
         setIsProcessing(true);
 
         try {
-            // Process files locally (NO S3 upload yet - files stored in memory only)
+            // Process files locally (calculate page count, etc.)
             const { fileDetails: newFileDetails } = await processFiles(files);
 
             // Combine with existing files
@@ -254,11 +246,17 @@ export default function ProductDocumentUpload({
                 onQuantityChange(finalPageCount);
             }
 
-            // Upload files to S3 immediately
-            // Upload each file individually so we can track and cancel them
-            newFileDetails.forEach((fileDetail) => {
-                uploadFileToS3(fileDetail);
-            });
+            // Upload files to S3 only if user is authenticated
+            // Otherwise, files will be uploaded when user signs in and proceeds with purchase
+            if (isAuthenticated) {
+                newFileDetails.forEach((fileDetail) => {
+                    uploadFileToS3(fileDetail);
+                });
+            } else {
+                // Store files temporarily - they'll be uploaded after sign-in
+                // Files are already in memory via FileDetail objects
+                console.log('[ProductDocumentUpload] Files stored temporarily. Will upload after sign-in.');
+            }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to process files';
             setError(errorMessage);

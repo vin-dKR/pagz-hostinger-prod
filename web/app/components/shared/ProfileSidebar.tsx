@@ -61,7 +61,7 @@ export default function ProfileSidebar() {
                         </div>
                         <button
                             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                            className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:white transition-colors"
                         >
                             {isMobileMenuOpen ? (
                                 <X className="w-4 h-4" />
@@ -115,7 +115,7 @@ export default function ProfileSidebar() {
                                     href={tab.href}
                                     className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 ${active
                                         ? "bg-[#008ECC] py-2 text-white font-hkgb"
-                                        : "text-gray-700 hover:bg-gray-50"
+                                        : "text-gray-700 hover:white"
                                         }`}
                                 >
                                     <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-gray-500'}`} />
@@ -145,7 +145,7 @@ export default function ProfileSidebar() {
                                 logout();
                                 router.push("/");
                             }}
-                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-red-600 hover:bg-red-50 transition-all duration-200 cursor-pointer"
+                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-red-600 hover:white transition-all duration-200 cursor-pointer"
                         >
                             <LogOut className="w-4 h-4" />
                             <span className="font-medium">Logout</span>
@@ -164,7 +164,7 @@ export default function ProfileSidebar() {
                     />
 
                     {/* Sidebar Panel */}
-                    <div className="fixed inset-y-0 left-0 w-80 bg-gray-50/50 z-50 lg:hidden shadow-xl transform transition-transform duration-300 ease-in-out">
+                    <div className="fixed inset-y-0 left-0 w-80 bg-gray-50 z-50 lg:hidden shadow-xl transform transition-transform duration-300 ease-in-out">
                         <div className="h-full flex flex-col">
                             {/* Mobile Menu Header */}
                             <div className="p-4 border-b border-gray-100">
@@ -179,7 +179,7 @@ export default function ProfileSidebar() {
                                 </div>
 
                                 {/* User Profile in Mobile Menu */}
-                                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                <div className="flex items-center gap-3 p-3 bg-white rounded-xl">
                                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#008ECC] to-blue-400 flex items-center justify-center">
                                         <User className="w-6 h-6 text-white" />
                                     </div>
@@ -210,7 +210,7 @@ export default function ProfileSidebar() {
                                                 onClick={() => setIsMobileMenuOpen(false)}
                                                 className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm transition-all duration-200 ${active
                                                     ? "bg-[#008ECC] text-white font-hkgb"
-                                                    : "text-gray-700 hover:bg-gray-50"
+                                                    : "text-gray-700 hover:bg-white"
                                                     }`}
                                             >
                                                 <div className="flex items-center gap-3">
@@ -231,7 +231,7 @@ export default function ProfileSidebar() {
                                     <Link
                                         href="/help"
                                         onClick={() => setIsMobileMenuOpen(false)}
-                                        className="flex items-center justify-between px-4 py-3 rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition-all duration-200"
+                                        className="flex items-center justify-between px-4 py-3 rounded-xl text-sm text-gray-700 hover:bg-white transition-all duration-200"
                                     >
                                         <div className="flex items-center gap-3">
                                             <HelpCircle className="w-4 h-4 text-gray-500" />
@@ -260,7 +260,7 @@ export default function ProfileSidebar() {
                             <div className="p-4 border-t border-gray-100">
                                 <button
                                     onClick={() => setIsMobileMenuOpen(false)}
-                                    className="w-full py-3 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+                                    className="w-full py-3 border border-gray-200 text-gray-700 rounded-lg hover:white transition-colors text-sm font-medium"
                                 >
                                     Close Menu
                                 </button>
@@ -272,8 +272,8 @@ export default function ProfileSidebar() {
 
             {/* Mobile Bottom Navigation (Alternative) */}
             {!isMobileMenuOpen && (
-                <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-gray-50/50 border-t border-gray-100 z-30">
-                    <div className="flex items-center justify-around p-2">
+                <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-gray-50 border-t border-gray-100 z-30">
+                    <div className="flex items-center justify-around p-2 ">
                         {tabs.map((tab) => {
                             const Icon = tab.icon;
                             const active = isActive(tab.href);
@@ -282,7 +282,7 @@ export default function ProfileSidebar() {
                                     key={tab.id}
                                     href={tab.href}
                                     className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-200 ${active
-                                        ? "text-[#008ECC]"
+                                        ? "text-[#008ECC] bg-white"
                                         : "text-gray-600"
                                         }`}
                                 >
