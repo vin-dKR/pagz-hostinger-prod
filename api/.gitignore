@@ -21,3 +21,6 @@ dist
 
 /generated/prisma
 .vercel
+
+# Uploads (temporary files)
+uploads/

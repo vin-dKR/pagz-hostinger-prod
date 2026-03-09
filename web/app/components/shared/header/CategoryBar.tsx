@@ -114,8 +114,8 @@ export function CategoryBar({
                                             <Link
                                                 href={
                                                     categorySlug
-                                                        ? `/products?category=${categorySlug}`
-                                                        : '/products'
+                                                        ? `/services/${categorySlug}`
+                                                        : '/services'
                                                 }
                                                 onClick={() => onCategoryChange(name)}
                                                 className="text-xs lg:text-sm"

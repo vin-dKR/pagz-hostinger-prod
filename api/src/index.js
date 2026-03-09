@@ -18,6 +18,7 @@ import reviewRoutes from "./routes/reviews.js";
 import couponRoutes from "./routes/coupons.js";
 import webhookRoutes from "./routes/webhook.js";
 import uploadRoutes from "./routes/upload.js";
+import ftpRoutes from "./routes/ftp.js";
 
 import { errorHandler } from "./middleware/errorHandler.js";
 import { checkDatabaseConnection } from "./utils/db-utils.js";
@@ -139,6 +140,7 @@ app.use("/api/v1/reviews", reviewRoutes);
 app.use("/api/v1/coupons", couponRoutes);
 app.use("/api/v1/customer", customerRoutes);
 app.use("/api/v1/upload", uploadRoutes);
+app.use("/api/v1/ftp", ftpRoutes);
 
 app.use(errorHandler);
 

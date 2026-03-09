@@ -2,11 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { getAllCategories, type Category } from '@/lib/api/categories';
-import { ArrowRight, ImageIcon } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+
+// Color gradients for category cards (cycling through these)
+const colorGradients = [
+    "from-blue-900/90 to-blue-700/90",
+    "from-purple-900/90 to-purple-700/90",
+    "from-amber-900/90 to-amber-700/90",
+    "from-emerald-900/90 to-emerald-700/90",
+    "from-red-900/90 to-red-700/90",
+    "from-indigo-900/90 to-indigo-700/90",
+    "from-pink-900/90 to-pink-700/90",
+    "from-teal-900/90 to-teal-700/90",
+];
 
 export default function ServicesPage() {
+    const [hoveredCard, setHoveredCard] = useState<string | null>(null);
     const [categories, setCategories] = useState<Category[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -29,7 +41,7 @@ export default function ServicesPage() {
         fetchCategories();
     }, []);
 
-    const getCategoryImage = (category: Category): string | null => {
+    const getCategoryImage = (category: Category): string => {
         // Use primary image if available
         if (category.images && category.images.length > 0 && category.images[0]) {
             return category.images[0].url;
@@ -38,20 +50,43 @@ export default function ServicesPage() {
         if (category.image) {
             return category.image;
         }
-        return null;
+        // Default placeholder
+        return "/images/rows/row1.png";
+    };
+
+    const getCategoryColor = (index: number): string => {
+        const gradientIndex = index % colorGradients.length;
+        const gradient = colorGradients[gradientIndex];
+        return gradient ?? colorGradients[0] ?? "from-blue-900/90 to-blue-700/90";
+    };
+
+    const getCategoryAction = (categoryName: string): string => {
+        // Generate action text from category name
+        if (categoryName.toLowerCase().includes('print')) {
+            return 'Print Now';
+        }
+        if (categoryName.toLowerCase().includes('book')) {
+            return 'Print Books';
+        }
+        if (categoryName.toLowerCase().includes('photo')) {
+            return 'Print Photos';
+        }
+        if (categoryName.toLowerCase().includes('map')) {
+            return 'Print Maps';
+        }
+        return 'View Service';
     };
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-white py-6 md:py-8 lg:py-10">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-5 lg:gap-6 w-full">
+            <div className="min-h-screen bg-white py-4 md:py-8">
+                <div className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8">
+                    <div className="mb-3 md:mb-5">
+                        <h1 className="text-lg md:text-2xl font-bold text-gray-900">Our Services</h1>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4 lg:gap-5 2xl:gap-6 w-full">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                            <div key={i} className="bg-white rounded-lg md:rounded-xl p-3 sm:p-4 md:p-5 lg:p-6 animate-pulse w-full min-w-0 flex flex-col">
-                                <div className="h-32 sm:h-36 md:h-40 lg:h-44 xl:h-48 bg-gray-200 rounded-lg mb-3 md:mb-4 flex-shrink-0" />
-                                <div className="h-4 sm:h-5 md:h-6 bg-gray-200 rounded mb-1.5 md:mb-2" />
-                                <div className="h-3 sm:h-4 bg-gray-200 rounded w-3/4" />
-                            </div>
+                            <div key={i} className="relative aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-3xl lg:rounded-4xl overflow-hidden bg-gray-200 animate-pulse" />
                         ))}
                     </div>
                 </div>
@@ -59,18 +94,12 @@ export default function ServicesPage() {
         );
     }
 
-    if (error) {
+    if (error || categories.length === 0) {
         return (
-            <div className="min-h-screen bg-white py-12">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="text-center py-12">
-                        <p className="text-red-600 mb-4">{error}</p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="px-6 py-2 bg-[#008ECC] text-white rounded-lg hover:bg-blue-700"
-                        >
-                            Retry
-                        </button>
+            <div className="min-h-screen bg-white py-10">
+                <div className="w-full mx-auto px-10">
+                    <div className="text-center text-gray-500">
+                        <p>{error || 'No categories available'}</p>
                     </div>
                 </div>
             </div>
@@ -78,69 +107,77 @@ export default function ServicesPage() {
     }
 
     return (
-        <div className="min-h-screen bg-white py-6 md:py-8 lg:py-10">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                {/* Header */}
-                <div className="mb-6 md:mb-8">
-                    <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-2">Our Services</h1>
-                    <p className="text-sm md:text-base text-gray-600">
-                        Explore our wide range of printing and design services
-                    </p>
+        <div className="min-h-screen bg-white py-4 md:py-8">
+            <div className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8">
+                <div className="mb-3 md:mb-5">
+                    <h1 className="text-lg md:text-2xl font-bold text-gray-900">Our Services</h1>
                 </div>
 
-                {/* Categories Grid */}
-                {categories.length === 0 ? (
-                    <div className="text-center py-12">
-                        <p className="text-gray-500">No services available at the moment.</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-5 lg:gap-6 w-full">
-                        {categories.map((category) => {
-                            const imageUrl = getCategoryImage(category);
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4 lg:gap-5 2xl:gap-6 w-full">
+                    {categories.map((category, index) => {
+                        const imageUrl = getCategoryImage(category);
+                        const color = getCategoryColor(index);
+                        const action = getCategoryAction(category.name);
 
-                            return (
+                        return (
+                            <div key={category.id} className="flex flex-col">
                                 <Link
-                                    key={category.id}
                                     href={`/services/${category.slug}`}
-                                    className="group bg-white rounded-lg md:rounded-xl overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer w-full min-w-0 flex flex-col"
+                                    className="relative group aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-3xl lg:rounded-4xl overflow-hidden cursor-pointer"
+                                    onMouseEnter={() => setHoveredCard(category.id)}
+                                    onMouseLeave={() => setHoveredCard(null)}
                                 >
-                                    {/* Image */}
-                                    <div className="relative h-32 sm:h-36 md:h-40 lg:h-44 xl:h-48 w-full bg-gray-100 overflow-hidden flex-shrink-0">
-                                        {imageUrl ? (
-                                            <Image
-                                                src={imageUrl}
-                                                alt={category.name}
-                                                fill
-                                                className="object-cover group-hover:scale-110 transition-transform duration-300"
-                                                unoptimized={imageUrl.includes('amazonaws.com') || imageUrl.includes('s3.')}
-                                            />
-                                        ) : (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                <ImageIcon className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-gray-400" />
-                                            </div>
-                                        )}
+                                    {/* Background Image with Zoom */}
+                                    <div className="absolute inset-0">
+                                        <div
+                                            className={`w-full h-full bg-cover bg-center transition-transform duration-700 ${hoveredCard === category.id ? 'scale-110' : 'scale-100'
+                                                }`}
+                                            style={{ backgroundImage: `url(${imageUrl})` }}
+                                        />
                                     </div>
 
-                                    {/* Content */}
-                                    <div className="p-3 sm:p-4 md:p-5 lg:p-6">
-                                        <h3 className="text-base sm:text-lg md:text-xl font-bold text-gray-900 mb-1.5 md:mb-2 group-hover:text-blue-600 transition-colors">
+                                    {/* Title Overlay - Desktop only (hidden on mobile) */}
+                                    <div className="hidden md:block absolute bottom-0 left-0 right-0 p-2 md:p-4 lg:p-6 bg-linear-to-t from-black/80 to-transparent">
+                                        <h3 className="text-xs md:text-lg lg:text-xl font-bold text-white">
                                             {category.name}
                                         </h3>
-                                        {category.description && (
-                                            <p className="text-gray-600 text-xs sm:text-sm mb-3 md:mb-4 line-clamp-2">
-                                                {category.description}
+                                    </div>
+
+                                    {/* Hover Overlay - Desktop only (slides up from bottom) */}
+                                    <div
+                                        className={`hidden md:block absolute inset-x-0 bottom-0 top-auto h-full bg-linear-to-t ${color} transition-all duration-500 ${hoveredCard === category.id
+                                            ? 'translate-y-0 opacity-100'
+                                            : 'translate-y-full opacity-0'
+                                            }`}
+                                    >
+                                        <div className="h-full flex flex-col justify-center items-center p-2 md:p-5 lg:p-6">
+                                            {/* Description */}
+                                            <p className="text-white text-center mb-2 md:mb-5 lg:mb-6 leading-relaxed text-xs md:text-base lg:text-base">
+                                                {category.description || `${category.name} services with professional quality and fast delivery.`}
                                             </p>
-                                        )}
-                                        <div className="flex items-center text-blue-600 font-medium text-xs sm:text-sm group-hover:gap-2 transition-all">
-                                            View Service
-                                            <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+
+                                            {/* CTA Button */}
+                                            <button className="bg-white text-gray-900 py-1.5 md:py-2.5 lg:py-3 px-3 md:px-5 lg:px-6 rounded-lg font-bold hover:bg-gray-100 flex items-center gap-2 transform hover:scale-105 transition-all text-xs md:text-base lg:text-base">
+                                                {action}
+                                                <ArrowRight className="w-3 h-3 md:w-4 md:h-4 lg:w-5 lg:h-5" />
+                                            </button>
                                         </div>
                                     </div>
                                 </Link>
-                            );
-                        })}
-                    </div>
-                )}
+                                
+                                {/* Category Name - Mobile only (below image) */}
+                                <Link
+                                    href={`/services/${category.slug}`}
+                                    className="md:hidden mt-2"
+                                >
+                                    <h3 className="text-xs font-bold text-gray-900 text-center">
+                                        {category.name}
+                                    </h3>
+                                </Link>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
         </div>
     );
