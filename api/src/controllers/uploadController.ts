@@ -220,7 +220,9 @@ export const uploadReviewImages = async (req: Request, res: Response, next: Next
 // Get order file (presigned URL)
 export const getOrderFile = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { fileKey } = req.params;
+        const fileKey = Array.isArray(req.params.fileKey) 
+            ? req.params.fileKey[0] 
+            : req.params.fileKey;
 
         if (!fileKey) {
             throw new ValidationError("File key is required");
@@ -244,7 +246,9 @@ export const getOrderFile = async (req: Request, res: Response, next: NextFuncti
 // Delete order file
 export const deleteOrderFile = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { fileKey } = req.params;
+        const fileKey = Array.isArray(req.params.fileKey) 
+            ? req.params.fileKey[0] 
+            : req.params.fileKey;
 
         if (!fileKey) {
             throw new ValidationError("File key is required");
@@ -460,7 +464,9 @@ export const uploadProductImages = async (req: Request, res: Response, next: Nex
  */
 export const deleteProductImage = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { imageId } = req.params;
+        const imageId = Array.isArray(req.params.imageId) 
+            ? req.params.imageId[0] 
+            : req.params.imageId;
 
         if (!imageId) {
             throw new ValidationError("Image ID is required");
@@ -574,7 +580,9 @@ export const uploadCategoryImage = async (req: Request, res: Response, next: Nex
  */
 export const deleteCategoryImage = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { imageId } = req.params;
+        const imageId = Array.isArray(req.params.imageId) 
+            ? req.params.imageId[0] 
+            : req.params.imageId;
 
         if (!imageId) {
             throw new ValidationError("Image ID is required");
@@ -610,7 +618,9 @@ export const uploadOrderFilesAfterConfirmation = async (req: Request, res: Respo
             throw new ValidationError("Customer authentication required");
         }
 
-        const orderId = req.params.orderId;
+        const orderId = Array.isArray(req.params.orderId) 
+            ? req.params.orderId[0] 
+            : req.params.orderId;
         const orderItemId = req.body.orderItemId as string | undefined;
         const productId = req.body.productId as string | undefined;
         const variantId = req.body.variantId as string | undefined;

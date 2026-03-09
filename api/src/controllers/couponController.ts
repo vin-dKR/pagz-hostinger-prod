@@ -263,7 +263,9 @@ export const getAvailableCoupons = async (req: Request, res: Response, next: Nex
  */
 export const getCouponById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         const coupon = await prisma.coupon.findUnique({
             where: { id },
@@ -318,7 +320,9 @@ export const getCouponById = async (req: Request, res: Response, next: NextFunct
  */
 export const getCouponProductsPublic = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         // Verify coupon exists
         const coupon = await prisma.coupon.findUnique({
@@ -639,7 +643,9 @@ export const getAdminCoupons = async (req: Request, res: Response, next: NextFun
 // Admin: Get single coupon
 export const getAdminCoupon = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         if (!id) {
             throw new ValidationError("Coupon ID is required");
@@ -1015,7 +1021,9 @@ export const createAdminCoupon = async (req: Request, res: Response, next: NextF
 // Admin: Update coupon
 export const updateAdminCoupon = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const {
             name,
             description,
@@ -1199,7 +1207,9 @@ export const updateAdminCoupon = async (req: Request, res: Response, next: NextF
 // Admin: Delete coupon
 export const deleteAdminCoupon = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         if (!id) {
             throw new ValidationError("Coupon ID is required");
@@ -1313,7 +1323,9 @@ export const getCouponStats = async (req: Request, res: Response, next: NextFunc
 // Admin: Get coupon analytics
 export const getCouponAnalytics = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         if (!id) {
             throw new ValidationError("Coupon ID is required");
@@ -1508,7 +1520,9 @@ export const bulkCouponOperation = async (req: Request, res: Response, next: Nex
 // Admin: Get coupon usage history
 export const getCouponUsages = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const page = Number(req.query.page) || 1;
         const limit = Number(req.query.limit) || 20;
         const skip = (page - 1) * limit;
@@ -1590,7 +1604,9 @@ export const getCouponUsages = async (req: Request, res: Response, next: NextFun
  */
 export const getCouponProducts = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         if (!id) {
             throw new ValidationError("Coupon ID is required");
@@ -1641,7 +1657,9 @@ export const getCouponProducts = async (req: Request, res: Response, next: NextF
  */
 export const addCouponProducts = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const { productIds } = req.body;
 
         if (!id) {
@@ -1698,7 +1716,9 @@ export const addCouponProducts = async (req: Request, res: Response, next: NextF
  */
 export const removeCouponProducts = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const { productIds } = req.body;
 
         if (!id) {
@@ -1736,7 +1756,9 @@ export const removeCouponProducts = async (req: Request, res: Response, next: Ne
  */
 export const getCouponCategories = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         if (!id) {
             throw new ValidationError("Coupon ID is required");
@@ -1813,7 +1835,9 @@ export const getCouponCategories = async (req: Request, res: Response, next: Nex
  */
 export const addCouponCategories = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const { categoryIds } = req.body;
 
         if (!id) {
@@ -1885,7 +1909,9 @@ export const addCouponCategories = async (req: Request, res: Response, next: Nex
  */
 export const removeCouponCategories = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+            const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const { categoryIds } = req.body;
 
         if (!id) {

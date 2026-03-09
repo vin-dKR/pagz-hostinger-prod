@@ -6,7 +6,9 @@ import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/erro
 // Get product reviews
 export const getProductReviews = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { productId } = req.params;
+        const productId = Array.isArray(req.params.productId) 
+            ? req.params.productId[0] 
+            : req.params.productId;
 
         if (!productId) {
             throw new ValidationError("Product ID is required");
@@ -126,7 +128,9 @@ export const createReview = async (req: Request, res: Response, next: NextFuncti
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { productId } = req.params;
+        const productId = Array.isArray(req.params.productId) 
+            ? req.params.productId[0] 
+            : req.params.productId;
 
         if (!productId) {
             throw new ValidationError("Product ID is required");
@@ -208,7 +212,9 @@ export const updateReview = async (req: Request, res: Response, next: NextFuncti
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { reviewId } = req.params;
+        const reviewId = Array.isArray(req.params.reviewId) 
+            ? req.params.reviewId[0] 
+            : req.params.reviewId;
 
         if (!reviewId) {
             throw new ValidationError("Review ID is required");
@@ -283,7 +289,9 @@ export const deleteReview = async (req: Request, res: Response, next: NextFuncti
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { reviewId } = req.params;
+        const reviewId = Array.isArray(req.params.reviewId) 
+            ? req.params.reviewId[0] 
+            : req.params.reviewId;
 
         const review = await prisma.review.findUnique({
             where: { id: reviewId },
@@ -335,7 +343,9 @@ export const voteReviewHelpful = async (req: Request, res: Response, next: NextF
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { reviewId } = req.params;
+        const reviewId = Array.isArray(req.params.reviewId) 
+            ? req.params.reviewId[0] 
+            : req.params.reviewId;
 
         if (!reviewId) {
             throw new ValidationError("Review ID is required");
@@ -403,7 +413,9 @@ export const removeHelpfulVote = async (req: Request, res: Response, next: NextF
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { reviewId } = req.params;
+        const reviewId = Array.isArray(req.params.reviewId) 
+            ? req.params.reviewId[0] 
+            : req.params.reviewId;
 
         if (!reviewId) {
             throw new ValidationError("Review ID is required");
@@ -738,7 +750,9 @@ export const getAdminReviews = async (req: Request, res: Response, next: NextFun
 // Admin: Get single review
 export const getAdminReview = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         if (!id) {
             throw new ValidationError("Review ID is required");
@@ -890,7 +904,9 @@ export const getAdminReview = async (req: Request, res: Response, next: NextFunc
 // Admin: Update review (approve/reject)
 export const updateAdminReview = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const { rating, title, comment, images, isApproved, isVerifiedPurchase } = req.body;
 
         if (!id) {
@@ -989,7 +1005,9 @@ export const updateAdminReview = async (req: Request, res: Response, next: NextF
 // Admin: Delete review
 export const deleteAdminReview = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         if (!id) {
             throw new ValidationError("Review ID is required");
@@ -1062,7 +1080,9 @@ async function recalculateProductRating(productId: string) {
 // Admin: Approve review with notification option
 export const approveReview = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const { notifyUser } = req.body;
 
         if (!id) {
@@ -1122,7 +1142,9 @@ export const approveReview = async (req: Request, res: Response, next: NextFunct
 // Admin: Reject review with reason
 export const rejectReview = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const { reason, notifyUser } = req.body;
 
         if (!id) {
@@ -1286,7 +1308,9 @@ export const getReviewStatistics = async (req: Request, res: Response, next: Nex
 // Admin: Bulk approve reviews
 export const bulkApproveReviews = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { reviewIds } = req.body;
+        const reviewIds = Array.isArray(req.body.reviewIds) 
+            ? req.body.reviewIds 
+            : [req.body.reviewIds];
 
         if (!Array.isArray(reviewIds) || reviewIds.length === 0) {
             throw new ValidationError("Review IDs array is required");
@@ -1398,7 +1422,9 @@ export const bulkDeleteReviews = async (req: Request, res: Response, next: NextF
 // Admin: Update review with full edit capabilities
 export const editAdminReview = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;            
         const { rating, title, comment, images, isApproved, isVerifiedPurchase } = req.body;
 
         if (!id) {

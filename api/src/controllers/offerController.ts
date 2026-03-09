@@ -62,7 +62,9 @@ export const getOffers = async (req: Request, res: Response, next: NextFunction)
  */
 export const getOfferById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         const offer = await prisma.offer.findUnique({
             where: { id },
@@ -112,7 +114,9 @@ export const getOfferById = async (req: Request, res: Response, next: NextFuncti
  */
 export const getOfferProducts = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         // Verify offer exists
         const offer = await prisma.offer.findUnique({

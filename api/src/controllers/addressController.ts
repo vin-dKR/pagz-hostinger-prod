@@ -42,7 +42,9 @@ export const updateAddress = async (req: Request, res: Response, next: NextFunct
             throw new UnauthorizedError("User not authorized");
         }
 
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
         const { street, city, state, zipCode, country, isDefault } = req.body;
 
         // Verify address exists and belongs to user
@@ -101,7 +103,9 @@ export const deleteAddress = async (req: Request, res: Response, next: NextFunct
             throw new UnauthorizedError("User not authorized");
         }
 
-        const { id } = req.params;
+        const id = Array.isArray(req.params.id) 
+            ? req.params.id[0] 
+            : req.params.id;
 
         // Verify address exists and belongs to user
         const address = await prisma.address.findFirst({

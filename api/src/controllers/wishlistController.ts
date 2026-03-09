@@ -115,7 +115,7 @@ export const removeFromWishlist = async (req: Request, res: Response, next: Next
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { productId } = req.params;
+        const { productId } = req.params as { productId: string };
 
         if (!productId) {
             throw new ValidationError("Product ID is required");
@@ -151,7 +151,9 @@ export const checkWishlist = async (req: Request, res: Response, next: NextFunct
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { productId } = req.params;
+        const productId = Array.isArray(req.params.productId) 
+            ? req.params.productId[0] 
+            : req.params.productId;
 
         if (!productId) {
             throw new ValidationError("Product ID is required");
