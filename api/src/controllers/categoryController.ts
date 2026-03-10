@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../services/prisma.js";
-import { sendSuccess, sendError } from "../utils/response.js";
+import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError } from "../utils/errors.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { getParamAsString } from "../utils/db-utils.js";

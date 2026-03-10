@@ -326,7 +326,7 @@ export const getAdminUser = async (req: Request, res: Response, next: NextFuncti
         }
 
         const user = await prisma.user.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 addresses: {
                     orderBy: { isDefault: "desc" },
@@ -350,25 +350,25 @@ export const getAdminUser = async (req: Request, res: Response, next: NextFuncti
 
         // Calculate statistics
         const orders = await prisma.order.findMany({
-            where: { userId: id },
+            where: { userId: id as string },
             select: { total: true, subtotal: true },
         });
         const totalSpent = orders.reduce((sum, order) => sum + Number(order.total), 0);
         const avgOrderValue = orders.length > 0 ? totalSpent / orders.length : 0;
 
         const cart = await prisma.cart.findUnique({
-            where: { userId: id },
+            where: { userId: id as string },
             include: { items: true },
         });
 
         const lastOrder = await prisma.order.findFirst({
-            where: { userId: id },
+            where: { userId: id as string },
             orderBy: { createdAt: "desc" },
             select: { createdAt: true },
         });
 
         const lastReview = await prisma.review.findFirst({
-            where: { userId: id },
+            where: { userId: id as string },
             orderBy: { createdAt: "desc" },
             select: { createdAt: true },
         });
@@ -414,7 +414,7 @@ export const getUserOrders = async (req: Request, res: Response, next: NextFunct
         }
 
         const where: Prisma.OrderWhereInput = {
-            userId: id,
+            userId: id as string,
             ...(status && { status: status as any }),
             ...((dateFrom || dateTo) && {
                 createdAt: {
@@ -477,7 +477,7 @@ export const getUserAddresses = async (req: Request, res: Response, next: NextFu
         }
 
         const addresses = await prisma.address.findMany({
-            where: { userId: id },
+            where: { userId: id as string },
             include: {
                 _count: {
                     select: { orders: true },
@@ -510,7 +510,7 @@ export const getUserPayments = async (req: Request, res: Response, next: NextFun
         }
 
         const where: Prisma.PaymentWhereInput = {
-            userId: id,
+            userId: id as string,
             ...(status && { status: status as any }),
             ...((dateFrom || dateTo) && {
                 createdAt: {
@@ -569,7 +569,7 @@ export const getUserReviews = async (req: Request, res: Response, next: NextFunc
         }
 
         const where: Prisma.ReviewWhereInput = {
-            userId: id,
+            userId: id as string,
             ...(rating && { rating: parseInt(rating) }),
             ...(isApproved !== undefined && { isApproved: isApproved === "true" }),
         };
@@ -623,7 +623,7 @@ export const getUserWishlistAndCart = async (req: Request, res: Response, next: 
 
         const [wishlistItems, cart] = await Promise.all([
             prisma.wishlistItem.findMany({
-                where: { userId: id },
+                where: { userId: id as string },
                 include: {
                     product: {
                         include: {
@@ -637,7 +637,7 @@ export const getUserWishlistAndCart = async (req: Request, res: Response, next: 
                 orderBy: { createdAt: "desc" },
             }),
             prisma.cart.findUnique({
-                where: { userId: id },
+                where: { userId: id as string },
                 include: {
                     items: {
                         include: {
@@ -688,7 +688,7 @@ export const updateAdminUser = async (req: Request, res: Response, next: NextFun
 
         // Check if user exists
         const existingUser = await prisma.user.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!existingUser) {
@@ -733,7 +733,7 @@ export const updateAdminUser = async (req: Request, res: Response, next: NextFun
         }
 
         const user = await prisma.user.update({
-            where: { id },
+            where: { id: id as string },
             data: updateData,
             include: {
                 _count: {
@@ -775,7 +775,7 @@ export const deleteAdminUser = async (req: Request, res: Response, next: NextFun
 
         // Check if user exists
         const user = await prisma.user.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!user) {
@@ -794,7 +794,7 @@ export const deleteAdminUser = async (req: Request, res: Response, next: NextFun
 
         // Hard delete (cascade will handle related records)
         await prisma.user.delete({
-            where: { id },
+            where: { id: id as string },
         });
 
         return sendSuccess(res, null, "User deleted successfully");
@@ -866,7 +866,7 @@ export const getUserStatisticsById = async (req: Request, res: Response, next: N
         }
 
         const user = await prisma.user.findUnique({
-            where: { id },
+            where: { id: id as string },
             include: {
                 _count: {
                     select: {
@@ -886,7 +886,7 @@ export const getUserStatisticsById = async (req: Request, res: Response, next: N
 
         // Calculate detailed statistics
         const orders = await prisma.order.findMany({
-            where: { userId: id },
+            where: { userId: id as string },
             select: { total: true, status: true, createdAt: true },
         });
 
@@ -902,7 +902,7 @@ export const getUserStatisticsById = async (req: Request, res: Response, next: N
         );
 
         const payments = await prisma.payment.findMany({
-            where: { userId: id },
+            where: { userId: id as string },
             select: { amount: true, status: true, method: true },
         });
 
@@ -922,7 +922,7 @@ export const getUserStatisticsById = async (req: Request, res: Response, next: N
         );
 
         const reviews = await prisma.review.findMany({
-            where: { userId: id },
+            where: { userId: id as string },
             select: { rating: true, isApproved: true },
         });
 
@@ -969,7 +969,7 @@ export const addUserAddress = async (req: Request, res: Response, next: NextFunc
 
         // Check if user exists
         const user = await prisma.user.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!user) {
@@ -979,14 +979,14 @@ export const addUserAddress = async (req: Request, res: Response, next: NextFunc
         // If setting as default, unset other defaults
         if (isDefault) {
             await prisma.address.updateMany({
-                where: { userId: id, isDefault: true },
+                where: { userId: id as string, isDefault: true },
                 data: { isDefault: false },
             });
         }
 
         const address = await prisma.address.create({
             data: {
-                userId: id,
+                userId: id as string,
                 street,
                 city,
                 state,
@@ -1017,8 +1017,8 @@ export const updateUserAddress = async (req: Request, res: Response, next: NextF
         // Verify address exists and belongs to user
         const address = await prisma.address.findFirst({
             where: {
-                id: addressId,
-                userId: id,
+                id: addressId as string,
+                userId: id as string,
             },
         });
 
@@ -1037,7 +1037,7 @@ export const updateUserAddress = async (req: Request, res: Response, next: NextF
         // Handle isDefault
         if (isDefault === true) {
             await prisma.address.updateMany({
-                where: { userId: id, isDefault: true },
+                where: { userId: id as string, isDefault: true },
                 data: { isDefault: false },
             });
             updateData.isDefault = true;
@@ -1046,7 +1046,7 @@ export const updateUserAddress = async (req: Request, res: Response, next: NextF
         }
 
         const updatedAddress = await prisma.address.update({
-            where: { id: addressId },
+            where: { id: addressId as string },
             data: updateData,
         });
 
@@ -1070,8 +1070,8 @@ export const deleteUserAddress = async (req: Request, res: Response, next: NextF
         // Verify address exists and belongs to user
         const address = await prisma.address.findFirst({
             where: {
-                id: addressId,
-                userId: id,
+                id: addressId as string,
+                userId: id as string,
             },
         });
 
@@ -1080,7 +1080,7 @@ export const deleteUserAddress = async (req: Request, res: Response, next: NextF
         }
 
         await prisma.address.delete({
-            where: { id: addressId },
+            where: { id: addressId as string },
         });
 
         return sendSuccess(res, null, "Address deleted successfully");
@@ -1103,8 +1103,8 @@ export const setDefaultAddress = async (req: Request, res: Response, next: NextF
         // Verify address exists and belongs to user
         const address = await prisma.address.findFirst({
             where: {
-                id: addressId,
-                userId: id,
+                id: addressId as string,
+                userId: id as string,
             },
         });
 
@@ -1114,13 +1114,13 @@ export const setDefaultAddress = async (req: Request, res: Response, next: NextF
 
         // Unset all other defaults
         await prisma.address.updateMany({
-            where: { userId: id, isDefault: true },
+            where: { userId: id as string, isDefault: true },
             data: { isDefault: false },
         });
 
         // Set this address as default
         const updatedAddress = await prisma.address.update({
-            where: { id: addressId },
+            where: { id: addressId as string },
             data: { isDefault: true },
         });
 
@@ -1154,7 +1154,7 @@ export const resetUserPassword = async (req: Request, res: Response, next: NextF
 
         // Check if user exists
         const user = await prisma.user.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!user) {
@@ -1201,7 +1201,7 @@ export const suspendUser = async (req: Request, res: Response, next: NextFunctio
 
         // Check if user exists
         const user = await prisma.user.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!user) {
@@ -1229,7 +1229,7 @@ export const suspendUser = async (req: Request, res: Response, next: NextFunctio
         };
 
         const updatedUser = await prisma.user.update({
-            where: { id },
+            where: { id: id as string },
             data: {
                 notificationPreferences: {
                     ...(user.notificationPreferences as any || {}),
@@ -1267,7 +1267,7 @@ export const activateUser = async (req: Request, res: Response, next: NextFuncti
 
         // Check if user exists
         const user = await prisma.user.findUnique({
-            where: { id },
+            where: { id: id as string },
         });
 
         if (!user) {
@@ -1281,7 +1281,7 @@ export const activateUser = async (req: Request, res: Response, next: NextFuncti
         }
 
         const updatedUser = await prisma.user.update({
-            where: { id },
+            where: { id: id as string },
             data: {
                 notificationPreferences: prefs,
             },
@@ -1349,7 +1349,7 @@ export const exportUsers = async (req: Request, res: Response, next: NextFunctio
         const usersWithStats = await Promise.all(
             users.map(async (user) => {
                 const orders = await prisma.order.findMany({
-                    where: { userId: user.id },
+                    where: { userId: user.id as string },
                     select: { total: true },
                 });
                 const totalSpent = orders.reduce((sum, order) => sum + Number(order.total), 0);
