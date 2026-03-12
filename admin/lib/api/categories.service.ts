@@ -651,3 +651,20 @@ export async function publishPricingRuleAsProductApi(
 
     return response.data;
 }
+
+export async function updateProductFromPricingRuleApi(
+    categoryId: string,
+    ruleId: string,
+    data: PublishProductData
+): Promise<any> {
+    const response = await put<any>(
+        `/admin/categories/${categoryId}/pricing-rules/${ruleId}/update-product`,
+        data
+    );
+
+    if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to update product');
+    }
+
+    return response.data;
+}

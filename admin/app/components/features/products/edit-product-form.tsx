@@ -25,10 +25,12 @@ import {
     type ProductImage,
     type ProductAddon,
 } from '@/lib/api/products.service';
-import { getCategories, type Category, type PaginatedCategories } from '@/lib/api/categories.service';
-import { X } from 'lucide-react';
+import { getCategories, type Category, type PaginatedCategories, getCategoryPricingRulesApi, updateCategoryPricingRuleApi, type CategoryPricingRule } from '@/lib/api/categories.service';
+import { X, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
 import { useConfirm } from '@/lib/hooks/use-confirm';
+import Link from 'next/link';
+import { toastPromise } from '@/lib/utils/toast';
 
 interface EditProductFormProps {
     productId: string;
@@ -55,6 +57,18 @@ export function EditProductForm({ productId }: EditProductFormProps) {
     const [availableAddonRules, setAvailableAddonRules] = useState<any[]>([]);
     const [loadingAddons, setLoadingAddons] = useState(false);
     const [categorySpecs, setCategorySpecs] = useState<any[]>([]);
+    
+    // Pricing rule state (if product is generated from pricing rule)
+    const [pricingRule, setPricingRule] = useState<CategoryPricingRule | null>(null);
+    const [pricingRuleForm, setPricingRuleForm] = useState({
+        basePrice: '',
+        priceModifier: '',
+        quantityMultiplier: false,
+        minQuantity: '',
+        maxQuantity: '',
+        isActive: true,
+        priority: '0',
+    });
 
     // Load product + categories
     useEffect(() => {
@@ -71,17 +85,33 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                 setCategories(categoryResult.items);
                 setFormData(mapProductToFormData(product));
 
-                // Load product addons
+                // Load product addons and pricing rule
                 try {
                     const addonsData = await getProductAddons(productId);
                     setProductAddons(addonsData.addons);
                     setCategorySpecs(addonsData.category.specifications || []);
 
                     // Load available addon rules for the category
-                    const { getCategoryPricingRulesApi } = await import('@/lib/api/categories.service');
                     const rules = await getCategoryPricingRulesApi(product.categoryId);
                     const addonRules = rules.filter(r => r.ruleType === 'ADDON' && r.isActive);
                     setAvailableAddonRules(addonRules);
+                    
+                    // Load pricing rule if product is generated from one
+                    if (product.generatedFromPricingRule) {
+                        const linkedRule = rules.find(r => r.productId === productId);
+                        if (linkedRule) {
+                            setPricingRule(linkedRule);
+                            setPricingRuleForm({
+                                basePrice: linkedRule.basePrice != null ? String(linkedRule.basePrice) : '',
+                                priceModifier: linkedRule.priceModifier != null ? String(linkedRule.priceModifier) : '',
+                                quantityMultiplier: linkedRule.quantityMultiplier,
+                                minQuantity: linkedRule.minQuantity != null ? String(linkedRule.minQuantity) : '',
+                                maxQuantity: linkedRule.maxQuantity != null ? String(linkedRule.maxQuantity) : '',
+                                isActive: linkedRule.isActive,
+                                priority: String(linkedRule.priority ?? 0),
+                            });
+                        }
+                    }
                 } catch (addonErr) {
                     console.warn('Failed to load product addons', addonErr);
                 }
@@ -643,192 +673,6 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                                 }
                             />
                         </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="image-files">Upload Images</Label>
-                                <Input
-                                    id="image-files"
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-                                    multiple
-                                    onChange={(e) => {
-                                        const files = Array.from(e.target.files || []);
-
-                                        // Validate file types
-                                        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-                                        const invalidFiles = files.filter(file => !allowedTypes.includes(file.type));
-
-                                        if (invalidFiles.length > 0) {
-                                            setError('Invalid file type. Please upload JPG, PNG, WebP, or GIF images.');
-                                            return;
-                                        }
-
-                                        // Validate file sizes (10MB each)
-                                        const oversizedFiles = files.filter(file => file.size > 10 * 1024 * 1024);
-                                        if (oversizedFiles.length > 0) {
-                                            setError('File size must be less than 10MB per image.');
-                                            return;
-                                        }
-
-                                        setSelectedFiles(prev => [...prev, ...files]);
-                                        setError(null);
-
-                                        // Initialize metadata for new files
-                                        const newMetadata = new Map(fileMetadata);
-                                        files.forEach((_, index) => {
-                                            const globalIndex = selectedFiles.length + index;
-                                            newMetadata.set(globalIndex, {
-                                                alt: '',
-                                                isPrimary: images.length === 0 && globalIndex === 0,
-                                            });
-                                        });
-                                        setFileMetadata(newMetadata);
-                                    }}
-                                />
-                                <p className="text-xs text-gray-500">
-                                    Supported formats: JPG, PNG, WebP, GIF. Max size: 10MB per image
-                                </p>
-                            </div>
-
-                            {/* Selected Files with Metadata */}
-                            {selectedFiles.length > 0 && (
-                                <div className="space-y-3">
-                                    {selectedFiles.map((file, index) => {
-                                        const metadata = fileMetadata.get(index) || { alt: '', isPrimary: false };
-                                        const isFirstFile = index === 0 && images.length === 0;
-
-                                        return (
-                                            <div key={index} className="rounded-md border p-3 shadow-sm">
-                                                <div className="flex items-start justify-between mb-2">
-                                                    <p className="text-sm font-medium text-gray-800">
-                                                        {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
-                                                    </p>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            const newFiles = selectedFiles.filter((_, i) => i !== index);
-                                                            setSelectedFiles(newFiles);
-
-                                                            // Update metadata map indices
-                                                            const newMetadata = new Map<number, { alt: string; isPrimary: boolean }>();
-                                                            newFiles.forEach((_, i) => {
-                                                                const oldIndex = i < index ? i : i + 1;
-                                                                const oldMeta = fileMetadata.get(oldIndex) || { alt: '', isPrimary: false };
-                                                                newMetadata.set(i, oldMeta);
-                                                            });
-                                                            setFileMetadata(newMetadata);
-                                                        }}
-                                                    >
-                                                        <X className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <div>
-                                                        <Label htmlFor={`alt-text-${index}`}>Alt Text (optional)</Label>
-                                                        <Input
-                                                            id={`alt-text-${index}`}
-                                                            placeholder="Description for this image"
-                                                            value={metadata.alt}
-                                                            onChange={(e) => {
-                                                                const newMetadata = new Map(fileMetadata);
-                                                                const current = newMetadata.get(index) || { alt: '', isPrimary: false };
-                                                                newMetadata.set(index, { ...current, alt: e.target.value });
-                                                                setFileMetadata(newMetadata);
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            id={`is-primary-${index}`}
-                                                            type="checkbox"
-                                                            checked={metadata.isPrimary || isFirstFile}
-                                                            onChange={(e) => {
-                                                                const newMetadata = new Map(fileMetadata);
-                                                                const current = newMetadata.get(index) || { alt: '', isPrimary: false };
-                                                                newMetadata.set(index, { ...current, isPrimary: e.target.checked });
-
-                                                                // If setting as primary, unset others
-                                                                if (e.target.checked) {
-                                                                    newMetadata.forEach((meta, idx) => {
-                                                                        if (idx !== index) {
-                                                                            newMetadata.set(idx, { ...meta, isPrimary: false });
-                                                                        }
-                                                                    });
-                                                                }
-                                                                setFileMetadata(newMetadata);
-                                                            }}
-                                                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                        />
-                                                        <Label htmlFor={`is-primary-${index}`} className="cursor-pointer">
-                                                            Set as primary image
-                                                        </Label>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-
-                            {selectedFiles.length > 0 && (
-                                <Button
-                                    type="button"
-                                    onClick={async () => {
-                                        if (selectedFiles.length === 0) return;
-
-                                        setUploadingImages(true);
-                                        try {
-                                            const uploadedImages: ProductImage[] = [];
-                                            for (let i = 0; i < selectedFiles.length; i++) {
-                                                const file = selectedFiles[i];
-                                                if (!file) continue;
-
-                                                const metadata = fileMetadata.get(i) || { alt: '', isPrimary: false };
-                                                const newImage = await uploadProductImageApi(productId, file, {
-                                                    alt: metadata.alt.trim() || undefined,
-                                                    isPrimary: metadata.isPrimary || (i === 0 && images.length === 0),
-                                                });
-                                                uploadedImages.push(newImage);
-                                            }
-
-                                            // Add uploaded images to form data
-                                            setFormData((prev) => {
-                                                if (!prev) return prev;
-                                                const existingImages = prev.images || [];
-                                                return {
-                                                    ...prev,
-                                                    images: [
-                                                        ...existingImages,
-                                                        ...uploadedImages.map(img => ({
-                                                            url: img.url,
-                                                            alt: img.alt || '',
-                                                            isPrimary: img.isPrimary,
-                                                            displayOrder: existingImages.length + uploadedImages.indexOf(img),
-                                                        })),
-                                                    ],
-                                                };
-                                            });
-
-                                            // Clear selected files
-                                            setSelectedFiles([]);
-                                            setFileMetadata(new Map());
-                                            if (fileInputRef.current) {
-                                                fileInputRef.current.value = '';
-                                            }
-                                        } catch (err) {
-                                            setError(err instanceof Error ? err.message : 'Failed to upload images');
-                                        } finally {
-                                            setUploadingImages(false);
-                                        }
-                                    }}
-                                    isLoading={uploadingImages}
-                                    disabled={selectedFiles.length === 0 || uploadingImages}
-                                >
-                                    {uploadingImages ? 'Uploading...' : `Upload ${selectedFiles.length} Image${selectedFiles.length !== 1 ? 's' : ''}`}
-                                </Button>
-                            )}
                         </div>
 
                         {/* Existing Images */}
@@ -1212,6 +1056,191 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                             </CardContent>
                         </Card>
                     </div>
+
+                    {/* Pricing Rule Section (if product is generated from pricing rule) */}
+                    {pricingRule && (
+                        <Card>
+                            <CardHeader>
+                                <div className="flex items-center justify-between">
+                                    <CardTitle>Source Pricing Rule</CardTitle>
+                                    <Link
+                                        href={`/categories/${formData?.categoryId}/pricing`}
+                                        className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                    >
+                                        <ExternalLink className="h-4 w-4" />
+                                        Edit in Category
+                                    </Link>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <p className="text-sm text-blue-800">
+                                        This product is generated from a pricing rule. You can update the pricing rule here, or edit it in the category pricing page.
+                                    </p>
+                                </div>
+
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="rule-base-price">Base Price (₹)</Label>
+                                        <Input
+                                            id="rule-base-price"
+                                            type="number"
+                                            step="0.01"
+                                            value={pricingRuleForm.basePrice}
+                                            onChange={(e) =>
+                                                setPricingRuleForm((prev) => ({
+                                                    ...prev,
+                                                    basePrice: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="rule-price-modifier">Price Modifier (₹)</Label>
+                                        <Input
+                                            id="rule-price-modifier"
+                                            type="number"
+                                            step="0.01"
+                                            value={pricingRuleForm.priceModifier}
+                                            onChange={(e) =>
+                                                setPricingRuleForm((prev) => ({
+                                                    ...prev,
+                                                    priceModifier: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="rule-min-quantity">Min Quantity</Label>
+                                        <Input
+                                            id="rule-min-quantity"
+                                            type="number"
+                                            value={pricingRuleForm.minQuantity}
+                                            onChange={(e) =>
+                                                setPricingRuleForm((prev) => ({
+                                                    ...prev,
+                                                    minQuantity: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="rule-max-quantity">Max Quantity</Label>
+                                        <Input
+                                            id="rule-max-quantity"
+                                            type="number"
+                                            value={pricingRuleForm.maxQuantity}
+                                            onChange={(e) =>
+                                                setPricingRuleForm((prev) => ({
+                                                    ...prev,
+                                                    maxQuantity: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="rule-priority">Priority</Label>
+                                        <Input
+                                            id="rule-priority"
+                                            type="number"
+                                            value={pricingRuleForm.priority}
+                                            onChange={(e) =>
+                                                setPricingRuleForm((prev) => ({
+                                                    ...prev,
+                                                    priority: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            id="rule-quantity-multiplier"
+                                            type="checkbox"
+                                            checked={pricingRuleForm.quantityMultiplier}
+                                            onChange={(e) =>
+                                                setPricingRuleForm((prev) => ({
+                                                    ...prev,
+                                                    quantityMultiplier: e.target.checked,
+                                                }))
+                                            }
+                                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <Label htmlFor="rule-quantity-multiplier">Quantity Multiplier</Label>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            id="rule-is-active"
+                                            type="checkbox"
+                                            checked={pricingRuleForm.isActive}
+                                            onChange={(e) =>
+                                                setPricingRuleForm((prev) => ({
+                                                    ...prev,
+                                                    isActive: e.target.checked,
+                                                }))
+                                            }
+                                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <Label htmlFor="rule-is-active">Active</Label>
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={async () => {
+                                            if (!pricingRule || !formData?.categoryId) return;
+                                            
+                                            try {
+                                                await toastPromise(
+                                                    updateCategoryPricingRuleApi(formData.categoryId, pricingRule.id, {
+                                                        basePrice: pricingRuleForm.basePrice ? Number(pricingRuleForm.basePrice) : null,
+                                                        priceModifier: pricingRuleForm.priceModifier ? Number(pricingRuleForm.priceModifier) : null,
+                                                        quantityMultiplier: pricingRuleForm.quantityMultiplier,
+                                                        minQuantity: pricingRuleForm.minQuantity ? Number(pricingRuleForm.minQuantity) : null,
+                                                        maxQuantity: pricingRuleForm.maxQuantity ? Number(pricingRuleForm.maxQuantity) : null,
+                                                        isActive: pricingRuleForm.isActive,
+                                                        priority: Number(pricingRuleForm.priority) || 0,
+                                                    }),
+                                                    {
+                                                        loading: 'Updating pricing rule...',
+                                                        success: 'Pricing rule updated successfully',
+                                                        error: 'Failed to update pricing rule',
+                                                    }
+                                                );
+                                                
+                                                // Reload pricing rule
+                                                const rules = await getCategoryPricingRulesApi(formData.categoryId);
+                                                const updatedRule = rules.find(r => r.id === pricingRule.id);
+                                                if (updatedRule) {
+                                                    setPricingRule(updatedRule);
+                                                    setPricingRuleForm({
+                                                        basePrice: updatedRule.basePrice != null ? String(updatedRule.basePrice) : '',
+                                                        priceModifier: updatedRule.priceModifier != null ? String(updatedRule.priceModifier) : '',
+                                                        quantityMultiplier: updatedRule.quantityMultiplier,
+                                                        minQuantity: updatedRule.minQuantity != null ? String(updatedRule.minQuantity) : '',
+                                                        maxQuantity: updatedRule.maxQuantity != null ? String(updatedRule.maxQuantity) : '',
+                                                        isActive: updatedRule.isActive,
+                                                        priority: String(updatedRule.priority ?? 0),
+                                                    });
+                                                }
+                                            } catch (err) {
+                                                // Error handled by toast
+                                            }
+                                        }}
+                                    >
+                                        Update Pricing Rule
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Footer actions */}
                     <div className="flex items-center justify-between pt-4">

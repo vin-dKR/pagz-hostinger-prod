@@ -939,7 +939,15 @@ export const getAdminProduct = async (req: Request, res: Response, next: NextFun
         const product = await prisma.product.findUnique({
             where: { id },
             include: {
-                category: true,
+                category: {
+                    include: {
+                        pricingRules: {
+                            where: {
+                                productId: id,
+                            },
+                        },
+                    },
+                },
                 variants: true,
                 images: {
                     orderBy: { displayOrder: "asc" },

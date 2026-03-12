@@ -19,6 +19,7 @@ import {
     deleteCategoryPricingRuleApi,
     getCategorySpecificationsApi,
     publishPricingRuleAsProductApi,
+    updateProductFromPricingRuleApi,
     syncProductFromCategoryApi,
     type Category,
     type CategoryPricingRule,
@@ -29,6 +30,7 @@ import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X,
 import Link from 'next/link';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
+import { getProduct } from '@/lib/api/products.service';
 
 interface CategoryPricingProps {
     categoryId: string;
@@ -52,6 +54,12 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
 
     // Selected spec filters for current rule (slug -> option value)
     const [specFilters, setSpecFilters] = useState<Record<string, string>>({});
+    
+    // Selected addons for the pricing rule (when product is published)
+    const [ruleAddonIds, setRuleAddonIds] = useState<string[]>([]);
+    
+    // Store addon selections per rule ID (for persistence across form resets)
+    const [ruleAddonsMap, setRuleAddonsMap] = useState<Record<string, string[]>>({});
 
     const [form, setForm] = useState<{
         id?: string;
@@ -121,6 +129,12 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
     }, [categoryId]);
 
     const resetForm = () => {
+        // Before resetting, save current addon selections to map if we have a rule ID
+        // This ensures state persists even if user cancels and re-edits
+        if (form.id && ruleAddonIds.length > 0) {
+            setRuleAddonsMap(prev => ({ ...prev, [form.id!]: ruleAddonIds }));
+        }
+        
         setForm({
             ruleType: 'BASE_PRICE',
             basePrice: '',
@@ -132,6 +146,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             priority: '0',
         });
         setSpecFilters({});
+        setRuleAddonIds([]);
     };
 
     // When rule type changes, clear fields that are not applicable
@@ -177,9 +192,38 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             if (form.id) {
                 const updated = await updateCategoryPricingRuleApi(categoryId, form.id, payload);
                 setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+                
+                // Store addon selections in the map for persistence
+                if (ruleAddonIds.length > 0) {
+                    setRuleAddonsMap(prev => ({ ...prev, [form.id!]: ruleAddonIds }));
+                }
+                
+                // If rule has a published product, update its addons
+                const rule = rules.find(r => r.id === form.id);
+                if (rule?.isPublished && rule?.productId && ruleAddonIds.length >= 0) {
+                    try {
+                        await updateProductFromPricingRuleApi(categoryId, form.id, {
+                            addonIds: ruleAddonIds,
+                        });
+                    } catch (err) {
+                        console.warn('Failed to update product addons:', err);
+                    }
+                }
             } else {
                 const created = await createCategoryPricingRuleApi(categoryId, payload);
-                setRules((prev) => [...prev, created].sort((a, b) => b.priority - a.priority));
+                setRules((prev) => [...prev, created].sort((a, b) => {
+                    // Sort by priority descending, then by id (newest first when priority is same)
+                    if (b.priority !== a.priority) {
+                        return b.priority - a.priority;
+                    }
+                    // When priorities are equal, use id comparison (newer IDs typically come later)
+                    return b.id.localeCompare(a.id);
+                }));
+                
+                // Store addon selections in the map for the newly created rule
+                if (ruleAddonIds.length > 0) {
+                    setRuleAddonsMap(prev => ({ ...prev, [created.id]: ruleAddonIds }));
+                }
             }
 
             resetForm();
@@ -225,6 +269,39 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             priority: String(rule.priority ?? 0),
         });
         setSpecFilters(nextFilters);
+        
+        // Load addons - prioritize map (unsaved changes) over product (saved state)
+        // This ensures that if user made changes and cancelled, they're preserved
+        const storedAddons = ruleAddonsMap[rule.id];
+        
+        if (storedAddons && storedAddons.length > 0) {
+            // Use stored addons from map (may include unsaved changes)
+            setRuleAddonIds(storedAddons);
+        } else if (rule.isPublished && rule.productId) {
+            // Load product addons if no stored addons
+            import('@/lib/api/products.service').then(({ getProduct }) => {
+                getProduct(rule.productId!)
+                    .then((product: any) => {
+                        const productAddons = product.addons || [];
+                        const addonIds = productAddons.map((a: any) => a.addonRuleId || a.id);
+                        setRuleAddonIds(addonIds);
+                        // Also store in map for persistence
+                        setRuleAddonsMap(prev => ({ ...prev, [rule.id]: addonIds }));
+                    })
+                    .catch(() => {
+                        // If product not found, clear addons
+                        setRuleAddonIds([]);
+                        setRuleAddonsMap(prev => {
+                            const next = { ...prev };
+                            delete next[rule.id];
+                            return next;
+                        });
+                    });
+            });
+        } else {
+            // No stored addons and no product - clear
+            setRuleAddonIds([]);
+        }
     };
 
     const handleDeleteRule = async (ruleId: string) => {
@@ -257,29 +334,97 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         return rules.filter(rule => rule.ruleType === 'ADDON' && rule.isActive);
     }, [rules]);
 
-    const handlePublishProduct = (ruleId: string) => {
+    const handlePublishProduct = async (ruleId: string) => {
         const rule = rules.find(r => r.id === ruleId);
         if (!rule) return;
         
         setPublishRuleId(ruleId);
-        setSelectedAddonIds([]);
-        setPublishFormData({
-            stock: '1000',
-            sku: '',
-            name: '',
-            description: '',
-            shortDescription: '',
-        });
         
-        // Initialize with category images (if available)
-        const categoryImages = category?.images || [];
-        const initialImages = categoryImages.map((img, index) => ({
-            url: img.url,
-            alt: img.alt || undefined,
-            isPrimary: index === 0,
-            displayOrder: index,
-        }));
-        setPublishImages(initialImages);
+        // If product is already published, load its data
+        if (rule.isPublished && rule.productId) {
+            try {
+                const product = await getProduct(rule.productId);
+                
+                // Load product addons
+                const productAddons = (product as any).addons || [];
+                const addonIds = productAddons.map((a: any) => a.addonRuleId || a.id);
+                setSelectedAddonIds(addonIds);
+                // Also update rule addons
+                setRuleAddonIds(addonIds);
+                
+                // Load product data
+                setPublishFormData({
+                    stock: String(product.stock || 1000),
+                    sku: product.sku || '',
+                    name: product.name || '',
+                    description: product.description || '',
+                    shortDescription: product.shortDescription || '',
+                });
+                
+                // Load product images
+                if (product.images && product.images.length > 0) {
+                    setPublishImages(product.images.map((img: any, index: number) => ({
+                        url: img.url,
+                        alt: img.alt || undefined,
+                        isPrimary: img.isPrimary || index === 0,
+                        displayOrder: img.displayOrder || index,
+                    })));
+                } else {
+                    // Fallback to category images
+                    const categoryImages = category?.images || [];
+                    const initialImages = categoryImages.map((img, index) => ({
+                        url: img.url,
+                        alt: img.alt || undefined,
+                        isPrimary: index === 0,
+                        displayOrder: index,
+                    }));
+                    setPublishImages(initialImages);
+                }
+            } catch (err) {
+                // If product not found, use defaults
+                setSelectedAddonIds([]);
+                setPublishFormData({
+                    stock: '1000',
+                    sku: '',
+                    name: '',
+                    description: '',
+                    shortDescription: '',
+                });
+                const categoryImages = category?.images || [];
+                const initialImages = categoryImages.map((img, index) => ({
+                    url: img.url,
+                    alt: img.alt || undefined,
+                    isPrimary: index === 0,
+                    displayOrder: index,
+                }));
+                setPublishImages(initialImages);
+            }
+        } else {
+            // New product - check if this rule has addons stored in the map or is currently being edited
+            // Priority: 1) ruleAddonsMap, 2) ruleAddonIds if currently editing this rule, 3) empty
+            const storedAddons = ruleAddonsMap[ruleId] || [];
+            const currentFormAddons = (form.id === ruleId && ruleAddonIds.length > 0) ? ruleAddonIds : [];
+            const addonIdsToUse = storedAddons.length > 0 ? storedAddons : currentFormAddons;
+            
+            setSelectedAddonIds(addonIdsToUse);
+            setPublishFormData({
+                stock: '1000',
+                sku: '',
+                name: '',
+                description: '',
+                shortDescription: '',
+            });
+            
+            // Initialize with category images (if available)
+            const categoryImages = category?.images || [];
+            const initialImages = categoryImages.map((img, index) => ({
+                url: img.url,
+                alt: img.alt || undefined,
+                isPrimary: index === 0,
+                displayOrder: index,
+            }));
+            setPublishImages(initialImages);
+        }
         
         setPublishModalOpen(true);
     };
@@ -312,32 +457,55 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
     const handlePublishSubmit = async () => {
         if (!publishRuleId) return;
 
+        const rule = rules.find(r => r.id === publishRuleId);
+        const isUpdate = rule?.isPublished && rule?.productId;
+
         try {
             setSaving(true);
             setError(null);
-                    await toastPromise(
-                        publishPricingRuleAsProductApi(categoryId, publishRuleId, {
-                            stock: Number(publishFormData.stock) || 1000,
-                            sku: publishFormData.sku || undefined,
-                            name: publishFormData.name || undefined,
-                            description: publishFormData.description || undefined,
-                            shortDescription: publishFormData.shortDescription || undefined,
-                            images: publishImages.length > 0 ? publishImages : undefined,
-                            addonIds: selectedAddonIds,
-                        }),
-                        {
-                            loading: 'Publishing product...',
-                            success: (data: any) => `Product "${data.name}" published successfully!`,
-                            error: 'Failed to publish product',
-                        }
-                    );
-                    // Reload rules to get updated isPublished status
-                    const updatedRules = await getCategoryPricingRulesApi(categoryId);
-                    setRules(updatedRules);
-                    setPublishModalOpen(false);
-                    setPublishRuleId(null);
+            
+            // Use addons from rule form if available, otherwise use selected addons from modal
+            const addonIdsToUse = ruleAddonIds.length > 0 ? ruleAddonIds : selectedAddonIds;
+            
+            const payload = {
+                stock: Number(publishFormData.stock) || 1000,
+                sku: publishFormData.sku || undefined,
+                name: publishFormData.name || undefined,
+                description: publishFormData.description || undefined,
+                shortDescription: publishFormData.shortDescription || undefined,
+                images: publishImages.length > 0 ? publishImages : undefined,
+                addonIds: addonIdsToUse,
+            };
+
+            if (isUpdate) {
+                // Update existing product
+                await toastPromise(
+                    updateProductFromPricingRuleApi(categoryId, publishRuleId, payload),
+                    {
+                        loading: 'Updating product...',
+                        success: (data: any) => `Product "${data.name}" updated successfully!`,
+                        error: 'Failed to update product',
+                    }
+                );
+            } else {
+                // Create new product
+                await toastPromise(
+                    publishPricingRuleAsProductApi(categoryId, publishRuleId, payload),
+                    {
+                        loading: 'Publishing product...',
+                        success: (data: any) => `Product "${data.name}" published successfully!`,
+                        error: 'Failed to publish product',
+                    }
+                );
+            }
+            
+            // Reload rules to get updated isPublished status
+            const updatedRules = await getCategoryPricingRulesApi(categoryId);
+            setRules(updatedRules);
+            setPublishModalOpen(false);
+            setPublishRuleId(null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to publish product');
+            setError(err instanceof Error ? err.message : 'Failed to publish/update product');
         } finally {
             setSaving(false);
         }
@@ -371,9 +539,15 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogClose onClose={() => setPublishModalOpen(false)} />
                     <DialogHeader>
-                        <DialogTitle>Publish Product</DialogTitle>
+                        <DialogTitle>
+                            {publishRuleId && rules.find(r => r.id === publishRuleId)?.isPublished
+                                ? 'Edit Product'
+                                : 'Publish Product'}
+                        </DialogTitle>
                         <DialogDescription>
-                            Configure product details and select available addons for this product.
+                            {publishRuleId && rules.find(r => r.id === publishRuleId)?.isPublished
+                                ? 'Update product details and addons. Changes will sync with the pricing rule.'
+                                : 'Configure product details and select available addons for this product.'}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
@@ -536,7 +710,9 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                             isLoading={saving}
                             disabled={saving}
                         >
-                            Publish Product
+                            {publishRuleId && rules.find(r => r.id === publishRuleId)?.isPublished
+                                ? 'Update Product'
+                                : 'Publish Product'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -588,42 +764,92 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                         <div className="space-y-2">
                                             <Label>When these selections match (optional)</Label>
                                             <div className="space-y-2 rounded-md border border-gray-100 bg-gray-50/60 p-3">
-                                                {specs.map((spec) => (
-                                                    <div
-                                                        key={spec.id}
-                                                        className="grid items-center gap-2 md:grid-cols-[1.2fr,minmax(0,1fr)]"
-                                                    >
-                                                        <div className="text-xs font-medium text-gray-700 md:text-sm">
-                                                            {spec.name}{' '}
-                                                            <span className="text-[11px] font-normal text-gray-400">
-                                                                ({spec.slug})
-                                                            </span>
-                                                        </div>
-                                                        <select
-                                                            className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs md:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                                            value={specFilters[spec.slug] ?? ''}
-                                                            onChange={(e) => {
-                                                                const value = e.target.value;
-                                                                setSpecFilters((prev) => {
-                                                                    const next = { ...prev };
-                                                                    if (!value) {
-                                                                        delete next[spec.slug];
-                                                                    } else {
-                                                                        next[spec.slug] = value;
-                                                                    }
-                                                                    return next;
+                                                {specs
+                                                    .slice()
+                                                    .sort((a, b) => a.displayOrder - b.displayOrder)
+                                                    .map((spec) => {
+                                                        // Check if this spec depends on another
+                                                        const dependsOn = spec.dependsOn as { specificationSlug?: string } | null;
+                                                        const parentSlug = dependsOn?.specificationSlug;
+                                                        
+                                                        // Check if parent spec is selected
+                                                        const isVisible = !parentSlug || specFilters[parentSlug];
+                                                        
+                                                        // Get available options based on parent selection
+                                                        let availableOptions = spec.options;
+                                                        if (parentSlug && specFilters[parentSlug]) {
+                                                            // Filter options based on parent value
+                                                            const parentValue = specFilters[parentSlug];
+                                                            availableOptions = spec.options.filter((opt) => {
+                                                                const metadata = opt.metadata as { allowedParentValues?: string[] } | null;
+                                                                if (!metadata?.allowedParentValues || metadata.allowedParentValues.length === 0) {
+                                                                    // If no restrictions, show all options
+                                                                    return true;
+                                                                }
+                                                                // Only show options that allow this parent value
+                                                                return metadata.allowedParentValues.includes(parentValue);
+                                                            });
+                                                        }
+                                                        
+                                                        // Clear dependent spec filters when parent changes
+                                                        const handleChange = (value: string) => {
+                                                            setSpecFilters((prev) => {
+                                                                const next = { ...prev };
+                                                                if (!value) {
+                                                                    delete next[spec.slug];
+                                                                } else {
+                                                                    next[spec.slug] = value;
+                                                                }
+                                                                
+                                                                // Clear all dependent spec filters when parent changes
+                                                                const dependentSpecs = specs.filter((s) => {
+                                                                    const sDependsOn = s.dependsOn as { specificationSlug?: string } | null;
+                                                                    return sDependsOn?.specificationSlug === spec.slug;
                                                                 });
-                                                            }}
-                                                        >
-                                                            <option value="">Any</option>
-                                                            {spec.options.map((opt) => (
-                                                                <option key={opt.id} value={opt.value}>
-                                                                    {opt.label} ({opt.value})
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                ))}
+                                                                dependentSpecs.forEach((depSpec) => {
+                                                                    delete next[depSpec.slug];
+                                                                });
+                                                                
+                                                                return next;
+                                                            });
+                                                        };
+                                                        
+                                                        if (!isVisible) {
+                                                            return null;
+                                                        }
+                                                        
+                                                        return (
+                                                            <div
+                                                                key={spec.id}
+                                                                className="grid items-center gap-2 md:grid-cols-[1.2fr,minmax(0,1fr)]"
+                                                            >
+                                                                <div className="text-xs font-medium text-gray-700 md:text-sm">
+                                                                    {spec.name}{' '}
+                                                                    <span className="text-[11px] font-normal text-gray-400">
+                                                                        ({spec.slug})
+                                                                    </span>
+                                                                    {parentSlug && (
+                                                                        <span className="text-[10px] text-blue-600 ml-1">
+                                                                            (depends on {specs.find(s => s.slug === parentSlug)?.name || parentSlug})
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <select
+                                                                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs md:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                                                    value={specFilters[spec.slug] ?? ''}
+                                                                    onChange={(e) => handleChange(e.target.value)}
+                                                                    disabled={!!(parentSlug && !specFilters[parentSlug])}
+                                                                >
+                                                                    <option value="">Any</option>
+                                                                    {availableOptions.map((opt) => (
+                                                                        <option key={opt.id} value={opt.value}>
+                                                                            {opt.label} ({opt.value})
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        );
+                                                    })}
                                             </div>
                                             <p className="text-[11px] text-gray-400">
                                                 Leave a field as “Any” to not restrict this rule by that specification.
@@ -758,6 +984,76 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                         </div>
                                     </div>
 
+                                    {/* Addon Selection (only for rules with published products or when creating new rule) */}
+                                    {form.ruleType !== 'ADDON' && (form.id ? rules.find(r => r.id === form.id)?.isPublished : true) && availableAddons.length > 0 && (
+                                        <div className="space-y-2 border-t pt-4">
+                                            <Label>Product Addons (when published)</Label>
+                                            <p className="text-xs text-gray-500 mb-2">
+                                                Select which addons should be available for products published from this pricing rule.
+                                            </p>
+                                            <div className="rounded-md border border-gray-200 bg-gray-50/60 p-4 space-y-2 max-h-60 overflow-y-auto">
+                                                {availableAddons.map((addon) => {
+                                                    const specValues = (addon.specificationValues || {}) as Record<string, any>;
+                                                    const specText = Object.entries(specValues)
+                                                        .map(([key, val]) => {
+                                                            const spec = specs.find(s => s.slug === key);
+                                                            if (spec) {
+                                                                const option = spec.options.find(o => o.value === val);
+                                                                return option ? option.label : val;
+                                                            }
+                                                            return val;
+                                                        })
+                                                        .join(', ');
+                                                    const rangeText = addon.minQuantity != null || addon.maxQuantity != null
+                                                        ? ` (${addon.minQuantity ?? 0}-${addon.maxQuantity ?? '∞'} pages)`
+                                                        : '';
+                                                    const priceText = addon.priceModifier != null
+                                                        ? `₹${Number(addon.priceModifier).toFixed(2)}`
+                                                        : addon.basePrice != null
+                                                            ? `₹${Number(addon.basePrice).toFixed(2)}`
+                                                            : 'Free';
+                                                    return (
+                                                        <div key={addon.id} className="flex items-start gap-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                id={`rule-addon-${addon.id}`}
+                                                                checked={ruleAddonIds.includes(addon.id)}
+                                                                onChange={(e) => {
+                                                                    const newAddonIds = e.target.checked
+                                                                        ? [...ruleAddonIds, addon.id]
+                                                                        : ruleAddonIds.filter(id => id !== addon.id);
+                                                                    setRuleAddonIds(newAddonIds);
+                                                                    // Also update the map for persistence immediately
+                                                                    // This ensures state persists even if user cancels and re-edits
+                                                                    if (form.id) {
+                                                                        setRuleAddonsMap(prev => ({ ...prev, [form.id!]: newAddonIds }));
+                                                                    } else {
+                                                                        // For new rules, we'll store them when the rule is saved
+                                                                        // But we can also store them temporarily in a pending state
+                                                                    }
+                                                                }}
+                                                                className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                            />
+                                                            <label htmlFor={`rule-addon-${addon.id}`} className="flex-1 text-sm cursor-pointer">
+                                                                <div className="font-medium text-gray-900">
+                                                                    {addon.ruleType === 'ADDON' ? 'Addon' : addon.ruleType}
+                                                                    {specText && (
+                                                                        <div className="text-xs text-gray-500 mt-0.5">
+                                                                            {specText}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-xs text-gray-600 mt-1">
+                                                                    {priceText}{rangeText}
+                                                                </div>
+                                                            </label>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="flex justify-end gap-2">
                                         {form.id && (
                                             <Button
@@ -813,7 +1109,14 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                             <tbody>
                                                 {rules
                                                     .slice()
-                                                    .sort((a, b) => b.priority - a.priority)
+                                                    .sort((a, b) => {
+                                                        // Sort by priority descending, then by id (newest first when priority is same)
+                                                        if (b.priority !== a.priority) {
+                                                            return b.priority - a.priority;
+                                                        }
+                                                        // When priorities are equal, use id comparison (newer IDs typically come later)
+                                                        return b.id.localeCompare(a.id);
+                                                    })
                                                     .map((rule) => {
                                                         const specEntries = Object.entries(rule.specificationValues || {});
                                                         const specValuesMap = new Map(specEntries);

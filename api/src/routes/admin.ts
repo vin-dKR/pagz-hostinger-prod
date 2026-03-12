@@ -108,6 +108,7 @@ import {
     deleteCategoryImage,
     previewProductFromPricingRule,
     publishPricingRuleAsProduct,
+    updateProductFromPricingRule,
     syncProductFromCategory,
 } from "../controllers/categoryController.js";
 
@@ -262,6 +263,7 @@ router.delete("/categories/:id/images/:imageId", deleteCategoryImage);
 // Publish Pricing Rule as Product (admin only)
 router.get("/categories/:categoryId/pricing-rules/:ruleId/preview-product", previewProductFromPricingRule);
 router.post("/categories/:categoryId/pricing-rules/:ruleId/publish", publishPricingRuleAsProduct);
+router.put("/categories/:categoryId/pricing-rules/:ruleId/update-product", updateProductFromPricingRule);
 
 // Sync published products with category updates
 router.post("/categories/:categoryId/sync-products", syncProductFromCategory);

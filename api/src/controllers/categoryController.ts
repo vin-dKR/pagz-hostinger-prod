@@ -1908,6 +1908,236 @@ export const publishPricingRuleAsProduct = async (
 };
 
 /**
+ * Update a published product from its pricing rule
+ */
+export const updateProductFromPricingRule = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const categoryId = getParamAsString(req.params.categoryId, "Category ID");
+        const ruleId = getParamAsString(req.params.ruleId, "Rule ID");
+        const {
+            name,
+            slug,
+            description,
+            shortDescription,
+            stock,
+            sku,
+            minOrderQuantity,
+            maxOrderQuantity,
+            images,
+            addonIds,
+        } = req.body;
+
+        const category = await prisma.category.findUnique({
+            where: { id: categoryId },
+            include: {
+                pricingRules: {
+                    where: { id: ruleId },
+                },
+                configuration: true,
+                specifications: {
+                    include: {
+                        options: true,
+                    },
+                },
+            },
+        });
+
+        if (!category) {
+            throw new NotFoundError("Category not found");
+        }
+
+        const rule = category.pricingRules[0];
+        if (!rule) {
+            throw new NotFoundError("Pricing rule not found");
+        }
+
+        if (!rule.isPublished || !rule.productId) {
+            throw new ValidationError("This pricing rule is not published as a product");
+        }
+
+        // Get existing product
+        const existingProduct = await prisma.product.findUnique({
+            where: { id: rule.productId },
+            include: {
+                images: true,
+                specifications: true,
+            },
+        });
+
+        if (!existingProduct) {
+            throw new NotFoundError("Product not found");
+        }
+
+        // Update product name if provided
+        let productName = name || existingProduct.name;
+        let productSlug = slug || existingProduct.slug;
+
+        // If slug is being changed, check uniqueness
+        if (slug && slug !== existingProduct.slug) {
+            const existing = await prisma.product.findUnique({ where: { slug: productSlug } });
+            if (existing && existing.id !== rule.productId) {
+                throw new ValidationError("A product with this slug already exists");
+            }
+        }
+
+        // Convert specification values to ProductSpecification format (same as publish)
+        const specValues = rule.specificationValues as Record<string, any>;
+        const productSpecifications = category.specifications
+            .filter((spec) => specValues[spec.slug])
+            .map((spec, index) => {
+                const value = specValues[spec.slug];
+                const option = spec.options.find((opt) => opt.value === value);
+                
+                // Build metadata object with spec info, option metadata (half-page, dependencies)
+                const metadata: any = {
+                    specSlug: spec.slug,
+                    specName: spec.name,
+                    optionValue: String(value),
+                    optionLabel: option?.label || String(value),
+                };
+                
+                // Include option metadata if available (half-page, dependencies)
+                if (option?.metadata) {
+                    const optionMetadata = option.metadata as any;
+                    if (optionMetadata.isHalfPage) {
+                        metadata.isHalfPage = true;
+                    }
+                    if (optionMetadata.allowedParentValues) {
+                        metadata.allowedParentValues = optionMetadata.allowedParentValues;
+                    }
+                }
+                
+                // Include spec dependency info
+                if (spec.dependsOn) {
+                    metadata.dependsOn = spec.dependsOn;
+                }
+                
+                return {
+                    key: spec.name,
+                    value: option ? option.label : String(value),
+                    displayOrder: index,
+                    metadata: metadata as Prisma.InputJsonValue,
+                };
+            });
+
+        // Handle images
+        let productImages: Array<{ url: string; alt?: string; isPrimary?: boolean; displayOrder?: number }> = [];
+        if (images && Array.isArray(images) && images.length > 0) {
+            productImages = images;
+        } else if (existingProduct.images && existingProduct.images.length > 0) {
+            // Keep existing images if none provided
+            productImages = existingProduct.images.map((img) => ({
+                url: img.url,
+                alt: img.alt || undefined,
+                isPrimary: img.isPrimary,
+                displayOrder: img.displayOrder,
+            }));
+        }
+
+        // Build short description
+        let finalShortDescription = shortDescription;
+        if (!finalShortDescription) {
+            const shortDescriptionParts = productSpecifications.map(
+                (spec) => `${spec.key}: ${spec.value}`
+            );
+            finalShortDescription = shortDescriptionParts.length > 0
+                ? shortDescriptionParts.join(", ")
+                : category.name;
+        }
+
+        // Update product
+        const updatedProduct = await prisma.product.update({
+            where: { id: rule.productId },
+            data: {
+                ...(name && { name: productName }),
+                ...(slug && { slug: productSlug }),
+                ...(description !== undefined && { description: description || category.configuration?.pageDescription || category.description || "" }),
+                ...(shortDescription !== undefined && { shortDescription: finalShortDescription }),
+                ...(stock !== undefined && { stock: stock || 0 }),
+                ...(sku !== undefined && { sku: sku || null }),
+                ...(minOrderQuantity !== undefined && { minOrderQuantity: minOrderQuantity || 1 }),
+                ...(maxOrderQuantity !== undefined && { maxOrderQuantity: maxOrderQuantity || null }),
+                // Update base price from rule if changed
+                basePrice: rule.basePrice,
+                // Update images
+                images: productImages.length > 0
+                    ? {
+                        deleteMany: {},
+                        create: productImages.map((img: any, index: number) => ({
+                            url: typeof img === "string" ? img : img.url,
+                            alt: typeof img === "string" ? null : (img.alt || productName),
+                            isPrimary: index === 0,
+                            displayOrder: index,
+                        })),
+                    }
+                    : undefined,
+            },
+            include: {
+                images: true,
+                specifications: true,
+                category: true,
+            },
+        });
+
+        // Update specifications
+        await prisma.productSpecification.deleteMany({
+            where: { productId: rule.productId! },
+        });
+
+        if (productSpecifications.length > 0) {
+            await prisma.productSpecification.createMany({
+                data: productSpecifications.map((spec) => ({
+                    productId: rule.productId!,
+                    key: spec.key,
+                    value: spec.value,
+                    displayOrder: spec.displayOrder,
+                    metadata: spec.metadata,
+                })),
+            });
+        }
+
+        // Update addons
+        if (addonIds !== undefined) {
+            // Remove all existing addons
+            await prisma.productAddon.deleteMany({
+                where: { productId: rule.productId! },
+            });
+
+            // Add new addons if provided
+            if (Array.isArray(addonIds) && addonIds.length > 0) {
+                const addonRules = await prisma.categoryPricingRule.findMany({
+                    where: {
+                        id: { in: addonIds },
+                        categoryId: category.id,
+                        ruleType: 'ADDON',
+                    },
+                });
+
+                if (addonRules.length !== addonIds.length) {
+                    throw new ValidationError("Some addon IDs are invalid or not ADDON rules for this category");
+                }
+
+                await prisma.productAddon.createMany({
+                    data: addonIds.map((addonId: string) => ({
+                        productId: rule.productId!,
+                        addonRuleId: addonId,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+
+        return sendSuccess(res, updatedProduct, "Product updated successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Sync a published product with its source pricing rule
  */
 export const syncProductFromCategory = async (
