@@ -531,12 +531,33 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                         {item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0 && (
                                             <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
                                                 <p className="text-xs font-semibold text-green-900 mb-1">Price Breakdown:</p>
-                                                {item.metadata.priceBreakdown.map((pbItem, idx) => (
-                                                    <div key={idx} className="flex justify-between text-[11px] text-green-700">
-                                                        <span>{pbItem.label}</span>
-                                                        <span>₹{pbItem.value.toFixed(2)}</span>
-                                                    </div>
-                                                ))}
+                                                {item.metadata.priceBreakdown.map((pbItem, idx) => {
+                                                    // Highlight half-page adjustments
+                                                    const isHalfPageAdjustment = pbItem.value === 0 && 
+                                                        typeof pbItem.label === 'string' && 
+                                                        (pbItem.label.toLowerCase().includes('both side') || 
+                                                         pbItem.label.toLowerCase().includes('half page') ||
+                                                         pbItem.label.toLowerCase().includes('→'));
+                                                    
+                                                    return (
+                                                        <div 
+                                                            key={idx} 
+                                                            className={`flex justify-between text-[11px] ${
+                                                                isHalfPageAdjustment 
+                                                                    ? 'text-blue-800 font-medium bg-blue-100 p-1.5 rounded mb-1' 
+                                                                    : 'text-green-700'
+                                                            }`}
+                                                        >
+                                                            <span>{pbItem.label}</span>
+                                                            {pbItem.value > 0 && (
+                                                                <span>₹{pbItem.value.toFixed(2)}</span>
+                                                            )}
+                                                            {isHalfPageAdjustment && (
+                                                                <span className="text-blue-600 text-[10px] italic">(Info)</span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         )}
                                         {Array.isArray((item as any).addons) && (item as any).addons.length > 0 && (

@@ -327,6 +327,7 @@ model ProductSpecification {
   key          String // e.g., "Material", "Color", "Size"
   value        String // e.g., "Cotton", "Red", "Large"
   displayOrder Int      @default(0)
+  metadata     Json?    // Stores spec metadata: { specSlug, optionValue, isHalfPage, dependsOn, etc. }
   createdAt    DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)

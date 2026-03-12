@@ -3,6 +3,7 @@ import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { copyFile, generatePresignedUrl } from "../services/s3.js";
+import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
 
 // Customer: Create order
@@ -97,8 +98,59 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 itemPrice += Number(variant.priceModifier);
             }
 
-            const itemTotal = itemPrice * quantity;
-            subtotal += itemTotal;
+            // Check for half-page option and adjust pricing
+            const pageCount = (metadata as any)?.pageCount || null;
+            const copies = (metadata as any)?.copies || 1;
+            
+            let effectiveQuantity = quantity;
+            let updatedMetadata = metadata || {};
+            
+            if (pageCount && pageCount > 0) {
+                const { effectivePageCount, effectiveQuantity: effQty, hasHalfPage } = await calculateProductEffectivePages(
+                    productId,
+                    pageCount,
+                    quantity,
+                    copies
+                );
+                
+                effectiveQuantity = effQty;
+                
+                // If half-page is applied, use effective page count for pricing
+                if (hasHalfPage) {
+                    // Calculate price based on effective pages instead of original pages
+                    const effectivePages = effectivePageCount * copies;
+                    const itemTotal = itemPrice * effectivePages;
+                    subtotal += itemTotal;
+                    
+                    // Add half-page breakdown to metadata
+                    const halfPageBreakdown = await getProductHalfPageBreakdown(
+                        productId,
+                        pageCount,
+                        quantity,
+                        copies
+                    );
+                    
+                    updatedMetadata = {
+                        ...(metadata as any || {}),
+                        effectivePageCount,
+                        originalPageCount: pageCount,
+                        hasHalfPageAdjustment: true,
+                        priceBreakdown: [
+                            ...((metadata as any)?.priceBreakdown || []),
+                            ...(halfPageBreakdown ? [halfPageBreakdown] : []),
+                        ],
+                    };
+                } else {
+                    // Normal pricing: use pageCount * copies
+                    const effectivePages = pageCount * copies;
+                    const itemTotal = itemPrice * effectivePages;
+                    subtotal += itemTotal;
+                }
+            } else {
+                // No page count, use quantity
+                const itemTotal = itemPrice * quantity;
+                subtotal += itemTotal;
+            }
 
             // Normalize addons to array
             const normalizedAddons: string[] = Array.isArray(addons)
@@ -108,13 +160,13 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             orderItems.push({
                 productId,
                 variantId: variantId || null,
-                quantity,
+                quantity: effectiveQuantity,
                 price: itemPrice,
                 customDesignUrl: customDesignUrl ? (Array.isArray(customDesignUrl) ? customDesignUrl : [customDesignUrl]) : [],
                 customText: customText || null,
                 hasAddon: normalizedAddons.length > 0,
                 addons: normalizedAddons,
-                metadata: metadata || undefined,
+                metadata: updatedMetadata,
             });
         }
 

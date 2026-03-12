@@ -35,7 +35,9 @@ interface ProductPageTemplateProps {
     images?: Array<{ id: string; src: string; alt: string; thumbnailSrc?: string }>;
     minQuantity?: number;
     areRequiredFieldsFilled?: boolean;
-    pageCount?: number; // For price breakdown display
+    pageCount?: number; // For price breakdown display (effective page count if half-page applied)
+    originalPageCount?: number; // Original page count before half-page adjustment
+    hasHalfPageAdjustment?: boolean; // Whether half-page adjustment was applied
     copies?: number; // For price breakdown display
     quantity?: number; // For price breakdown display
     hasUploadedFiles?: boolean; // Whether files have been uploaded
@@ -69,6 +71,8 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
     minQuantity = 1,
     areRequiredFieldsFilled = false,
     pageCount,
+    originalPageCount,
+    hasHalfPageAdjustment = false,
     copies,
     quantity,
     hasUploadedFiles = false,
@@ -209,6 +213,8 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                     currency="₹"
                                     basePrice={basePricePerUnit}
                                     pageCount={pageCount}
+                                    originalPageCount={originalPageCount}
+                                    hasHalfPageAdjustment={hasHalfPageAdjustment}
                                     copies={copies}
                                     quantity={quantity}
                                 />

@@ -14,8 +14,10 @@ interface PriceBreakdownProps {
     currency?: string;
     quantity?: number;
     basePrice?: number; // Base price per unit/page
-    pageCount?: number; // Number of pages (read-only)
+    pageCount?: number; // Number of pages (read-only) - effective page count if half-page applied
+    originalPageCount?: number; // Original page count before half-page adjustment
     copies?: number; // Number of copies
+    hasHalfPageAdjustment?: boolean; // Whether half-page adjustment was applied
     className?: string;
 }
 
@@ -26,7 +28,9 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
     quantity = 1,
     basePrice,
     pageCount,
+    originalPageCount,
     copies,
+    hasHalfPageAdjustment = false,
     className,
 }) => {
     const showDetailedCalculation = basePrice !== undefined && basePrice > 0;
@@ -45,6 +49,28 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
             </h3>
 
             <div className="space-y-3">
+                {/* Informational items (value = 0, like half-page adjustments) - Show first 
+                // WIP: Half-page adjustment items are not being shown in the price breakdown
+                {items.filter((item) => item.value === 0 && !item.label.toLowerCase().startsWith('addon')).length > 0 && (
+                    <div className="pb-3 border-b-2 border-blue-200 space-y-2">
+                        {items
+                            .filter((item) => item.value === 0 && !item.label.toLowerCase().startsWith('addon'))
+                            .map((item, idx) => (
+                                <div key={idx} className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                    <div className="flex items-start gap-2">
+                                        <div className="text-blue-800 text-sm font-medium flex-1">
+                                            {item.label}
+                                            {item.description && (
+                                                <span className="text-blue-600 block mt-1 text-xs font-normal"> – {item.description}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                    </div>
+                )}
+                    */}
+
                 {/* Base Price Display */}
                 {showDetailedCalculation && (
                     <div className="pb-3 border-b-2 border-gray-200">
@@ -65,8 +91,15 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
                     <div className="pb-3 border-b border-gray-100">
                         <div className="text-gray-700 text-sm font-medium mb-2">Quantity:</div>
                         <div className="space-y-1 text-xs text-gray-600 ml-4">
+                            {hasHalfPageAdjustment && originalPageCount !== undefined && pageCount !== undefined && (
+                                <div className="text-blue-700 mb-1">
+                                    • Original Pages: <span className="font-medium">{originalPageCount} {originalPageCount === 1 ? 'page' : 'pages'}</span>
+                                </div>
+                            )}
                             {pageCount !== undefined && (
-                                <div>• Pages (from files): <span className="font-medium text-gray-700">{pageCount} {pageCount === 1 ? 'page' : 'pages'}</span></div>
+                                <div>
+                                    • {hasHalfPageAdjustment ? 'Effective Pages' : 'Pages'} (from files): <span className="font-medium text-gray-700">{pageCount} {pageCount === 1 ? 'page' : 'pages'}</span>
+                                </div>
                             )}
                             {copies !== undefined && copies > 0 && (
                                 <div>• Copies: <span className="font-medium text-gray-700">{copies} {copies === 1 ? 'copy' : 'copies'}</span></div>

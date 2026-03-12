@@ -80,6 +80,7 @@ export type SpecificationType = 'SELECT' | 'MULTI_SELECT' | 'TEXT' | 'NUMBER' | 
 
 export interface OptionMetadata {
     allowedParentValues?: string[];
+    isHalfPage?: boolean;
     [key: string]: any;
 }
 
@@ -613,6 +614,25 @@ export async function previewProductFromPricingRuleApi(
     }
 
     return response.data;
+}
+
+export async function syncProductFromCategoryApi(
+    categoryId: string,
+    ruleId?: string
+): Promise<{ synced: number; errors: Array<{ productId: string; error: string }> } | null> {
+    const url = ruleId
+        ? `/admin/categories/${categoryId}/pricing-rules/${ruleId}/sync-product`
+        : `/admin/categories/${categoryId}/sync-products`;
+    
+    const response = await post<{ synced: number; errors: Array<{ productId: string; error: string }> } | null>(url, {});
+
+    if (!response.success) {
+        throw new Error(response.error || 'Failed to sync products');
+    }
+
+    // For single product sync, data can be null (successful but no data returned)
+    // For bulk sync, data contains synced count and errors
+    return response.data ?? null;
 }
 
 export async function publishPricingRuleAsProductApi(

@@ -66,6 +66,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [priceBreakdown, setPriceBreakdown] = useState<Array<{ label: string; value: number }>>([]);
     const [totalPrice, setTotalPrice] = useState<number>(0);
     const [basePricePerUnit, setBasePricePerUnit] = useState<number>(0);
+    const [effectivePageCount, setEffectivePageCount] = useState<number | undefined>(undefined);
+    const [originalPageCount, setOriginalPageCount] = useState<number | undefined>(undefined);
+    const [hasHalfPageAdjustment, setHasHalfPageAdjustment] = useState<boolean>(false);
     const [calculatingPrice, setCalculatingPrice] = useState(false);
     const [matchingProduct, setMatchingProduct] = useState<any | null>(null);
     const [addingToCart, setAddingToCart] = useState(false);
@@ -263,13 +266,18 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
             setPriceBreakdown(result.breakdown);
             setTotalPrice(result.totalPrice);
+            setEffectivePageCount(result.effectivePageCount);
+            setOriginalPageCount(result.originalPageCount);
+            setHasHalfPageAdjustment(result.hasHalfPageAdjustment || false);
 
             // Derive base price per unit only from the base price line, not including addons
+            // Use effective quantity if available (for half-page adjustments)
+            const effectiveQuantity = result.quantity || totalQuantity;
             const baseLine = result.breakdown.find((item) =>
                 item.label.toLowerCase().startsWith('base')
             );
-            if (baseLine && totalQuantity > 0) {
-                setBasePricePerUnit(baseLine.value / totalQuantity);
+            if (baseLine && effectiveQuantity > 0) {
+                setBasePricePerUnit(baseLine.value / effectiveQuantity);
             } else {
                 setBasePricePerUnit(0);
             }
@@ -1020,7 +1028,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 priceItems={priceBreakdown}
                 totalPrice={totalPrice}
                 basePricePerUnit={basePricePerUnit}
-                pageCount={pageCount > 0 ? pageCount : undefined}
+                pageCount={effectivePageCount !== undefined ? effectivePageCount : (pageCount > 0 ? pageCount : undefined)}
+                originalPageCount={originalPageCount !== undefined ? originalPageCount : (pageCount > 0 ? pageCount : undefined)}
+                hasHalfPageAdjustment={hasHalfPageAdjustment}
                 copies={pageCount > 0 ? copies : (isCopiesMode ? copies : undefined)}
                 quantity={pageCount > 0 ? totalQuantity : quantity}
                 onAddToCart={handleAddToCart}
@@ -1098,6 +1108,22 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                         </select>
                                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                                     </div>
+
+                                    {/* Half Page Option Indicator */}
+                                    {(() => {
+                                        // Find the actual option from category specifications to check metadata
+                                        const actualOption = spec.options.find((opt) => opt.value === selectedValue);
+                                        if (actualOption?.metadata?.isHalfPage) {
+                                            return (
+                                                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                                    <p className="text-xs text-blue-800">
+                                                        <span className="font-semibold">ℹ️ Half Page Option:</span> Page count will be divided by 2 for pricing calculations.
+                                                    </p>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
 
                                     {/* Only show Page Range Pricing for non-required specifications */}
                                     {!spec.isRequired && matchingAddons.length > 0 && selectedValue && (

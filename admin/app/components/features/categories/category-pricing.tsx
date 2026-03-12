@@ -19,12 +19,13 @@ import {
     deleteCategoryPricingRuleApi,
     getCategorySpecificationsApi,
     publishPricingRuleAsProductApi,
+    syncProductFromCategoryApi,
     type Category,
     type CategoryPricingRule,
     type PricingRuleType,
     type CategorySpecification,
 } from '@/lib/api/categories.service';
-import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X } from 'lucide-react';
+import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
@@ -86,21 +87,29 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
     });
     const [publishImages, setPublishImages] = useState<Array<{ url: string; alt?: string; isPrimary?: boolean; displayOrder?: number }>>([]);
 
+    const loadRules = async () => {
+        try {
+            const [cat, pricingRules, specifications] = await Promise.all([
+                getCategoryById(categoryId),
+                getCategoryPricingRulesApi(categoryId),
+                getCategorySpecificationsApi(categoryId),
+            ]);
+            setCategory(cat);
+            setRules(pricingRules);
+            setSpecs(
+                (specifications || []).slice().sort((a, b) => a.displayOrder - b.displayOrder),
+            );
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load pricing rules');
+        }
+    };
+
     useEffect(() => {
         async function load() {
             try {
                 setLoading(true);
                 setError(null);
-                const [cat, pricingRules, specifications] = await Promise.all([
-                    getCategoryById(categoryId),
-                    getCategoryPricingRulesApi(categoryId),
-                    getCategorySpecificationsApi(categoryId),
-                ]);
-                setCategory(cat);
-                setRules(pricingRules);
-                setSpecs(
-                    (specifications || []).slice().sort((a, b) => a.displayOrder - b.displayOrder),
-                );
+                await loadRules();
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load pricing rules');
             } finally {
@@ -929,13 +938,39 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             </Button>
                                                                         )}
                                                                         {rule.isPublished && rule.productId && (
-                                                                            <Link
-                                                                                href={`/products/${rule.productId}`}
-                                                                                className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-gray-100 transition-colors"
-                                                                                title="View product"
-                                                                            >
-                                                                                <ExternalLink className="h-4 w-4 text-purple-600" />
-                                                                            </Link>
+                                                                            <>
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="ghost"
+                                                                                    onClick={async () => {
+                                                                                        try {
+                                                                                            await toastPromise(
+                                                                                                syncProductFromCategoryApi(categoryId, rule.id),
+                                                                                                {
+                                                                                                    loading: 'Syncing product...',
+                                                                                                    success: () => `Product synced successfully`,
+                                                                                                    error: (err) => err.message || 'Failed to sync product',
+                                                                                                }
+                                                                                            );
+                                                                                            // Reload rules to show updated data
+                                                                                            loadRules();
+                                                                                        } catch (err) {
+                                                                                            // Error handled by toast
+                                                                                        }
+                                                                                    }}
+                                                                                    className="h-8 w-8 p-0"
+                                                                                    title="Sync product with category updates"
+                                                                                >
+                                                                                    <RefreshCw className="h-4 w-4 text-blue-600" />
+                                                                                </Button>
+                                                                                <Link
+                                                                                    href={`/products/${rule.productId}`}
+                                                                                    className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-gray-100 transition-colors"
+                                                                                    title="View product"
+                                                                                >
+                                                                                    <ExternalLink className="h-4 w-4 text-purple-600" />
+                                                                                </Link>
+                                                                            </>
                                                                         )}
                                                                         <Button
                                                                             size="sm"

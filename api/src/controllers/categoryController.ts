@@ -8,6 +8,12 @@ import {
     validateDependencyStructure,
     validateDependency,
 } from "../utils/specification-dependencies.js";
+import {
+    processHalfPageCalculation,
+    createHalfPageBreakdownEntry,
+    type HalfPageCalculationResult,
+} from "../utils/half-page-calculation.js";
+import { syncAllProductsForCategory, syncProductByPricingRule } from "../utils/product-sync.js";
 
 // ==================== Category Specifications ====================
 
@@ -209,8 +215,17 @@ export const updateCategorySpecification = async (
             },
             include: {
                 options: true,
+                category: true,
             },
         });
+
+        // Auto-sync published products when spec is updated
+        try {
+            await syncAllProductsForCategory(updated.categoryId);
+        } catch (syncError) {
+            // Log but don't fail the request
+            console.error("Failed to auto-sync products after spec update:", syncError);
+        }
 
         return sendSuccess(res, updated, "Specification updated successfully");
     } catch (error) {
@@ -418,7 +433,22 @@ export const updateSpecificationOption = async (
                 ...(isActive !== undefined && { isActive }),
                 ...(metadata !== undefined && { metadata: metadata || null }),
             },
+            include: {
+                specification: {
+                    include: {
+                        category: true,
+                    },
+                },
+            },
         });
+
+        // Auto-sync published products when option is updated
+        try {
+            await syncAllProductsForCategory(updated.specification.categoryId);
+        } catch (syncError) {
+            // Log but don't fail the request
+            console.error("Failed to auto-sync products after option update:", syncError);
+        }
 
         return sendSuccess(res, updated, "Option updated successfully");
     } catch (error) {
@@ -616,6 +646,16 @@ export const updateCategoryPricingRule = async (
             },
         });
 
+        // Auto-sync published product if this rule is published
+        if (updated.isPublished && updated.productId) {
+            try {
+                await syncProductByPricingRule(ruleId);
+            } catch (syncError) {
+                // Log but don't fail the request
+                console.error("Failed to auto-sync product after pricing rule update:", syncError);
+            }
+        }
+
         return sendSuccess(res, updated, "Pricing rule updated successfully");
     } catch (error) {
         next(error);
@@ -724,10 +764,41 @@ export const calculateCategoryPrice = async (
             }
         }
 
+        // Process half-page calculation if applicable
+        const halfPageResult = processHalfPageCalculation(
+            specifications,
+            category.specifications.map((s) => ({
+                slug: s.slug,
+                options: s.options.map((o) => ({
+                    value: o.value,
+                    label: o.label, // Include label for display
+                    metadata: o.metadata,
+                })),
+            })),
+            pageCount,
+            quantity,
+            copies
+        );
+
+        // Use effective values for price calculation
+        const effectivePageCount = halfPageResult.effectivePageCount;
+        const effectiveQuantity = halfPageResult.effectiveQuantity;
+
         // Price calculation logic
         let totalPrice = 0;
         const breakdown: Array<{ label: string; value: number }> = [];
         let baseApplied = false;
+
+        // Add half-page adjustment breakdown entry if applicable
+        if (halfPageResult.hasHalfPageOption) {
+            const halfPageBreakdown = createHalfPageBreakdownEntry(
+                halfPageResult,
+                halfPageResult.halfPageOptionLabel
+            );
+            if (halfPageBreakdown) {
+                breakdown.push(halfPageBreakdown);
+            }
+        }
 
         // Match pricing rules based on specification values
         for (const rule of category.pricingRules) {
@@ -1080,10 +1151,41 @@ export const calculateCategoryPricePublic = async (
             }
         }
 
+        // Process half-page calculation if applicable
+        const halfPageResult = processHalfPageCalculation(
+            specifications,
+            category.specifications.map((s) => ({
+                slug: s.slug,
+                options: s.options.map((o) => ({
+                    value: o.value,
+                    label: o.label, // Include label for display
+                    metadata: o.metadata,
+                })),
+            })),
+            pageCount,
+            quantity,
+            copies
+        );
+
+        // Use effective values for price calculation
+        const effectivePageCount = halfPageResult.effectivePageCount;
+        const effectiveQuantity = halfPageResult.effectiveQuantity;
+
         // Price calculation logic
         let totalPrice = 0;
         const breakdown: Array<{ label: string; value: number }> = [];
         let baseApplied = false;
+
+        // Add half-page adjustment breakdown entry if applicable
+        if (halfPageResult.hasHalfPageOption) {
+            const halfPageBreakdown = createHalfPageBreakdownEntry(
+                halfPageResult,
+                halfPageResult.halfPageOptionLabel
+            );
+            if (halfPageBreakdown) {
+                breakdown.push(halfPageBreakdown);
+            }
+        }
 
         // Match pricing rules based on specification values
         for (const rule of category.pricingRules) {
@@ -1105,11 +1207,11 @@ export const calculateCategoryPricePublic = async (
                     continue;
                 }
                 const basePrice = rule.basePrice ? Number(rule.basePrice) : 0;
-                const finalPrice = rule.quantityMultiplier ? basePrice * quantity : basePrice;
+                const finalPrice = rule.quantityMultiplier ? basePrice * effectiveQuantity : basePrice;
                 totalPrice += finalPrice;
                 baseApplied = true;
                 breakdown.push({
-                    label: "Base Price",
+                    label: `Base Price${effectivePageCount > 0 ? ` (${effectivePageCount} pages × ${copies || 1} copies)` : ""}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "ADDON") {
@@ -1117,7 +1219,7 @@ export const calculateCategoryPricePublic = async (
 
                 if (hasPageRange) {
                     const effectivePages =
-                        pageCount != null ? pageCount * (copies != null ? copies : 1) : null;
+                        effectivePageCount > 0 ? effectivePageCount * (copies != null ? copies : 1) : null;
                     if (effectivePages == null) {
                         continue;
                     }
@@ -1151,11 +1253,11 @@ export const calculateCategoryPricePublic = async (
                 });
             } else if (rule.ruleType === "QUANTITY_TIER") {
                 if (
-                    (!rule.minQuantity || quantity >= rule.minQuantity) &&
-                    (!rule.maxQuantity || quantity <= rule.maxQuantity)
+                    (!rule.minQuantity || effectiveQuantity >= rule.minQuantity) &&
+                    (!rule.maxQuantity || effectiveQuantity <= rule.maxQuantity)
                 ) {
                     const basePrice = rule.basePrice ? Number(rule.basePrice) : 0;
-                    const finalPrice = basePrice * quantity;
+                    const finalPrice = basePrice * effectiveQuantity;
                     totalPrice += finalPrice;
                     breakdown.push({
                         label: `Quantity tier (${rule.minQuantity || 0}-${rule.maxQuantity || "∞"})`,
@@ -1168,7 +1270,11 @@ export const calculateCategoryPricePublic = async (
         return sendSuccess(res, {
             totalPrice: Number(totalPrice.toFixed(2)),
             breakdown,
-            quantity,
+            quantity: effectiveQuantity,
+            originalQuantity: quantity,
+            effectivePageCount: effectivePageCount > 0 ? effectivePageCount : undefined,
+            originalPageCount: pageCount || undefined,
+            hasHalfPageAdjustment: halfPageResult.hasHalfPageOption,
         });
     } catch (error) {
         next(error);
@@ -1669,10 +1775,36 @@ export const publishPricingRuleAsProduct = async (
             .map((spec, index) => {
                 const value = specValues[spec.slug];
                 const option = spec.options.find((opt) => opt.value === value);
+                
+                // Build metadata object with spec info, option metadata (half-page, dependencies)
+                const metadata: any = {
+                    specSlug: spec.slug,
+                    specName: spec.name,
+                    optionValue: String(value),
+                    optionLabel: option?.label || String(value),
+                };
+                
+                // Include option metadata if available (half-page, dependencies)
+                if (option?.metadata) {
+                    const optionMetadata = option.metadata as any;
+                    if (optionMetadata.isHalfPage) {
+                        metadata.isHalfPage = true;
+                    }
+                    if (optionMetadata.allowedParentValues) {
+                        metadata.allowedParentValues = optionMetadata.allowedParentValues;
+                    }
+                }
+                
+                // Include spec dependency info
+                if (spec.dependsOn) {
+                    metadata.dependsOn = spec.dependsOn;
+                }
+                
                 return {
                     key: spec.name,
                     value: option ? option.label : String(value),
                     displayOrder: index,
+                    metadata: metadata as Prisma.InputJsonValue,
                 };
             });
 
@@ -1770,6 +1902,33 @@ export const publishPricingRuleAsProduct = async (
         }
 
         return sendSuccess(res, product, "Product published successfully", 201);
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Sync a published product with its source pricing rule
+ */
+export const syncProductFromCategory = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const categoryId = getParamAsString(req.params.categoryId, "Category ID");
+        const ruleIdParam = req.params.ruleId; // Optional: sync specific rule
+        const ruleId = ruleIdParam ? (Array.isArray(ruleIdParam) ? ruleIdParam[0] : ruleIdParam) : undefined;
+
+        if (ruleId) {
+            // Sync specific product
+            await syncProductByPricingRule(ruleId);
+            return sendSuccess(res, null, "Product synced successfully");
+        } else {
+            // Sync all products for category
+            const result = await syncAllProductsForCategory(categoryId);
+            return sendSuccess(res, result, `Synced ${result.synced} product(s)`);
+        }
     } catch (error) {
         next(error);
     }

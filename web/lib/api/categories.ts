@@ -7,6 +7,7 @@ export interface SpecificationDependency {
 
 export interface OptionMetadata {
     allowedParentValues?: string[];
+    isHalfPage?: boolean;
     [key: string]: any;
 }
 
@@ -94,6 +95,10 @@ export interface PriceCalculationResponse {
     totalPrice: number;
     breakdown: Array<{ label: string; value: number }>;
     quantity: number;
+    originalQuantity?: number;
+    effectivePageCount?: number;
+    originalPageCount?: number;
+    hasHalfPageAdjustment?: boolean;
 }
 
 export interface CategoryAddon {

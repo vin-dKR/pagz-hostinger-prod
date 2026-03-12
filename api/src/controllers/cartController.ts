@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
+import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { deleteFromS3, extractKeyFromUrl } from "../services/s3.js";
 import { getParamAsString } from "../utils/db-utils.js";
 // Get user's cart
@@ -88,18 +89,30 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
 
         const cartItems = (cart as any).items as any[];
 
-        const itemsWithPricing = cartItems.map((item) => {
+        const itemsWithPricing = await Promise.all(cartItems.map(async (item) => {
             const productBasePrice = Number(item.product.sellingPrice ?? item.product.basePrice);
             const variantPrice = item.variant ? Number(item.variant.priceModifier) : 0;
             const unitBasePrice = productBasePrice + variantPrice;
             
             // Get pageCount and copies from metadata
-            const pageCount = (item.metadata as any)?.pageCount || 1;
+            const pageCount = (item.metadata as any)?.pageCount || null;
             const copies = (item.metadata as any)?.copies || 1;
-            const effectivePages = pageCount * copies;
+            
+            // Calculate effective pages considering half-page option
+            const { effectivePageCount, effectiveQuantity, hasHalfPage } = await calculateProductEffectivePages(
+                item.productId,
+                pageCount,
+                item.quantity,
+                copies
+            );
+            
+            // Use effective page count for pricing if half-page is applied
+            const effectivePages = pageCount && pageCount > 0 
+                ? (hasHalfPage ? effectivePageCount : pageCount) * copies
+                : item.quantity;
             
             // Calculate base total: if pageCount > 1, multiply by effectivePages, otherwise use quantity
-            const baseTotal = pageCount > 1 
+            const baseTotal = pageCount && pageCount > 0
                 ? unitBasePrice * effectivePages 
                 : unitBasePrice * item.quantity;
 
@@ -118,8 +131,9 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                     addonUnitPrice += rawAddonPrice;
 
                     // Calculate addon price based on page ranges and quantity multiplier
+                    // Use effective pages (considering half-page) for addon calculations
                     let addonPrice = 0;
-                    if (pageCount > 1) {
+                    if (pageCount && pageCount > 0) {
                         // Check if effectivePages is in addon's page range
                         const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
                         if (hasPageRange) {
@@ -131,7 +145,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                             }
                         }
                         
-                        // Calculate addon price
+                        // Calculate addon price using effective pages (already accounts for half-page)
                         if (addon.quantityMultiplier) {
                             addonPrice = rawAddonPrice * effectivePages;
                         } else {
@@ -152,8 +166,36 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             baseSubtotal += baseTotal;
             addonsSubtotal += addonTotal;
 
+            // Get half-page breakdown if applicable
+            let halfPageBreakdown = null;
+            if (pageCount && pageCount > 0) {
+                halfPageBreakdown = await getProductHalfPageBreakdown(
+                    item.productId,
+                    pageCount,
+                    item.quantity,
+                    copies
+                );
+            }
+
+            // Update metadata with half-page info if applicable
+            const updatedMetadata = {
+                ...(item.metadata as any || {}),
+                ...(hasHalfPage && {
+                    effectivePageCount,
+                    originalPageCount: pageCount,
+                    hasHalfPageAdjustment: true,
+                }),
+                ...(halfPageBreakdown && {
+                    priceBreakdown: [
+                        ...((item.metadata as any)?.priceBreakdown || []),
+                        halfPageBreakdown,
+                    ],
+                }),
+            };
+
             return {
                 ...item,
+                metadata: updatedMetadata,
                 pricing: {
                     unitBasePrice,
                     unitAddonPrice: addonUnitPrice,
@@ -162,7 +204,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                     total,
                 },
             };
-        });
+        }));
 
         const subtotal = baseSubtotal + addonsSubtotal;
 

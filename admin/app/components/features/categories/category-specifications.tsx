@@ -79,11 +79,13 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
         value: string;
         displayOrder: number;
         allowedParentValues: string[]; // For dependencies: which parent spec values this option applies to
+        isHalfPage: boolean; // For half-page option: divides page count by 2 for pricing
     }>({
         label: '',
         value: '',
         displayOrder: 0,
         allowedParentValues: [],
+        isHalfPage: false,
     });
 
     useEffect(() => {
@@ -124,6 +126,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             value: '',
             displayOrder: options.length,
             allowedParentValues: [],
+            isHalfPage: false,
         });
     };
 
@@ -244,9 +247,14 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             setSavingOption(true);
             setError(null);
 
-            const metadata = optionForm.allowedParentValues.length > 0
-                ? { allowedParentValues: optionForm.allowedParentValues }
-                : null;
+            const metadata: any = {};
+            if (optionForm.allowedParentValues.length > 0) {
+                metadata.allowedParentValues = optionForm.allowedParentValues;
+            }
+            if (optionForm.isHalfPage) {
+                metadata.isHalfPage = true;
+            }
+            const metadataPayload = Object.keys(metadata).length > 0 ? metadata : null;
 
             if (optionForm.id) {
                 const updated = await updateSpecificationOptionApi(
@@ -257,7 +265,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                         label: optionForm.label.trim(),
                         value: optionForm.value.trim(),
                         displayOrder: optionForm.displayOrder,
-                        metadata, 
+                        metadata: metadataPayload, 
                     } as UpdateSpecificationOptionData
                 );
                 setOptions((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
@@ -266,7 +274,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                     label: optionForm.label.trim(),
                     value: optionForm.value.trim(),
                     displayOrder: optionForm.displayOrder,
-                    metadata,
+                    metadata: metadataPayload,
                 } as CreateSpecificationOptionData);
                 setOptions((prev) => [...prev, created].sort((a, b) => a.displayOrder - b.displayOrder));
             }
@@ -280,13 +288,14 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
     };
 
     const handleEditOption = (opt: CategorySpecificationOption) => {
-        const metadata = opt.metadata as { allowedParentValues?: string[] } | null;
+        const metadata = opt.metadata as { allowedParentValues?: string[]; isHalfPage?: boolean } | null;
         setOptionForm({
             id: opt.id,
             label: opt.label,
             value: opt.value,
             displayOrder: opt.displayOrder,
             allowedParentValues: metadata?.allowedParentValues || [],
+            isHalfPage: metadata?.isHalfPage || false,
         });
         
         // Load parent spec options when editing
@@ -751,6 +760,31 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                             );
                                         })()}
 
+                                        {/* Half Page Option */}
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    id="opt-half-page"
+                                                    type="checkbox"
+                                                    checked={optionForm.isHalfPage}
+                                                    onChange={(e) =>
+                                                        setOptionForm((prev) => ({
+                                                            ...prev,
+                                                            isHalfPage: e.target.checked,
+                                                        }))
+                                                    }
+                                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <Label htmlFor="opt-half-page" className="cursor-pointer">
+                                                    Half Page Option
+                                                </Label>
+                                            </div>
+                                            <p className="text-xs text-gray-500">
+                                                When selected, page count will be divided by 2 for pricing calculations (e.g., "Both Sides" printing). 
+                                                Useful for double-sided printing where each physical page counts as half a page.
+                                            </p>
+                                        </div>
+
                                         <div className="flex justify-end gap-2">
                                             {optionForm.id && (
                                                 <Button
@@ -794,9 +828,21 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                                 <div className="text-xs text-gray-500">
                                                                     Order {opt.displayOrder}
                                                                     {(() => {
+                                                                        const metadata = opt.metadata as { allowedParentValues?: string[]; isHalfPage?: boolean } | null;
+                                                                        const parts: JSX.Element[] = [];
+                                                                        
+                                                                        // Half-page indicator
+                                                                        if (metadata?.isHalfPage) {
+                                                                            parts.push(
+                                                                                <span key="half-page" className="ml-2 text-blue-600 font-medium">
+                                                                                    (Half Page)
+                                                                                </span>
+                                                                            );
+                                                                        }
+                                                                        
+                                                                        // Dependency indicator
                                                                         const currentSpec = specs.find((s) => s.id === selectedSpecId);
                                                                         if (currentSpec?.dependsOn) {
-                                                                            const metadata = opt.metadata as { allowedParentValues?: string[] } | null;
                                                                             const allowedValues = metadata?.allowedParentValues;
                                                                             if (allowedValues && allowedValues.length > 0) {
                                                                                 const parentSpec = specs.find((s) => s.slug === currentSpec.dependsOn?.specificationSlug);
@@ -806,10 +852,13 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                                                 const labels = allowedValues
                                                                                     .map((val) => parentOptions.find((o) => o.value === val)?.label || val)
                                                                                     .join(', ');
-                                                                                return <> • Applies to: {labels}</>;
+                                                                                parts.push(
+                                                                                    <span key="depends-on"> • Applies to: {labels}</span>
+                                                                                );
                                                                             }
                                                                         }
-                                                                        return null;
+                                                                        
+                                                                        return parts.length > 0 ? <>{parts}</> : null;
                                                                     })()}
                                                                 </div>
                                                             </div>
