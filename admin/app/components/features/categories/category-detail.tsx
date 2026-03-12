@@ -49,10 +49,12 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         name: string;
         slug: string;
         description: string;
+        priority: number;
     }>({
         name: '',
         slug: '',
         description: '',
+        priority: 0,
     });
 
     const [configForm, setConfigForm] = useState<{
@@ -85,6 +87,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                     name: cat.name,
                     slug: cat.slug,
                     description: cat.description || '',
+                    priority: cat.priority ?? 0,
                 });
 
                 setConfigForm({
@@ -133,6 +136,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                 name: basicForm.name.trim(),
                 slug: basicForm.slug.trim(),
                 description: basicForm.description.trim() || undefined,
+                priority: basicForm.priority,
             });
 
             setCategory(updated);
@@ -286,6 +290,26 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                                             }))
                                         }
                                     />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="priority">Priority</Label>
+                                    <Input
+                                        id="priority"
+                                        type="number"
+                                        value={basicForm.priority}
+                                        onChange={(e) =>
+                                            setBasicForm((prev) => ({
+                                                ...prev,
+                                                priority: Number(e.target.value) || 0,
+                                            }))
+                                        }
+                                        placeholder="0"
+                                        min="0"
+                                    />
+                                    <p className="text-xs text-gray-500">
+                                        Lower priority values appear first in the services page. Default: 0
+                                    </p>
                                 </div>
 
                                 <div className="flex justify-end gap-2">

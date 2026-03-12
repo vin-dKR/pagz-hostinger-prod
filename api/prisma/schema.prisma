@@ -83,6 +83,7 @@ model Category {
   image       String? // Keep for backward compatibility
   parentId    String? // For subcategories
   isActive    Boolean  @default(true)
+  priority    Int      @default(0) // Higher priority = displayed first
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -97,6 +98,8 @@ model Category {
   @@index([parentId])
   @@index([isActive])
   @@index([slug])
+  @@index([priority])
+  @@index([isActive, priority])
   @@map("categories")
 }
 

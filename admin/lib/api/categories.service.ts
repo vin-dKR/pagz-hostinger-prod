@@ -28,6 +28,7 @@ export interface Category {
     } | null;
     images?: CategoryImage[];
     primaryImage?: CategoryImage | null;
+    priority: number;
     _count?: {
         products: number;
         specifications: number;
@@ -44,6 +45,7 @@ export interface CreateCategoryData {
     slug: string;
     description?: string;
     parentId?: string;
+    priority?: number;
 }
 
 export interface UpdateCategoryData {
@@ -51,6 +53,7 @@ export interface UpdateCategoryData {
     slug?: string;
     description?: string;
     parentId?: string;
+    priority?: number;
 }
 
 export interface PaginationMeta {

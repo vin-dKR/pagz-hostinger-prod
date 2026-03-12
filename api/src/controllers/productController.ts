@@ -8,6 +8,8 @@ import { getParamAsString } from "../utils/db-utils.js";
 // Get all categories (public) - Optimized with select to reduce data transfer
 export const getCategories = async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const { DEFAULT_CATEGORY_ORDER_BY } = await import("../utils/category-ordering.js");
+        
         const categories = await prisma.category.findMany({
             where: { isActive: true },
             select: {
@@ -18,6 +20,7 @@ export const getCategories = async (req: Request, res: Response, next: NextFunct
                 image: true,
                 parentId: true,
                 isActive: true,
+                priority: true,
                 // Only get primary image URL, not full image object
                 images: {
                     where: { isPrimary: true },
@@ -29,7 +32,7 @@ export const getCategories = async (req: Request, res: Response, next: NextFunct
                     orderBy: { displayOrder: "asc" },
                 },
             },
-            orderBy: { name: "asc" },
+            orderBy: DEFAULT_CATEGORY_ORDER_BY,
         });
 
         return sendSuccess(res, categories);
@@ -155,6 +158,8 @@ export const getAdminCategories = async (req: Request, res: Response, next: Next
             ];
         }
 
+        const { ADMIN_CATEGORY_ORDER_BY } = await import("../utils/category-ordering.js");
+        
         // Optimize: Use select to reduce data transfer and improve performance
         const [categories, total] = await Promise.all([
             prisma.category.findMany({
@@ -167,6 +172,7 @@ export const getAdminCategories = async (req: Request, res: Response, next: Next
                     image: true,
                     parentId: true,
                     isActive: true,
+                    priority: true,
                     createdAt: true,
                     updatedAt: true,
                     parent: {
@@ -194,7 +200,7 @@ export const getAdminCategories = async (req: Request, res: Response, next: Next
                         },
                     },
                 },
-                orderBy: { createdAt: "desc" },
+                orderBy: ADMIN_CATEGORY_ORDER_BY,
                 skip,
                 take: limit,
             }),
@@ -236,14 +242,17 @@ export const getAdminCategories = async (req: Request, res: Response, next: Next
 };
 
 export const createCategoties = async (req: Request, res: Response, next: NextFunction) => {
-    const { name, slug, description } = req.body
+    const { name, slug, description, priority } = req.body
 
     try {
+        const { normalizePriority } = await import("../utils/category-ordering.js");
+        
         const category = await prisma.category.create({
             data: {
                 name,
                 slug,
-                description
+                description,
+                priority: normalizePriority(priority),
             }
         })
 
@@ -259,7 +268,7 @@ export const createCategoties = async (req: Request, res: Response, next: NextFu
 export const updateCategory = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const id = getParamAsString(req.params.id, "Category ID");
-        const { name, slug, description, parentId } = req.body;
+        const { name, slug, description, parentId, priority } = req.body;
 
         // Check if category exists
         const category = await prisma.category.findUnique({
@@ -284,11 +293,14 @@ export const updateCategory = async (req: Request, res: Response, next: NextFunc
             }
         }
 
+        const { normalizePriority } = await import("../utils/category-ordering.js");
+        
         // Build update data
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;
         if (slug !== undefined) updateData.slug = slug;
         if (description !== undefined) updateData.description = description || null;
+        if (priority !== undefined) updateData.priority = normalizePriority(priority);
         if (parentId !== undefined) {
             if (parentId === null || parentId === '') {
                 updateData.parentId = null;

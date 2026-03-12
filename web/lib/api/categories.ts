@@ -76,6 +76,7 @@ export interface Category {
     description?: string;
     image?: string;
     isActive: boolean;
+    priority: number;
     specifications: CategorySpecification[];
     pricingRules: CategoryPricingRule[];
     configuration?: CategoryConfiguration;

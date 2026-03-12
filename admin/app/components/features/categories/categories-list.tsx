@@ -213,6 +213,7 @@ export function CategoriesList() {
                                     <TableHead>Image</TableHead>
                                     <TableHead>Name</TableHead>
                                     <TableHead>Slug</TableHead>
+                                    <TableHead>Priority</TableHead>
                                     <TableHead>Parent</TableHead>
                                     <TableHead>Stats</TableHead>
                                     <TableHead>Created</TableHead>
@@ -247,6 +248,11 @@ export function CategoriesList() {
                                             </Link>
                                         </TableCell>
                                         <TableCell className="font-mono text-sm">{category.slug}</TableCell>
+                                        <TableCell>
+                                            <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800">
+                                                {category.priority ?? 0}
+                                            </span>
+                                        </TableCell>
                                         <TableCell>{category.parent?.name || '-'}</TableCell>
                                         <TableCell>
                                             <div className="flex flex-col gap-1 text-xs text-gray-600">
