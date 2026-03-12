@@ -24,6 +24,8 @@ import {
     type CategorySpecification,
     type CategorySpecificationOption,
     type SpecificationType,
+    UpdateSpecificationOptionData,
+    CreateSpecificationOptionData,
 } from '@/lib/api/categories.service';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
@@ -61,12 +63,14 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
         type: SpecificationType;
         isRequired: boolean;
         displayOrder: number;
+        dependsOn?: { specificationSlug: string; required: boolean } | null;
     }>({
         name: '',
         slug: '',
         type: 'SELECT',
         isRequired: true,
         displayOrder: 0,
+        dependsOn: null,
     });
 
     const [optionForm, setOptionForm] = useState<{
@@ -110,6 +114,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             type: 'SELECT',
             isRequired: true,
             displayOrder: specs.length,
+            dependsOn: null,
         });
     };
 
@@ -135,6 +140,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                     type: specForm.type,
                     isRequired: specForm.isRequired,
                     displayOrder: specForm.displayOrder,
+                    dependsOn: specForm.dependsOn,
                 });
                 setSpecs((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
             } else {
@@ -144,6 +150,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                     type: specForm.type,
                     isRequired: specForm.isRequired,
                     displayOrder: specForm.displayOrder,
+                    dependsOn: specForm.dependsOn,
                 });
                 setSpecs((prev) => [...prev, created].sort((a, b) => a.displayOrder - b.displayOrder));
             }
@@ -164,6 +171,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             type: spec.type,
             isRequired: spec.isRequired,
             displayOrder: spec.displayOrder,
+            dependsOn: spec.dependsOn || null,
         });
     };
 
@@ -213,6 +221,20 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
         setSelectedSpecId(specId);
         resetOptionForm();
         void loadOptions(specId);
+        
+        // Load parent spec options if this spec has a dependency
+        const selectedSpec = specs.find((s) => s.id === specId);
+        if (selectedSpec?.dependsOn) {
+            const parentSpec = specs.find((s) => s.slug === selectedSpec.dependsOn?.specificationSlug);
+            if (parentSpec && parentSpecOptions.length === 0) {
+                getSpecificationOptionsApi(categoryId, parentSpec.id)
+                    .then(setParentSpecOptions)
+                    .catch(() => {});
+            }
+        } else {
+            // Clear parent options if no dependency
+            setParentSpecOptions([]);
+        }
     };
 
     const handleSubmitOption = async (e: FormEvent) => {
@@ -235,8 +257,8 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                         label: optionForm.label.trim(),
                         value: optionForm.value.trim(),
                         displayOrder: optionForm.displayOrder,
-                        metadata,
-                    }
+                        metadata, 
+                    } as UpdateSpecificationOptionData
                 );
                 setOptions((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
             } else {
@@ -245,7 +267,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                     value: optionForm.value.trim(),
                     displayOrder: optionForm.displayOrder,
                     metadata,
-                });
+                } as CreateSpecificationOptionData);
                 setOptions((prev) => [...prev, created].sort((a, b) => a.displayOrder - b.displayOrder));
             }
 
@@ -266,6 +288,17 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             displayOrder: opt.displayOrder,
             allowedParentValues: metadata?.allowedParentValues || [],
         });
+        
+        // Load parent spec options when editing
+        const currentSpec = specs.find((s) => s.id === selectedSpecId);
+        if (currentSpec?.dependsOn) {
+            const parentSpec = specs.find((s) => s.slug === currentSpec.dependsOn?.specificationSlug);
+            if (parentSpec && parentSpecOptions.length === 0) {
+                getSpecificationOptionsApi(categoryId, parentSpec.id)
+                    .then(setParentSpecOptions)
+                    .catch(() => {});
+            }
+        }
     };
 
     const handleDeleteOption = async (optionId: string) => {
@@ -427,6 +460,96 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                     />
                                 </div>
 
+                                {/* Dependency Selector */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="spec-depends-on">Depends On (Optional)</Label>
+                                    <select
+                                        id="spec-depends-on"
+                                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                        value={specForm.dependsOn?.specificationSlug || ''}
+                                        onChange={(e) => {
+                                            const parentSlug = e.target.value;
+                                            if (parentSlug) {
+                                                // Only allow selecting specs that come before this one in display order
+                                                const availableParents = specs
+                                                    .filter((s) => {
+                                                        if (s.id === specForm.id) return false;
+                                                        if (specForm.id) {
+                                                            // Editing: can select any spec with lower display order
+                                                            const currentSpec = specs.find((sp) => sp.id === specForm.id);
+                                                            return currentSpec ? s.displayOrder < currentSpec.displayOrder : true;
+                                                        }
+                                                        // Creating: can select any spec with lower or equal display order
+                                                        return s.displayOrder <= specForm.displayOrder;
+                                                    })
+                                                    .sort((a, b) => a.displayOrder - b.displayOrder);
+
+                                                const selectedParent = availableParents.find((s) => s.slug === parentSlug);
+                                                if (selectedParent) {
+                                                    setSpecForm((prev) => ({
+                                                        ...prev,
+                                                        dependsOn: {
+                                                            specificationSlug: selectedParent.slug,
+                                                            required: prev.dependsOn?.required ?? false,
+                                                        },
+                                                    }));
+                                                }
+                                            } else {
+                                                setSpecForm((prev) => ({
+                                                    ...prev,
+                                                    dependsOn: null,
+                                                }));
+                                            }
+                                        }}
+                                    >
+                                        <option value="">No dependency</option>
+                                        {specs
+                                            .filter((s) => {
+                                                if (s.id === specForm.id) return false;
+                                                if (specForm.id) {
+                                                    const currentSpec = specs.find((sp) => sp.id === specForm.id);
+                                                    return currentSpec ? s.displayOrder < currentSpec.displayOrder : true;
+                                                }
+                                                return s.displayOrder <= specForm.displayOrder;
+                                            })
+                                            .sort((a, b) => a.displayOrder - b.displayOrder)
+                                            .map((parentSpec) => (
+                                                <option key={parentSpec.id} value={parentSpec.slug}>
+                                                    {parentSpec.name} ({parentSpec.slug}) - Order {parentSpec.displayOrder}
+                                                </option>
+                                            ))}
+                                    </select>
+                                    {specForm.dependsOn && (
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                id="spec-depends-required"
+                                                type="checkbox"
+                                                checked={specForm.dependsOn.required}
+                                                onChange={(e) =>
+                                                    setSpecForm((prev) => ({
+                                                        ...prev,
+                                                        dependsOn: prev.dependsOn
+                                                            ? {
+                                                                  ...prev.dependsOn,
+                                                                  required: e.target.checked,
+                                                              }
+                                                            : null,
+                                                    }))
+                                                }
+                                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <Label htmlFor="spec-depends-required" className="text-sm">
+                                                Required dependency (hide this spec if parent not selected)
+                                            </Label>
+                                        </div>
+                                    )}
+                                    {specForm.dependsOn && (
+                                        <p className="text-xs text-gray-500">
+                                            This specification will only be shown when "{specs.find((s) => s.slug === specForm.dependsOn?.specificationSlug)?.name}" is selected.
+                                        </p>
+                                    )}
+                                </div>
+
                                 <div className="flex justify-end gap-2">
                                     {specForm.id && (
                                         <Button
@@ -468,6 +591,9 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                         <div className="text-xs text-gray-500">
                                                             {spec.type} • {spec.isRequired ? 'Required' : 'Optional'} • Order{' '}
                                                             {spec.displayOrder}
+                                                            {spec.dependsOn && (
+                                                                <> • Depends on: {specs.find((s) => s.slug === spec.dependsOn?.specificationSlug)?.name || spec.dependsOn.specificationSlug}</>
+                                                            )}
                                                         </div>
                                                     </div>
                                                     <div className="flex gap-2">
@@ -562,18 +688,20 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                         </div>
 
                                         {/* Dependency: Applies to parent spec values */}
+                                        {(() => {
+                                            // Find the parent specification from the current spec's dependsOn
+                                            const currentSpec = specs.find((s) => s.id === selectedSpecId);
+                                            if (!currentSpec?.dependsOn) return null;
 
-                                        {/* // WIP */}
-                                        {/* {(() => {
-                                            // Find if there's a "size" spec (or any parent spec we want to depend on)
-                                            const parentSpec = specs.find(s => s.slug === 'size' || s.slug === 'paper-size');
+                                            const parentSpecSlug = currentSpec.dependsOn.specificationSlug;
+                                            const parentSpec = specs.find((s) => s.slug === parentSpecSlug);
                                             if (!parentSpec || selectedSpecId === parentSpec.id) return null;
 
                                             // Load parent spec options if not already loaded
                                             if (parentSpecOptions.length === 0 && parentSpec.id) {
                                                 getSpecificationOptionsApi(categoryId, parentSpec.id)
                                                     .then(setParentSpecOptions)
-                                                    .catch(() => { });
+                                                    .catch(() => {});
                                             }
 
                                             return (
@@ -581,43 +709,47 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                     <Label htmlFor="opt-dependencies">
                                                         Applies to {parentSpec.name} (leave empty for all)
                                                     </Label>
-                                                    <div className="space-y-2 max-h-32 overflow-auto">
+                                                    <div className="space-y-2 max-h-32 overflow-auto border rounded-md p-2">
                                                         {parentSpecOptions.length === 0 ? (
-                                                            <p className="text-xs text-gray-400">Loading...</p>
+                                                            <p className="text-xs text-gray-400">Loading parent options...</p>
                                                         ) : (
-                                                            parentSpecOptions.map((parentOpt) => (
-                                                                <label key={parentOpt.id} className="flex items-center gap-2">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={optionForm.allowedParentValues.includes(parentOpt.value)}
-                                                                        onChange={(e) => {
-                                                                            if (e.target.checked) {
-                                                                                setOptionForm((prev) => ({
-                                                                                    ...prev,
-                                                                                    allowedParentValues: [...prev.allowedParentValues, parentOpt.value],
-                                                                                }));
-                                                                            } else {
-                                                                                setOptionForm((prev) => ({
-                                                                                    ...prev,
-                                                                                    allowedParentValues: prev.allowedParentValues.filter(
-                                                                                        (v) => v !== parentOpt.value
-                                                                                    ),
-                                                                                }));
-                                                                            }
-                                                                        }}
-                                                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                                    />
-                                                                    <span className="text-sm">{parentOpt.label}</span>
-                                                                </label>
-                                                            ))
+                                                            parentSpecOptions
+                                                                .filter((opt) => opt.isActive)
+                                                                .sort((a, b) => a.displayOrder - b.displayOrder)
+                                                                .map((parentOpt) => (
+                                                                    <label key={parentOpt.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={optionForm.allowedParentValues.includes(parentOpt.value)}
+                                                                            onChange={(e) => {
+                                                                                if (e.target.checked) {
+                                                                                    setOptionForm((prev) => ({
+                                                                                        ...prev,
+                                                                                        allowedParentValues: [...prev.allowedParentValues, parentOpt.value],
+                                                                                    }));
+                                                                                } else {
+                                                                                    setOptionForm((prev) => ({
+                                                                                        ...prev,
+                                                                                        allowedParentValues: prev.allowedParentValues.filter(
+                                                                                            (v) => v !== parentOpt.value
+                                                                                        ),
+                                                                                    }));
+                                                                                }
+                                                                            }}
+                                                                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                        />
+                                                                        <span className="text-sm">{parentOpt.label}</span>
+                                                                        <span className="text-xs text-gray-400">({parentOpt.value})</span>
+                                                                    </label>
+                                                                ))
                                                         )}
                                                     </div>
                                                     <p className="text-xs text-gray-500">
-                                                        Select which {parentSpec.name} values this option applies to. If none selected, it applies to all.
+                                                        Select which {parentSpec.name} values this option applies to. If none selected, it applies to all parent values.
                                                     </p>
                                                 </div>
                                             );
-                                        })()} */}
+                                        })()}
 
                                         <div className="flex justify-end gap-2">
                                             {optionForm.id && (
@@ -661,6 +793,24 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                                 </div>
                                                                 <div className="text-xs text-gray-500">
                                                                     Order {opt.displayOrder}
+                                                                    {(() => {
+                                                                        const currentSpec = specs.find((s) => s.id === selectedSpecId);
+                                                                        if (currentSpec?.dependsOn) {
+                                                                            const metadata = opt.metadata as { allowedParentValues?: string[] } | null;
+                                                                            const allowedValues = metadata?.allowedParentValues;
+                                                                            if (allowedValues && allowedValues.length > 0) {
+                                                                                const parentSpec = specs.find((s) => s.slug === currentSpec.dependsOn?.specificationSlug);
+                                                                                const parentOptions = parentSpecOptions.length > 0 
+                                                                                    ? parentSpecOptions 
+                                                                                    : specs.find((s) => s.id === parentSpec?.id)?.options || [];
+                                                                                const labels = allowedValues
+                                                                                    .map((val) => parentOptions.find((o) => o.value === val)?.label || val)
+                                                                                    .join(', ');
+                                                                                return <> • Applies to: {labels}</>;
+                                                                            }
+                                                                        }
+                                                                        return null;
+                                                                    })()}
                                                                 </div>
                                                             </div>
                                                             <div className="flex gap-2">

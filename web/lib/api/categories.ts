@@ -1,12 +1,22 @@
 import { get, post } from '../api-client';
 
+export interface SpecificationDependency {
+    specificationSlug: string;
+    required: boolean;
+}
+
+export interface OptionMetadata {
+    allowedParentValues?: string[];
+    [key: string]: any;
+}
+
 export interface CategorySpecificationOption {
     id: string;
     label: string;
     value: string;
     displayOrder: number;
     isActive: boolean;
-    metadata?: any;
+    metadata?: OptionMetadata;
 }
 
 export interface CategorySpecification {
@@ -17,7 +27,7 @@ export interface CategorySpecification {
     type: 'SELECT' | 'MULTI_SELECT' | 'TEXT' | 'NUMBER' | 'BOOLEAN';
     isRequired: boolean;
     displayOrder: number;
-    dependsOn?: any;
+    dependsOn?: SpecificationDependency | null;
     options: CategorySpecificationOption[];
 }
 

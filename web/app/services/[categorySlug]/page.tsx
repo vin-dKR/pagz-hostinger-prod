@@ -19,6 +19,11 @@ import {
     type CategorySpecification,
     type CategoryAddon,
 } from '@/lib/api/categories';
+import {
+    getAvailableOptions as getAvailableOptionsUtil,
+    isSpecificationVisible as isSpecificationVisibleUtil,
+    clearDependentSpecifications,
+} from '@/lib/utils/specification-dependencies';
 import { addToCart } from '@/lib/api/cart';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
@@ -364,39 +369,17 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
     // Get available options for a specification based on dependencies
     const getAvailableOptions = (spec: CategorySpecification): Option[] => {
-        // Check if this specification has dependencies
-        if (spec.dependsOn) {
-            const dependsOn = spec.dependsOn as Record<string, any>;
-            // Check if all dependency conditions are met
-            for (const [key, value] of Object.entries(dependsOn)) {
-                if (selectedSpecifications[key] !== value) {
-                    return []; // Hide this specification if dependencies not met
-                }
-            }
-        }
-
-        // Filter options based on metadata dependencies (e.g., paper type depends on selected size)
-        return spec.options
-            .filter((option) => {
-                const metadata = option.metadata as { allowedParentValues?: string[] } | null;
-                if (!metadata?.allowedParentValues || metadata.allowedParentValues.length === 0) {
-                    return true; // No restriction, applies to all
-                }
-
-                // Check if any parent value matches current selections
-                // For now, check against 'size' or 'paper-size' spec
-                const sizeValue = selectedSpecifications['size'] || selectedSpecifications['paper-size'];
-                if (!sizeValue) return true; // If no size selected yet, show all
-
-                return metadata.allowedParentValues.includes(sizeValue);
-            })
-            .map((option) => ({
-                id: option.id,
-                label: option.label,
-                value: option.value,
-                description: option.metadata?.description,
-                disabled: !option.isActive,
-            }));
+        // Use the optimized utility function
+        const availableOptions = getAvailableOptionsUtil(spec, selectedSpecifications);
+        
+        // Map to Option format
+        return availableOptions.map((option) => ({
+            id: option.id,
+            label: option.label,
+            value: option.value,
+            description: option.metadata?.description,
+            disabled: !option.isActive,
+        }));
     };
 
     // Compute which addon pricing rules are active for current selection and total pages
@@ -433,21 +416,13 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
     // Check if a specification should be visible based on dependencies
     const isSpecificationVisible = (spec: CategorySpecification): boolean => {
-        if (!spec.dependsOn) return true;
-
-        const dependsOn = spec.dependsOn as Record<string, any>;
-        for (const [key, value] of Object.entries(dependsOn)) {
-            if (selectedSpecifications[key] !== value) {
-                return false;
-            }
-        }
-        return true;
+        return isSpecificationVisibleUtil(spec, selectedSpecifications);
     };
 
     // Handle specification selection change
     const handleSpecificationChange = (specSlug: string, value: string) => {
         setSelectedSpecifications(prev => {
-            const updated = { ...prev };
+            let updated = { ...prev };
 
             // If value is empty string, remove the specification (for "None" option)
             if (value === '' || value === 'none') {
@@ -458,14 +433,11 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
             // Clear dependent specifications when parent changes
             if (category) {
-                category.specifications.forEach(spec => {
-                    if (spec.dependsOn) {
-                        const dependsOn = spec.dependsOn as Record<string, any>;
-                        if (dependsOn[specSlug] && dependsOn[specSlug] !== value) {
-                            delete updated[spec.slug];
-                        }
-                    }
-                });
+                updated = clearDependentSpecifications(
+                    category.specifications,
+                    updated,
+                    specSlug
+                );
             }
 
             return updated;

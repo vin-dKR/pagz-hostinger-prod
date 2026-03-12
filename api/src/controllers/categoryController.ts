@@ -4,6 +4,10 @@ import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError } from "../utils/errors.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { getParamAsString } from "../utils/db-utils.js";
+import {
+    validateDependencyStructure,
+    validateDependency,
+} from "../utils/specification-dependencies.js";
 
 // ==================== Category Specifications ====================
 
@@ -81,6 +85,28 @@ export const createCategorySpecification = async (
             throw new ValidationError("A specification with this slug already exists for this category");
         }
 
+        // Validate dependency structure
+        if (!validateDependencyStructure(dependsOn)) {
+            throw new ValidationError(
+                "Invalid dependency structure. Expected: { specificationSlug: string, required: boolean } or null"
+            );
+        }
+
+        // Validate dependency if provided
+        if (dependsOn) {
+            const allSpecs = await prisma.categorySpecification.findMany({
+                where: { categoryId: id },
+                select: {
+                    id: true,
+                    slug: true,
+                    displayOrder: true,
+                    dependsOn: true,
+                },
+            });
+
+            await validateDependency(id, slug, dependsOn, allSpecs);
+        }
+
         const specification = await prisma.categorySpecification.create({
             data: {
                 categoryId: id,
@@ -89,7 +115,7 @@ export const createCategorySpecification = async (
                 type,
                 isRequired: isRequired ?? false,
                 displayOrder: displayOrder ?? 0,
-                dependsOn: dependsOn ? dependsOn : null,
+                dependsOn: dependsOn ? (dependsOn as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
             },
             include: {
                 options: true,
@@ -147,6 +173,30 @@ export const updateCategorySpecification = async (
             }
         }
 
+        // Validate dependency structure if provided
+        if (dependsOn !== undefined) {
+            if (!validateDependencyStructure(dependsOn)) {
+                throw new ValidationError(
+                    "Invalid dependency structure. Expected: { specificationSlug: string, required: boolean } or null"
+                );
+            }
+
+            // Validate dependency if provided
+            if (dependsOn) {
+                const allSpecs = await prisma.categorySpecification.findMany({
+                    where: { categoryId: id },
+                    select: {
+                        id: true,
+                        slug: true,
+                        displayOrder: true,
+                        dependsOn: true,
+                    },
+                });
+
+                await validateDependency(id, slug || specification.slug, dependsOn, allSpecs, specId);
+            }
+        }
+
         const updated = await prisma.categorySpecification.update({
             where: { id: specId },
             data: {
@@ -155,7 +205,7 @@ export const updateCategorySpecification = async (
                 ...(type && { type }),
                 ...(isRequired !== undefined && { isRequired }),
                 ...(displayOrder !== undefined && { displayOrder }),
-                ...(dependsOn !== undefined && { dependsOn: dependsOn || null }),
+                ...(dependsOn !== undefined && { dependsOn: dependsOn ? (dependsOn as unknown as Prisma.InputJsonValue) : Prisma.JsonNull }),
             },
             include: {
                 options: true,

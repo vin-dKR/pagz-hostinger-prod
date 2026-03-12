@@ -75,6 +75,11 @@ export interface CategoryQueryParams {
 
 export type SpecificationType = 'SELECT' | 'MULTI_SELECT' | 'TEXT' | 'NUMBER' | 'BOOLEAN';
 
+export interface OptionMetadata {
+    allowedParentValues?: string[];
+    [key: string]: any;
+}
+
 export interface CategorySpecificationOption {
     id: string;
     specificationId: string;
@@ -82,7 +87,12 @@ export interface CategorySpecificationOption {
     value: string;
     displayOrder: number;
     isActive: boolean;
-    metadata?: any;
+    metadata?: OptionMetadata;
+}
+
+export interface SpecificationDependency {
+    specificationSlug: string;
+    required: boolean;
 }
 
 export interface CategorySpecification {
@@ -93,7 +103,7 @@ export interface CategorySpecification {
     type: SpecificationType;
     isRequired: boolean;
     displayOrder: number;
-    dependsOn?: any;
+    dependsOn?: SpecificationDependency | null;
     options: CategorySpecificationOption[];
 }
 
@@ -224,7 +234,7 @@ export interface CreateSpecificationData {
     type: SpecificationType;
     isRequired?: boolean;
     displayOrder?: number;
-    dependsOn?: any;
+    dependsOn?: SpecificationDependency | null;
 }
 
 export interface UpdateSpecificationData extends Partial<CreateSpecificationData> { }
@@ -292,7 +302,7 @@ export interface CreateSpecificationOptionData {
     value: string;
     displayOrder?: number;
     isActive?: boolean;
-    metadata?: any;
+    metadata?: OptionMetadata;
 }
 
 export interface UpdateSpecificationOptionData extends Partial<CreateSpecificationOptionData> { }
