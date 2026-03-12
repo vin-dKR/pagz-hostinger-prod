@@ -205,15 +205,15 @@ export default function Footer() {
                                     <div>
                                         <h4 className="text-sm sm:text-base font-hkgb font-normal text-gray-900 mb-2 sm:mb-3 md:mb-4">CATEGORIES</h4>
                                         <ul className="space-y-1.5 sm:space-y-2 lg:space-y-3">
-                                            <li><Link href="/products?category=print" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Printing</Link></li>
-                                            <li><Link href="/products?category=lamination" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Lamination</Link></li>
-                                            <li><Link href="/products?category=bill-book" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Bill Book</Link></li>
-                                            <li><Link href="/products?category=book" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Book</Link></li>
-                                            <li><Link href="/products?category=photo" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Photo</Link></li>
-                                            <li><Link href="/products?category=map" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Map</Link></li>
-                                            <li><Link href="/products?category=business-card" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Business Card</Link></li>
-                                            <li><Link href="/products?category=brochure" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Brochure</Link></li>
-                                            <li><Link href="/products?category=letterhead" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Letterhead</Link></li>
+                                            <li><Link href="/services/print" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Printing</Link></li>
+                                            <li><Link href="/services/lamination" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Lamination</Link></li>
+                                            <li><Link href="/services/bill-book" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Bill Book</Link></li>
+                                            <li><Link href="/services/book" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Book</Link></li>
+                                            <li><Link href="/services/photo" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Photo</Link></li>
+                                            <li><Link href="/services/map" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Map</Link></li>
+                                            <li><Link href="/services/business-card" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Business Card</Link></li>
+                                            <li><Link href="/services/brochure" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Brochure</Link></li>
+                                            <li><Link href="/services/letterhead" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Letterhead</Link></li>
                                         </ul>
                                     </div>
 

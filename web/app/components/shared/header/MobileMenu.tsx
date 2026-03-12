@@ -125,7 +125,7 @@ export function MobileMenu({
                                     return (
                                         <Link
                                             key={category}
-                                            href={`/products?category=${categorySlug}`}
+                                            href={`/services/${categorySlug}`}
                                             onClick={() => {
                                                 onCategoryChange(category);
                                                 onClose();

@@ -26,13 +26,13 @@ function SearchParamsSync({
     const searchParams = useSearchParams();
     const pathname = usePathname();
 
-    // Sync category with URL params when on products page
+    // Sync category with URL params when on services page
     useEffect(() => {
-        if (pathname === '/products') {
-            const urlCategorySlug = searchParams.get('category') || '';
-            if (urlCategorySlug) {
+        if (pathname?.startsWith('/services/')) {
+            const categorySlug = pathname.split('/services/')[1]?.split('/')[0] || '';
+            if (categorySlug) {
                 // Find matching category from the categories list by comparing actual slug property
-                const decodedSlug = decodeURIComponent(urlCategorySlug).toLowerCase();
+                const decodedSlug = decodeURIComponent(categorySlug).toLowerCase();
                 const matchedCategory = allCategories.find(cat =>
                     cat.slug.toLowerCase() === decodedSlug
                 );
@@ -42,21 +42,21 @@ function SearchParamsSync({
                     setActiveCategory(matchedCategory.name);
                 } else {
                     // Fallback: try to reconstruct category name from slug if no match found
-                    const decodedCategory = urlCategorySlug
+                    const decodedCategory = categorySlug
                         .split('-')
                         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                         .join(' ');
                     setActiveCategory(decodedCategory);
                 }
             } else {
-                // Clear active category when category param is removed
-                setActiveCategory('All');
+                // Clear active category when category slug is not found
+                setActiveCategory(null);
             }
         } else {
-            // Clear active category when not on products page
+            // Clear active category when not on services page
             setActiveCategory(null);
         }
-    }, [searchParams, pathname, setActiveCategory, allCategories]);
+    }, [pathname, setActiveCategory, allCategories]);
 
     return null;
 }

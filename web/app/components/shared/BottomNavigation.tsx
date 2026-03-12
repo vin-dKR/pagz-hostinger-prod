@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Grid3x3, Package, ShoppingCart, User } from "lucide-react";
+import { Home, Package, ShoppingCart, User } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 
 export default function BottomNavigation() {
@@ -15,11 +15,6 @@ export default function BottomNavigation() {
             label: "Home",
             href: "/",
             icon: Home,
-        },
-        {
-            label: "All Products",
-            href: "/products",
-            icon: Grid3x3,
         },
         {
             label: "Services",

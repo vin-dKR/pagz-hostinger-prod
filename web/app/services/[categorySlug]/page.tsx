@@ -45,6 +45,9 @@ interface DynamicServicePageProps {
     params: Promise<{ categorySlug: string }>;
 }
 
+// Services that are coming soon
+const COMING_SOON_SERVICES = ['business-card', 'letter-head'];
+
 export default function DynamicServicePage({ params }: DynamicServicePageProps) {
     const { categorySlug } = use(params);
     const router = useRouter();
@@ -53,6 +56,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [category, setCategory] = useState<Category | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    
+    // Check if this service is coming soon
+    const isComingSoon = COMING_SOON_SERVICES.includes(categorySlug);
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [uploadedFileDetails, setUploadedFileDetails] = useState<FileDetail[]>([]);
     const [minQuantityFromFiles, setMinQuantityFromFiles] = useState<number>(1);
@@ -976,32 +982,102 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         }
     };
 
-    if (loading) {
+    // Show coming soon page immediately if it's a coming soon service (before loading check)
+    if (isComingSoon) {
+        const serviceName = categorySlug === 'business-card' ? 'Business Card' : categorySlug === 'letter-head' ? 'Letter Head' : 'Service';
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008ECC] mx-auto"></div>
-                    <p className="mt-4 text-gray-600">Loading service...</p>
+            <div className="min-h-screen bg-white">
+                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
+                    <div className="text-center">
+                        {/* Coming Soon Badge */}
+                        <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 text-blue-800 text-sm font-medium mb-6">
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Coming Soon
+                        </div>
+                        
+                        {/* Main Heading */}
+                        <h1 className="text-4xl md:text-5xl lg:text-6xl font-hkgb text-gray-900 mb-4">
+                            {serviceName}
+                        </h1>
+                        
+                        {/* Subheading */}
+                        <p className="text-xl md:text-2xl text-gray-600 mb-8 max-w-2xl mx-auto">
+                            We're working hard to bring you this amazing service. Stay tuned!
+                        </p>
+                        
+                        {/* Decorative Icon/Image */}
+                        <div className="mb-12 flex justify-center">
+                            <div className="relative w-64 h-64 md:w-80 md:h-80 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-3xl flex items-center justify-center shadow-lg">
+                                <svg className="w-32 h-32 md:w-40 md:h-40 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </div>
+                        </div>
+                        
+                        {/* Features Preview */}
+                        <div className="grid md:grid-cols-3 gap-6 mb-12 max-w-3xl mx-auto">
+                            <div className="p-6 bg-gray-50 rounded-xl">
+                                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 mx-auto">
+                                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a4 4 0 004-4v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                                    </svg>
+                                </div>
+                                <h3 className="font-semibold text-gray-900 mb-2">Premium Quality</h3>
+                                <p className="text-sm text-gray-600">High-quality printing with professional finishes</p>
+                            </div>
+                            
+                            <div className="p-6 bg-gray-50 rounded-xl">
+                                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 mx-auto">
+                                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                </div>
+                                <h3 className="font-semibold text-gray-900 mb-2">Fast Delivery</h3>
+                                <p className="text-sm text-gray-600">Quick turnaround times for all orders</p>
+                            </div>
+                            
+                            <div className="p-6 bg-gray-50 rounded-xl">
+                                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 mx-auto">
+                                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <h3 className="font-semibold text-gray-900 mb-2">Competitive Pricing</h3>
+                                <p className="text-sm text-gray-600">Affordable rates with no hidden costs</p>
+                            </div>
+                        </div>
+                        
+                        {/* CTA Buttons */}
+                        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                            <button
+                                onClick={() => router.push('/services')}
+                                className="px-8 py-3 bg-[#008ECC] text-white rounded-lg font-semibold hover:bg-[#0077B5] transition-colors shadow-lg"
+                            >
+                                Browse Other Services
+                            </button>
+                            <button
+                                onClick={() => router.push('/home')}
+                                className="px-8 py-3 bg-white text-[#008ECC] border-2 border-[#008ECC] rounded-lg font-semibold hover:bg-blue-50 transition-colors"
+                            >
+                                Back to Home
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
     }
-
-    if (error || !category) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="text-center">
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">Service Not Found</h1>
-                    <p className="text-gray-600">{error || 'The requested service could not be found.'}</p>
-                </div>
-            </div>
-        );
-    }
-
+    
     // Filter specifications by display order and visibility
-    const visibleSpecifications = category.specifications
-        .filter(isSpecificationVisible)
-        .sort((a, b) => a.displayOrder - b.displayOrder);
+    const visibleSpecifications = useMemo(() => {
+        if (!category) return [];
+        return category.specifications
+            .filter(isSpecificationVisible)
+            .sort((a, b) => a.displayOrder - b.displayOrder);
+    }, [category, selectedSpecifications]);
+
     return (
         <div className="min-h-screen bg-white">
             <ProductPageTemplate
@@ -1052,7 +1128,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             >
                 {/* Dynamic Configuration Options */}
                 <div className="space-y-8">
-                    {visibleSpecifications.map((spec) => {
+                    {visibleSpecifications.map((spec: CategorySpecification) => {
                         const availableOptions = getAvailableOptions(spec);
                         if (availableOptions.length === 0) return null;
 
@@ -1125,22 +1201,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                         return null;
                                     })()}
 
-                                    {/* Only show Page Range Pricing for non-required specifications */}
-                                    {!spec.isRequired && matchingAddons.length > 0 && selectedValue && (
-                                        <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                                            <p className="text-xs font-semibold text-blue-900 mb-2">Page Range Pricing:</p>
-                                            {matchingAddons.map((addon) => {
-                                                const min = addon.minQuantity ?? 0;
-                                                const max = addon.maxQuantity ?? '∞';
-                                                const price = addon.priceModifier != null ? Number(addon.priceModifier) : 0;
-                                                return (
-                                                    <p key={addon.id} className="text-xs text-blue-700">
-                                                        {min}-{max} pages {selectedOptionLabel} → ₹{price.toFixed(2)}
-                                                    </p>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
                                 </div>
                             );
                         } else if (spec.type === 'NUMBER') {
@@ -1209,7 +1269,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             );
                         }
 
-                        return null;
+                        return null; 
                     })}
 
                     {/* Page Count & Copies (if files are uploaded) */}
