@@ -1,7 +1,7 @@
 export default function RefundPolicyPage() {
     return (
         <div className="min-h-screen bg-white">
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-20">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-20">
                 {/* Header Section */}
                 <div className="text-center mb-12 sm:mb-16">
                     {/* Refund Policy Badge */}
@@ -39,7 +39,7 @@ export default function RefundPolicyPage() {
                                 <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-4">Cancellation Policy</h2>
                                 <div className="space-y-4 text-base sm:text-lg text-gray-600 leading-relaxed">
                                     <p>
-                                        Cancellations will only be considered if the request is made after 1 hour of placing the order. However, cancellation requests may not be entertained if the orders have been communicated to such sellers / merchant(s) listed on the Platform and they have initiated the process of shipping them, or the product is out for delivery.
+                                        Cancellations will only be considered if the request is made after 5-10 minutes of placing the order. However, cancellation requests may not be entertained if the orders have been communicated to such sellers / merchant(s) listed on the Platform and they have initiated the process of shipping them, or the product is out for delivery.
                                     </p>
                                     <p>
                                         In such an event, you may choose to reject the product at the doorstep.
@@ -99,7 +99,7 @@ export default function RefundPolicyPage() {
                             <div className="flex-1">
                                 <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-4">Refund Processing</h2>
                                 <p className="text-base sm:text-lg text-gray-600 leading-relaxed">
-                                    In case of any exchange approved by PAGZ, it will take 3-4 working days for the refund to be credited to original mode of payment.
+                                    If exchange is accepted, exchanged product will be delivered within 7-10 business days.
                                 </p>
                             </div>
                         </div>

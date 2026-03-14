@@ -98,7 +98,7 @@ function OfferDetailPageChild() {
 
     return (
         <div className="min-h-screen bg-white py-4 sm:py-8 pb-0 lg:pb-40">
-            <div className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 max-w-7xl mx-auto">
+            <div className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16">
                 {/* Back Button */}
                 <button
                     onClick={() => router.back()}

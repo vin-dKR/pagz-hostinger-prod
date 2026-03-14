@@ -244,7 +244,7 @@ function CheckoutPageContent() {
     if (error) {
         return (
             <div className="min-h-screen py-8">
-                <div className="max-w-7xl mx-auto px-6">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
                         <p className="text-red-600">{error}</p>
                     </div>
@@ -256,7 +256,7 @@ function CheckoutPageContent() {
     if (cartItems.length === 0) {
         return (
             <div className="min-h-screen py-8">
-                <div className="max-w-7xl mx-auto px-6">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <Breadcrumbs items={breadcrumbs} />
                     <div className="bg-white rounded-lg shadow-md p-12 text-center">
                         <p className="text-gray-600 text-lg mb-4">Your cart is empty</p>
@@ -274,7 +274,7 @@ function CheckoutPageContent() {
 
     return (
         <div className="py-8 mb-10 lg:mb-40">
-            <div className="max-w-7xl mx-auto px-6">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Breadcrumbs */}
                 <Breadcrumbs items={breadcrumbs} />
 

@@ -42,7 +42,7 @@ function OffersPageChild() {
     if (loading) {
         return (
             <div className="h-200 bg-white py-8">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-center py-20">
                         <BarsSpinner size={18} />
                     </div>
@@ -54,7 +54,7 @@ function OffersPageChild() {
     if (error) {
         return (
             <div className="h-200 bg-white py-8">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center py-12">
                         <div className="text-red-600 text-lg mb-4">⚠️ Error Loading Coupons</div>
                         <p className="text-gray-600 mb-4">{error instanceof Error ? error.message : "An error occurred"}</p>
@@ -72,7 +72,7 @@ function OffersPageChild() {
 
     return (
         <div className="min-h-screen bg-white py-4 sm:py-8 pb-0 lg:pb-40">
-            <div className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 max-w-7xl mx-auto">
+            <div className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16">
                 {/* Header */}
                 <div className="mb-6 md:mb-8">
                     <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-2">Coupons & Discounts</h1>

@@ -4,7 +4,7 @@
  * Category Specifications & Options Management
  */
 
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent, ReactElement } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -829,7 +829,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                                     Order {opt.displayOrder}
                                                                     {(() => {
                                                                         const metadata = opt.metadata as { allowedParentValues?: string[]; isHalfPage?: boolean } | null;
-                                                                        const parts: JSX.Element[] = [];
+                                                                        const parts: ReactElement[] = [];
                                                                         
                                                                         // Half-page indicator
                                                                         if (metadata?.isHalfPage) {

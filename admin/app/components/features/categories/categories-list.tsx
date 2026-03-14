@@ -213,7 +213,7 @@ export function CategoriesList() {
                                     <TableHead>Image</TableHead>
                                     <TableHead>Name</TableHead>
                                     <TableHead>Slug</TableHead>
-                                    <TableHead>Priority</TableHead>
+                                    <TableHead>Display Order</TableHead>
                                     <TableHead>Parent</TableHead>
                                     <TableHead>Stats</TableHead>
                                     <TableHead>Created</TableHead>

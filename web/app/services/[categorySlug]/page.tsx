@@ -987,7 +987,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         const serviceName = categorySlug === 'business-card' ? 'Business Card' : categorySlug === 'letter-head' ? 'Letter Head' : 'Service';
         return (
             <div className="min-h-screen bg-white">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
                     <div className="text-center">
                         {/* Coming Soon Badge */}
                         <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 text-blue-800 text-sm font-medium mb-6">

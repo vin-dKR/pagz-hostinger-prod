@@ -293,7 +293,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="priority">Priority</Label>
+                                    <Label htmlFor="priority">Display Order</Label>
                                     <Input
                                         id="priority"
                                         type="number"
@@ -308,7 +308,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                                         min="0"
                                     />
                                     <p className="text-xs text-gray-500">
-                                        Lower priority values appear first in the services page. Default: 0
+                                        Higher values appear first in the services page. Default: 0
                                     </p>
                                 </div>
 

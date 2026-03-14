@@ -80,11 +80,11 @@ export default function ServicesPage() {
     if (loading) {
         return (
             <div className="min-h-screen bg-white py-4 md:py-8">
-                <div className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8">
+                <div className="w-full mx-auto px-3 sm:px-6 lg:px-8">
                     <div className="mb-3 md:mb-5">
                         <h1 className="text-lg md:text-2xl font-bold text-gray-900">Our Services</h1>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4 lg:gap-5 2xl:gap-6 w-full">
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 lg:gap-5 xl:gap-6 w-full">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                             <div key={i} className="relative aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-3xl lg:rounded-4xl overflow-hidden bg-gray-200 animate-pulse" />
                         ))}
@@ -108,12 +108,12 @@ export default function ServicesPage() {
 
     return (
         <div className="min-h-screen bg-white py-4 md:py-8">
-            <div className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8">
+            <div className="w-full mx-auto px-3 sm:px-6 lg:px-8">
                 <div className="mb-3 md:mb-5">
                     <h1 className="text-lg md:text-2xl font-bold text-gray-900">Our Services</h1>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4 lg:gap-5 2xl:gap-6 w-full">
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 lg:gap-5 xl:gap-6 w-full">
                     {categories.map((category, index) => {
                         const imageUrl = getCategoryImage(category);
                         const color = getCategoryColor(index);

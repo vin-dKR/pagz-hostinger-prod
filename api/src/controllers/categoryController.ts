@@ -203,6 +203,9 @@ export const updateCategorySpecification = async (
             }
         }
 
+        const oldSlug = specification.slug;
+        const newSlug = slug || oldSlug;
+
         const updated = await prisma.categorySpecification.update({
             where: { id: specId },
             data: {
@@ -218,6 +221,47 @@ export const updateCategorySpecification = async (
                 category: true,
             },
         });
+
+        // If slug changed, update all pricing rules that reference the old slug
+        if (slug && slug !== oldSlug) {
+            try {
+                // Find all pricing rules for this category
+                const pricingRules = await prisma.categoryPricingRule.findMany({
+                    where: { categoryId: id },
+                    select: {
+                        id: true,
+                        specificationValues: true,
+                    },
+                });
+
+                // Update pricing rules that reference the old slug
+                for (const rule of pricingRules) {
+                    const specValues = rule.specificationValues as Record<string, any>;
+                    
+                    // Check if this rule references the old slug
+                    if (specValues && specValues[oldSlug] !== undefined) {
+                        // Create new specificationValues with the new slug
+                        const updatedSpecValues = { ...specValues };
+                        const optionValue = updatedSpecValues[oldSlug];
+                        
+                        // Remove old slug and add new slug with the same value
+                        delete updatedSpecValues[oldSlug];
+                        updatedSpecValues[newSlug] = optionValue;
+
+                        // Update the pricing rule
+                        await prisma.categoryPricingRule.update({
+                            where: { id: rule.id },
+                            data: {
+                                specificationValues: updatedSpecValues as Prisma.InputJsonValue,
+                            },
+                        });
+                    }
+                }
+            } catch (migrationError) {
+                // Log but don't fail the request - pricing rules will still work with old slug
+                console.error("Failed to migrate pricing rules after slug change:", migrationError);
+            }
+        }
 
         // Auto-sync published products when spec is updated
         try {
@@ -408,6 +452,9 @@ export const updateSpecificationOption = async (
             throw new NotFoundError("Specification not found for this category");
         }
 
+        const oldValue = option.value;
+        const newValue = value || oldValue;
+
         // If value is being changed, check for conflicts
         if (value && value !== option.value) {
             const existing = await prisma.categorySpecificationOption.findUnique({
@@ -441,6 +488,46 @@ export const updateSpecificationOption = async (
                 },
             },
         });
+
+        // If option value changed, update all pricing rules that reference the old value
+        if (value && value !== oldValue) {
+            try {
+                const specSlug = specification.slug;
+                const categoryId = specification.categoryId;
+
+                // Find all pricing rules for this category
+                const pricingRules = await prisma.categoryPricingRule.findMany({
+                    where: { categoryId },
+                    select: {
+                        id: true,
+                        specificationValues: true,
+                    },
+                });
+
+                // Update pricing rules that reference the old option value
+                for (const rule of pricingRules) {
+                    const specValues = rule.specificationValues as Record<string, any>;
+                    
+                    // Check if this rule references the specification with the old option value
+                    if (specValues && specValues[specSlug] === oldValue) {
+                        // Update to use the new option value
+                        const updatedSpecValues = { ...specValues };
+                        updatedSpecValues[specSlug] = newValue;
+
+                        // Update the pricing rule
+                        await prisma.categoryPricingRule.update({
+                            where: { id: rule.id },
+                            data: {
+                                specificationValues: updatedSpecValues as Prisma.InputJsonValue,
+                            },
+                        });
+                    }
+                }
+            } catch (migrationError) {
+                // Log but don't fail the request - pricing rules will still work with old value
+                console.error("Failed to migrate pricing rules after option value change:", migrationError);
+            }
+        }
 
         // Auto-sync published products when option is updated
         try {

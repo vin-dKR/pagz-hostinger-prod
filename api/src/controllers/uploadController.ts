@@ -607,6 +607,58 @@ export const deleteCategoryImage = async (req: Request, res: Response, next: Nex
     }
 };
 
+/**
+ * Admin: Upload carousel image
+ * Used by `/admin/upload/carousel-image`
+ */
+export const uploadCarouselImage = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.file) {
+            throw new ValidationError("No file uploaded");
+        }
+
+        const alt = (req.body.alt as string | undefined) || null;
+
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(req.file.mimetype)) {
+            throw new ValidationError("Invalid file type. Please upload JPG, PNG, WebP, or GIF images.");
+        }
+
+        // Validate file size (max 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (req.file.size > maxSize) {
+            throw new ValidationError("File size must be less than 10MB.");
+        }
+
+        const filename = generateFilename(req.file.originalname, "carousel");
+        const key = await uploadToS3(
+            req.file,
+            "images",
+            "carousels",
+            filename,
+            true // public
+        );
+        const url = getPublicUrl(key);
+
+        return sendSuccess(
+            res,
+            {
+                url,
+                key,
+                filename,
+                size: req.file.size,
+                mimetype: req.file.mimetype,
+                alt,
+            },
+            "Carousel image uploaded successfully",
+            201
+        );
+    } catch (error) {
+        next(error);
+    }
+};
+
 // Upload files for order after order confirmation (called from frontend after payment success)
 export const uploadOrderFilesAfterConfirmation = async (req: Request, res: Response, next: NextFunction) => {
     try {

@@ -117,7 +117,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
     }));
     return (
         <div className="min-h-screen bg-white py-8 pb-24">
-            <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Breadcrumbs - Hidden on mobile, shown on tablet and above */}
                 <div className="hidden sm:block mb-6">
                     <Breadcrumbs items={breadcrumbsFormatted} />

@@ -19,7 +19,7 @@ export default function Footer() {
             <div className="relative">
                 {/* This creates the overlap effect - positioned at top of footer, translated up by 50% */}
                 <div className="absolute top-0 left-0 right-0 transform -translate-y-1/2 z-10">
-                    <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="bg-[#1EADD8] rounded-xl md:rounded-2xl shadow-2xl p-4 md:p-6 lg:p-8 px-4 md:px-8 lg:px-20">
                             <div className="flex flex-col lg:flex-row items-center justify-between gap-4 md:gap-6">
                                 <div className="flex-1 text-center lg:text-left">
@@ -73,7 +73,7 @@ export default function Footer() {
             <div className="pt-16 md:pt-20 lg:pt-32 xl:pt-40 bg-white lg:bg-[#F0F0F0]">
                 {/* Main Footer Content */}
                 <div className="bg-[#F0F0F0]">
-                    <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 lg:py-12">
+                    <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 lg:py-12">
                         <div className="flex flex-col lg:flex-row gap-6 md:gap-8 lg:gap-12 xl:gap-24">
                             {/* Column 1: Brand Info - Fixed width */}
                             <div className="lg:w-[280px] xl:w-[350px]">
@@ -235,7 +235,7 @@ export default function Footer() {
 
                 {/* Bottom Bar */}
                 <div className="border-t border-gray-200 bg-gray-50">
-                    <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-6">
+                    <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-6">
                         <div className="flex flex-col md:flex-row justify-between items-center gap-3 md:gap-4">
                             <p className="text-xs sm:text-sm text-gray-600 text-center md:text-left">
                                 Pagz © 2000-{currentYear}, All Rights Reserved

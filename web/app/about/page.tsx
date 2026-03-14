@@ -1,7 +1,7 @@
 export default function AboutPage() {
     return (
         <div className="min-h-screen bg-white">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-20">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-20">
                 {/* Header Section */}
                 <div className="text-center mb-12 sm:mb-16">
                     {/* About Us Badge */}

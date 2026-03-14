@@ -10,9 +10,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     return (
         <div className="flex h-screen overflow-hidden bg-[var(--color-background)]">
             <DashboardSidebar />
-            <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex flex-1 flex-col overflow-hidden lg:ml-0">
                 <DashboardHeader />
-                <main className="flex-1 overflow-y-auto bg-[var(--color-background)] p-8 smooth-scroll">
+                <main className="flex-1 overflow-y-auto bg-[var(--color-background)] p-4 lg:px-4 lg:py-6 smooth-scroll">
                     {children}
                 </main>
             </div>

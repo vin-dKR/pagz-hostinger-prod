@@ -188,7 +188,7 @@ function SettingsPageContent() {
     return (
         <>
             {/* Main Content */}
-            <div className="flex-1 max-w-4xl">
+            <div className="flex-1">
                 {/* Header */}
                 <div className="mb-4 sm:mb-6">
                     <h1 className="text-xl sm:text-2xl font-hkgb text-gray-900 mb-1 sm:mb-2">

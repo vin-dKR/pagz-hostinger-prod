@@ -74,7 +74,7 @@ export default function ProductListing() {
 
     return (
         <section className="py-12 bg-gray-50 relative">
-            <div className="max-w-7xl mx-auto px-6">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="overflow-x-auto scrollbar-hide">
                     <div className="flex gap-6 pb-4 relative" style={{ minWidth: "max-content" }}>
                         {products.map((product) => (

@@ -119,8 +119,18 @@ import {
     deleteProductImage,
     uploadCategoryImage,
     deleteCategoryImage as deleteCategoryImageUpload,
+    uploadCarouselImage,
 } from "../controllers/uploadController.js";
 import { uploadImage } from "../middleware/upload-s3.js";
+// Carousel Management (admin only)
+import {
+    getAdminCarousels,
+    getAdminCarousel,
+    createCarousel,
+    updateCarousel,
+    deleteCarousel,
+    reorderCarousels,
+} from "../controllers/carouselController.js";
 
 const router: IRouter = Router();
 
@@ -280,5 +290,16 @@ router.delete("/upload/product-image/:imageId", deleteProductImage);
 router.post("/upload/category-image", uploadImage.single("file"), uploadCategoryImage);
 router.post("/upload/category-image/:categoryId", uploadImage.single("file"), uploadCategoryImage);
 router.delete("/upload/category-image/:imageId", deleteCategoryImageUpload);
+
+// Carousel Image Upload Routes
+router.post("/upload/carousel-image", uploadImage.single("file"), uploadCarouselImage);
+
+// Carousel Management (admin only)
+router.get("/carousels", getAdminCarousels);
+router.get("/carousels/:id", getAdminCarousel);
+router.post("/carousels", createCarousel);
+router.put("/carousels/:id", updateCarousel);
+router.delete("/carousels/:id", deleteCarousel);
+router.post("/carousels/reorder", reorderCarousels);
 
 export default router;

@@ -26,7 +26,7 @@ import {
     type PricingRuleType,
     type CategorySpecification,
 } from '@/lib/api/categories.service';
-import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X, RefreshCw } from 'lucide-react';
+import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X, RefreshCw, ChevronLeft, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
@@ -61,6 +61,9 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
     // Store addon selections per rule ID (for persistence across form resets)
     const [ruleAddonsMap, setRuleAddonsMap] = useState<Record<string, string[]>>({});
 
+    // Form sidebar visibility state
+    const [isFormVisible, setIsFormVisible] = useState(true);
+
     const [form, setForm] = useState<{
         id?: string;
         ruleType: PricingRuleType;
@@ -72,14 +75,14 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         isActive: boolean;
         priority: string;
     }>({
-        ruleType: 'BASE_PRICE',
+        ruleType: 'SPECIFICATION_COMBINATION',
         basePrice: '',
         priceModifier: '',
         quantityMultiplier: true,
         minQuantity: '',
         maxQuantity: '',
         isActive: true,
-        priority: '0',
+        priority: '1',
     });
 
     // Publish modal state
@@ -126,30 +129,50 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         }
 
         void load();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [categoryId]);
 
-    const resetForm = () => {
+    const resetForm = (showForm = false) => {
         // Before resetting, save current addon selections to map if we have a rule ID
         // This ensures state persists even if user cancels and re-edits
         if (form.id && ruleAddonIds.length > 0) {
             setRuleAddonsMap(prev => ({ ...prev, [form.id!]: ruleAddonIds }));
         }
         
+        const defaultRuleType: PricingRuleType = 'SPECIFICATION_COMBINATION';
+        const rulesOfType = rules.filter(r => r.ruleType === defaultRuleType);
+        const autoPriority = rulesOfType.length === 0 ? 1 : Math.max(...rulesOfType.map(r => r.priority ?? 0), 0) + 1;
+        
         setForm({
-            ruleType: 'BASE_PRICE',
+            ruleType: defaultRuleType,
             basePrice: '',
             priceModifier: '',
             quantityMultiplier: true,
             minQuantity: '',
             maxQuantity: '',
             isActive: true,
-            priority: '0',
+            priority: String(autoPriority),
         });
         setSpecFilters({});
         setRuleAddonIds([]);
+        
+        if (showForm) {
+            setIsFormVisible(true);
+        }
     };
 
-    // When rule type changes, clear fields that are not applicable
+    // Calculate auto-priority for a given rule type
+    const getAutoPriority = useMemo(() => {
+        return (ruleType: PricingRuleType): number => {
+            const rulesOfType = rules.filter(r => r.ruleType === ruleType);
+            if (rulesOfType.length === 0) return 1;
+            // Get the highest priority for this rule type and add 1
+            const maxPriority = Math.max(...rulesOfType.map(r => r.priority ?? 0), 0);
+            return maxPriority + 1;
+        };
+    }, [rules]);
+
+    // When rule type changes, clear fields that are not applicable and auto-set priority
     useEffect(() => {
         setForm((prev) => {
             const next = { ...prev };
@@ -164,9 +187,14 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                 next.basePrice = '';
             }
 
+            // Auto-set priority when rule type changes (only for new rules, not when editing)
+            if (!prev.id) {
+                next.priority = String(getAutoPriority(prev.ruleType));
+            }
+
             return next;
         });
-    }, [form.ruleType]);
+    }, [form.ruleType, getAutoPriority]);
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
@@ -211,14 +239,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                 }
             } else {
                 const created = await createCategoryPricingRuleApi(categoryId, payload);
-                setRules((prev) => [...prev, created].sort((a, b) => {
-                    // Sort by priority descending, then by id (newest first when priority is same)
-                    if (b.priority !== a.priority) {
-                        return b.priority - a.priority;
-                    }
-                    // When priorities are equal, use id comparison (newer IDs typically come later)
-                    return b.id.localeCompare(a.id);
-                }));
+                setRules((prev) => [...prev, created]);
                 
                 // Store addon selections in the map for the newly created rule
                 if (ruleAddonIds.length > 0) {
@@ -235,6 +256,9 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
     };
 
     const handleEditRule = (rule: CategoryPricingRule) => {
+        // Show form when editing
+        setIsFormVisible(true);
+        
         const existingValues = (rule.specificationValues || {}) as Record<string, any>;
         const nextFilters: Record<string, string> = {};
         Object.entries(existingValues).forEach(([key, value]) => {
@@ -333,6 +357,42 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
     const availableAddons = useMemo(() => {
         return rules.filter(rule => rule.ruleType === 'ADDON' && rule.isActive);
     }, [rules]);
+
+    // Group and sort rules by type
+    const groupedRules = useMemo(() => {
+        const groups: Record<string, CategoryPricingRule[]> = {
+            SPECIFICATION_COMBINATION: [],
+            ADDON: [],
+            BASE_PRICE: [],
+            QUANTITY_TIER: [],
+        };
+
+        // Group rules by type
+        rules.forEach(rule => {
+            const group = groups[rule.ruleType];
+            if (group) {
+                group.push(rule);
+            }
+        });
+
+        // Sort each group by priority descending (highest priority first)
+        Object.keys(groups).forEach(key => {
+            const group = groups[key];
+            if (group) {
+                group.sort((a, b) => {
+                    const priorityA = a.priority ?? 0;
+                    const priorityB = b.priority ?? 0;
+                    if (priorityB !== priorityA) {
+                        return priorityB - priorityA;
+                    }
+                    // When priorities are equal, newer IDs first (for newly created rules)
+                    return b.id.localeCompare(a.id);
+                });
+            }
+        });
+
+        return groups;
+    }, [rules]) as Record<string, CategoryPricingRule[]>;
 
     const handlePublishProduct = async (ruleId: string) => {
         const rule = rules.find(r => r.id === ruleId);
@@ -718,6 +778,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                 </DialogContent>
             </Dialog>
             <div className="space-y-6">
+                <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">
                         Pricing Rules - {category.name}
@@ -726,16 +787,74 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                         Configure how prices are calculated for this category based on specifications and
                         quantity.
                     </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {!isFormVisible && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    resetForm(true);
+                                }}
+                                title="Show form to add new rule"
+                            >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Add Rule
+                            </Button>
+                        )}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsFormVisible(!isFormVisible)}
+                            className="md:hidden"
+                            title={isFormVisible ? 'Hide form' : 'Show form'}
+                        >
+                            {isFormVisible ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                            <span className="ml-2">{isFormVisible ? 'Hide' : 'Show'}</span>
+                        </Button>
+                    </div>
                 </div>
 
                 {error && <Alert variant="error">{error}</Alert>}
 
-                <div className="grid gap-6 md:grid-cols-3">
-                    {/* Rule form */}
-                    <div className="md:col-span-1">
-                        <Card>
-                            <CardHeader>
+                <div className="flex gap-6 relative">
+                    {/* Rule form - Sidebar */}
+                    <div className={`
+                        ${isFormVisible ? 'block' : 'hidden'}
+                        ${isFormVisible ? 'md:w-80' : 'md:w-0'}
+                        transition-all duration-300 ease-in-out
+                        overflow-hidden
+                        md:shrink-0
+                        ${isFormVisible ? 'md:opacity-100' : 'md:opacity-0 md:pointer-events-none'}
+                        ${isFormVisible ? 'fixed md:relative inset-0 md:inset-auto z-50 md:z-auto' : ''}
+                    `}>
+                        {/* Mobile overlay */}
+                        {isFormVisible && (
+                            <div 
+                                className="md:hidden fixed inset-0 bg-black/50 z-40"
+                                onClick={() => setIsFormVisible(false)}
+                            />
+                        )}
+                        <div className={`
+                            ${isFormVisible ? 'w-full md:w-full' : 'w-0'}
+                            transition-all duration-300
+                            ${isFormVisible ? 'opacity-100' : 'opacity-0'}
+                            ${isFormVisible ? 'fixed md:relative right-0 top-0 md:top-auto h-full md:h-auto z-50 md:z-auto bg-white md:bg-transparent overflow-y-auto md:overflow-visible' : ''}
+                            ${isFormVisible ? 'w-[90vw] sm:w-96 md:w-full' : ''}
+                        `}>
+                            <Card className="sticky top-6 md:sticky md:top-6 h-full md:h-auto">
+                                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
                                 <CardTitle>{form.id ? 'Edit Pricing Rule' : 'Add Pricing Rule'}</CardTitle>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => setIsFormVisible(false)}
+                                        title="Hide form"
+                                    >
+                                        <ChevronLeft className="h-4 w-4 md:block" />
+                                        <X className="h-4 w-4 md:hidden" />
+                                    </Button>
                             </CardHeader>
                             <CardContent>
                                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -1059,7 +1178,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                             <Button
                                                 type="button"
                                                 variant="outline"
-                                                onClick={resetForm}
+                                                onClick={() => resetForm(false)}
                                                 disabled={saving}
                                             >
                                                 Cancel edit
@@ -1072,11 +1191,15 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                 </form>
                             </CardContent>
                         </Card>
+                        </div>
                     </div>
 
-
                     {/* Rules list */}
-                    <div className="md:col-span-2">
+                    <div className={`
+                        flex-1
+                        transition-all duration-300
+                        ${isFormVisible ? 'md:ml-0' : 'md:ml-0'}
+                    `}>
                         <Card>
                             <CardHeader>
                                 <CardTitle>Existing Rules ({rules.length})</CardTitle>
@@ -1087,6 +1210,13 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                         No pricing rules yet. Add rules to define how prices are calculated.
                                     </p>
                                 ) : (
+                                    <div className="space-y-8">
+                                        {/* Render SPECIFICATION_COMBINATION rules first */}
+                                        {groupedRules.SPECIFICATION_COMBINATION && groupedRules.SPECIFICATION_COMBINATION.length > 0 && (
+                                            <div>
+                                                <h3 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">
+                                                    Specification Combinations ({groupedRules.SPECIFICATION_COMBINATION.length})
+                                                </h3>
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-sm">
                                             <thead>
@@ -1107,17 +1237,211 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {rules
-                                                    .slice()
-                                                    .sort((a, b) => {
-                                                        // Sort by priority descending, then by id (newest first when priority is same)
-                                                        if (b.priority !== a.priority) {
-                                                            return b.priority - a.priority;
-                                                        }
-                                                        // When priorities are equal, use id comparison (newer IDs typically come later)
-                                                        return b.id.localeCompare(a.id);
-                                                    })
-                                                    .map((rule) => {
+                                                            {groupedRules.SPECIFICATION_COMBINATION.map((rule) => {
+                                                        const specEntries = Object.entries(rule.specificationValues || {});
+                                                        const specValuesMap = new Map(specEntries);
+
+                                                        return (
+                                                            <tr
+                                                                key={rule.id}
+                                                                className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
+                                                            >
+                                                                {/* Rule Type */}
+                                                                <td className="py-3 px-3 align-top">
+                                                                    <div className="font-medium text-gray-900 text-[10px]">
+                                                                        {RULE_TYPES.find(t => t.value === rule.ruleType)?.label || rule.ruleType}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-gray-400 mt-1">
+                                                                        {rule.quantityMultiplier ? '× Qty' : 'Fixed'}
+                                                                    </div>
+                                                                </td>
+
+                                                                {/* Dynamic specification cells - show value or "Any" */}
+                                                                {specs.map((spec) => {
+                                                                    const value = specValuesMap.get(spec.slug);
+                                                                    const option = value ? spec.options.find((o) => o.value === value) : null;
+                                                                    const hasValue = value !== undefined && value !== null;
+
+                                                                    return (
+                                                                        <td key={spec.id} className="py-3 px-2 align-top">
+                                                                            {hasValue && option ? (
+                                                                                <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium border border-blue-300 max-w-full">
+                                                                                    <span className="truncate" title={option.label}>
+                                                                                        {option.label}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <span className="text-xs text-gray-400 italic">Any</span>
+                                                                            )}
+                                                                        </td>
+                                                                    );
+                                                                })}
+
+                                                                {/* Price */}
+                                                                <td className="py-3 px-3 align-top">
+                                                                    <div className="space-y-0.5">
+                                                                        {rule.basePrice != null && (
+                                                                            <div className="text-gray-900 font-semibold text-sm">
+                                                                                ₹{Number(rule.basePrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                            </div>
+                                                                        )}
+                                                                        {rule.priceModifier != null && rule.priceModifier !== 0 && (
+                                                                            <div className="text-xs text-gray-600">
+                                                                                {rule.priceModifier >= 0 ? '+' : ''}₹{Number(rule.priceModifier).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                            </div>
+                                                                        )}
+                                                                        {rule.basePrice == null && rule.priceModifier == null && (
+                                                                            <span className="text-xs text-gray-400">-</span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+
+                                                                {/* Quantity */}
+                                                                <td className="py-3 px-3 align-top">
+                                                                    {rule.minQuantity != null || rule.maxQuantity != null ? (
+                                                                        <div className="text-gray-700 text-xs font-medium">
+                                                                            {rule.minQuantity ?? '0'} - {rule.maxQuantity ?? '∞'}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-xs text-gray-400">Any</span>
+                                                                    )}
+                                                                </td>
+
+                                                                {/* Priority */}
+                                                                <td className="py-3 px-3 text-center align-top">
+                                                                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-200 text-gray-800 font-bold text-xs">
+                                                                        {rule.priority ?? 0}
+                                                                    </span>
+                                                                </td>
+
+                                                                {/* Status */}
+                                                                <td className="py-3 px-3 align-top">
+                                                                    <div className="flex flex-col items-center gap-1.5">
+                                                                        {rule.isActive ? (
+                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[10px] font-medium border border-green-200">
+                                                                                <CheckCircle2 className="h-3 w-3" />
+                                                                                Active
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[10px] font-medium border border-red-200">
+                                                                                <XCircle className="h-3 w-3" />
+                                                                                Inactive
+                                                                            </span>
+                                                                        )}
+                                                                        {rule.isPublished && (
+                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-medium border border-purple-200">
+                                                                                <Package className="h-3 w-3" />
+                                                                                Published
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+
+                                                                {/* Actions */}
+                                                                <td className="py-3 px-3">
+                                                                    <div className="flex items-center justify-center gap-1">
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            onClick={() => handleEditRule(rule)}
+                                                                            className="h-8 w-8 p-0"
+                                                                            title="Edit rule"
+                                                                        >
+                                                                            <Edit2 className="h-4 w-4 text-blue-600" />
+                                                                        </Button>
+                                                                        {!rule.isPublished && rule.basePrice && (
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="ghost"
+                                                                                onClick={() => handlePublishProduct(rule.id)}
+                                                                                className="h-8 w-8 p-0"
+                                                                                title="Publish as product"
+                                                                            >
+                                                                                <Upload className="h-4 w-4 text-green-600" />
+                                                                            </Button>
+                                                                        )}
+                                                                        {rule.isPublished && rule.productId && (
+                                                                            <>
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="ghost"
+                                                                                    onClick={async () => {
+                                                                                        try {
+                                                                                            await toastPromise(
+                                                                                                syncProductFromCategoryApi(categoryId, rule.id),
+                                                                                                {
+                                                                                                    loading: 'Syncing product...',
+                                                                                                    success: () => `Product synced successfully`,
+                                                                                                    error: (err) => err.message || 'Failed to sync product',
+                                                                                                }
+                                                                                            );
+                                                                                            // Reload rules to show updated data
+                                                                                            loadRules();
+                                                                                        } catch (err) {
+                                                                                            // Error handled by toast
+                                                                                        }
+                                                                                    }}
+                                                                                    className="h-8 w-8 p-0"
+                                                                                    title="Sync product with category updates"
+                                                                                >
+                                                                                    <RefreshCw className="h-4 w-4 text-blue-600" />
+                                                                                </Button>
+                                                                                <Link
+                                                                                    href={`/products/${rule.productId}`}
+                                                                                    className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-gray-100 transition-colors"
+                                                                                    title="View product"
+                                                                                >
+                                                                                    <ExternalLink className="h-4 w-4 text-purple-600" />
+                                                                                </Link>
+                                                                            </>
+                                                                        )}
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            onClick={() => handleDeleteRule(rule.id)}
+                                                                            className="h-8 w-8 p-0"
+                                                                            title="Delete rule"
+                                                                        >
+                                                                            <Trash2 className="h-4 w-4 text-red-600" />
+                                                                        </Button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Render ADDON rules second */}
+                                        {groupedRules.ADDON && groupedRules.ADDON.length > 0 && (
+                                            <div>
+                                                <h3 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">
+                                                    Addons ({groupedRules.ADDON.length})
+                                                </h3>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-sm">
+                                                        <thead>
+                                                            <tr className="border-b-2 border-gray-300 bg-gray-50">
+                                                                <th className="text-left py-3 px-3 font-semibold text-gray-700">Type</th>
+                                                                {/* Dynamic specification columns */}
+                                                                {specs.length > 0 && specs.map((spec) => (
+                                                                    <th key={spec.id} className="text-left py-3 px-2 font-semibold text-gray-700 text-xs min-w-[100px]">
+                                                                        <div className="font-medium">{spec.name}</div>
+                                                                        <div className="text-[10px] font-normal text-gray-500 mt-0.5">{spec.slug}</div>
+                                                                    </th>
+                                                                ))}
+                                                                <th className="text-left py-3 px-3 font-semibold text-gray-700">Price</th>
+                                                                <th className="text-left py-3 px-3 font-semibold text-gray-700">Qty Range</th>
+                                                                <th className="text-center py-3 px-3 font-semibold text-gray-700">Priority</th>
+                                                                <th className="text-center py-3 px-3 font-semibold text-gray-700">Status</th>
+                                                                <th className="text-center py-3 px-3 font-semibold text-gray-700">Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {groupedRules.ADDON.map((rule) => {
                                                         const specEntries = Object.entries(rule.specificationValues || {});
                                                         const specValuesMap = new Map(specEntries);
 
@@ -1291,6 +1615,213 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                     })}
                                             </tbody>
                                         </table>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Render other rule types if any */}
+                                        {((groupedRules.BASE_PRICE && groupedRules.BASE_PRICE.length > 0) || (groupedRules.QUANTITY_TIER && groupedRules.QUANTITY_TIER.length > 0)) && (
+                                            <div>
+                                                <h3 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">
+                                                    Other Rules ({(groupedRules.BASE_PRICE?.length ?? 0) + (groupedRules.QUANTITY_TIER?.length ?? 0)})
+                                                </h3>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-sm">
+                                                        <thead>
+                                                            <tr className="border-b-2 border-gray-300 bg-gray-50">
+                                                                <th className="text-left py-3 px-3 font-semibold text-gray-700">Type</th>
+                                                                {/* Dynamic specification columns */}
+                                                                {specs.length > 0 && specs.map((spec) => (
+                                                                    <th key={spec.id} className="text-left py-3 px-2 font-semibold text-gray-700 text-xs min-w-[100px]">
+                                                                        <div className="font-medium">{spec.name}</div>
+                                                                        <div className="text-[10px] font-normal text-gray-500 mt-0.5">{spec.slug}</div>
+                                                                    </th>
+                                                                ))}
+                                                                <th className="text-left py-3 px-3 font-semibold text-gray-700">Price</th>
+                                                                <th className="text-left py-3 px-3 font-semibold text-gray-700">Qty Range</th>
+                                                                <th className="text-center py-3 px-3 font-semibold text-gray-700">Priority</th>
+                                                                <th className="text-center py-3 px-3 font-semibold text-gray-700">Status</th>
+                                                                <th className="text-center py-3 px-3 font-semibold text-gray-700">Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {[...(groupedRules.BASE_PRICE ?? []), ...(groupedRules.QUANTITY_TIER ?? [])].map((rule) => {
+                                                                const specEntries = Object.entries(rule.specificationValues || {});
+                                                                const specValuesMap = new Map(specEntries);
+
+                                                                return (
+                                                                    <tr
+                                                                        key={rule.id}
+                                                                        className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
+                                                                    >
+                                                                        {/* Rule Type */}
+                                                                        <td className="py-3 px-3 align-top">
+                                                                            <div className="font-medium text-gray-900 text-[10px]">
+                                                                                {RULE_TYPES.find(t => t.value === rule.ruleType)?.label || rule.ruleType}
+                                                                            </div>
+                                                                            <div className="text-[10px] text-gray-400 mt-1">
+                                                                                {rule.quantityMultiplier ? '× Qty' : 'Fixed'}
+                                                                            </div>
+                                                                        </td>
+
+                                                                        {/* Dynamic specification cells - show value or "Any" */}
+                                                                        {specs.map((spec) => {
+                                                                            const value = specValuesMap.get(spec.slug);
+                                                                            const option = value ? spec.options.find((o) => o.value === value) : null;
+                                                                            const hasValue = value !== undefined && value !== null;
+
+                                                                            return (
+                                                                                <td key={spec.id} className="py-3 px-2 align-top">
+                                                                                    {hasValue && option ? (
+                                                                                        <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium border border-blue-300 max-w-full">
+                                                                                            <span className="truncate" title={option.label}>
+                                                                                                {option.label}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <span className="text-xs text-gray-400 italic">Any</span>
+                                                                                    )}
+                                                                                </td>
+                                                                            );
+                                                                        })}
+
+                                                                        {/* Price */}
+                                                                        <td className="py-3 px-3 align-top">
+                                                                            <div className="space-y-0.5">
+                                                                                {rule.basePrice != null && (
+                                                                                    <div className="text-gray-900 font-semibold text-sm">
+                                                                                        ₹{Number(rule.basePrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                    </div>
+                                                                                )}
+                                                                                {rule.priceModifier != null && rule.priceModifier !== 0 && (
+                                                                                    <div className="text-xs text-gray-600">
+                                                                                        {rule.priceModifier >= 0 ? '+' : ''}₹{Number(rule.priceModifier).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                    </div>
+                                                                                )}
+                                                                                {rule.basePrice == null && rule.priceModifier == null && (
+                                                                                    <span className="text-xs text-gray-400">-</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+
+                                                                        {/* Quantity */}
+                                                                        <td className="py-3 px-3 align-top">
+                                                                            {rule.minQuantity != null || rule.maxQuantity != null ? (
+                                                                                <div className="text-gray-700 text-xs font-medium">
+                                                                                    {rule.minQuantity ?? '0'} - {rule.maxQuantity ?? '∞'}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <span className="text-xs text-gray-400">Any</span>
+                                                                            )}
+                                                                        </td>
+
+                                                                        {/* Priority */}
+                                                                        <td className="py-3 px-3 text-center align-top">
+                                                                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-200 text-gray-800 font-bold text-xs">
+                                                                                {rule.priority ?? 0}
+                                                                            </span>
+                                                                        </td>
+
+                                                                        {/* Status */}
+                                                                        <td className="py-3 px-3 align-top">
+                                                                            <div className="flex flex-col items-center gap-1.5">
+                                                                                {rule.isActive ? (
+                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[10px] font-medium border border-green-200">
+                                                                                        <CheckCircle2 className="h-3 w-3" />
+                                                                                        Active
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[10px] font-medium border border-red-200">
+                                                                                        <XCircle className="h-3 w-3" />
+                                                                                        Inactive
+                                                                                    </span>
+                                                                                )}
+                                                                                {rule.isPublished && (
+                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-medium border border-purple-200">
+                                                                                        <Package className="h-3 w-3" />
+                                                                                        Published
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+
+                                                                        {/* Actions */}
+                                                                        <td className="py-3 px-3">
+                                                                            <div className="flex items-center justify-center gap-1">
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="ghost"
+                                                                                    onClick={() => handleEditRule(rule)}
+                                                                                    className="h-8 w-8 p-0"
+                                                                                    title="Edit rule"
+                                                                                >
+                                                                                    <Edit2 className="h-4 w-4 text-blue-600" />
+                                                                                </Button>
+                                                                                {!rule.isPublished && rule.basePrice && (
+                                                                                    <Button
+                                                                                        size="sm"
+                                                                                        variant="ghost"
+                                                                                        onClick={() => handlePublishProduct(rule.id)}
+                                                                                        className="h-8 w-8 p-0"
+                                                                                        title="Publish as product"
+                                                                                    >
+                                                                                        <Upload className="h-4 w-4 text-green-600" />
+                                                                                    </Button>
+                                                                                )}
+                                                                                {rule.isPublished && rule.productId && (
+                                                                                    <>
+                                                                                        <Button
+                                                                                            size="sm"
+                                                                                            variant="ghost"
+                                                                                            onClick={async () => {
+                                                                                                try {
+                                                                                                    await toastPromise(
+                                                                                                        syncProductFromCategoryApi(categoryId, rule.id),
+                                                                                                        {
+                                                                                                            loading: 'Syncing product...',
+                                                                                                            success: () => `Product synced successfully`,
+                                                                                                            error: (err) => err.message || 'Failed to sync product',
+                                                                                                        }
+                                                                                                    );
+                                                                                                    // Reload rules to show updated data
+                                                                                                    loadRules();
+                                                                                                } catch (err) {
+                                                                                                    // Error handled by toast
+                                                                                                }
+                                                                                            }}
+                                                                                            className="h-8 w-8 p-0"
+                                                                                            title="Sync product with category updates"
+                                                                                        >
+                                                                                            <RefreshCw className="h-4 w-4 text-blue-600" />
+                                                                                        </Button>
+                                                                                        <Link
+                                                                                            href={`/products/${rule.productId}`}
+                                                                                            className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-gray-100 transition-colors"
+                                                                                            title="View product"
+                                                                                        >
+                                                                                            <ExternalLink className="h-4 w-4 text-purple-600" />
+                                                                                        </Link>
+                                                                                    </>
+                                                                                )}
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="ghost"
+                                                                                    onClick={() => handleDeleteRule(rule.id)}
+                                                                                    className="h-8 w-8 p-0"
+                                                                                    title="Delete rule"
+                                                                                >
+                                                                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                                                                </Button>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </CardContent>

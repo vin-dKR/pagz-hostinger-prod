@@ -22,7 +22,7 @@ export default function AuthLayout({
 }: AuthLayoutProps) {
     return (
         <div className="bg-white flex items-center justify-center h-[calc(100vh-140px)] sm:h-[calc(100vh-160px)] md:h-[calc(100vh-180px)] overflow-hidden">
-            <div className="max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 lg:px-8 h-full flex items-center justify-center py-2 sm:py-4">
+            <div className="w-full mx-auto px-3 sm:px-4 md:px-6 lg:px-8 h-full flex items-center justify-center py-2 sm:py-4">
                 <div className="bg-[#F4F4F4] w-full rounded-lg sm:rounded-xl md:rounded-2xl overflow-hidden h-full max-h-full lg:max-h-none">
                     <div className="flex flex-col lg:flex-row w-full h-full max-h-full lg:max-h-none">
                         {/* Left Side - Illustration - Hidden on mobile */}

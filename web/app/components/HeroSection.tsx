@@ -4,7 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getAllCategories, type Category } from "@/lib/api/categories";
-import { useRouter as useNextRouter } from "next/navigation";
+import { type Carousel } from "@/lib/api/carousel";
+import { useCarousel } from "@/lib/hooks/use-carousel";
+import Image from "next/image";
 
 export default function HeroSection() {
     const router = useRouter();
@@ -15,6 +17,36 @@ export default function HeroSection() {
     const [searchSuggestions, setSearchSuggestions] = useState<Category[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
+    // Use TanStack Query for carousel data (cached to reduce bandwidth)
+    const { data: carousels = [], isLoading: carouselLoading } = useCarousel();
+    
+    // For infinite circular carousel, we use a virtual index that can go beyond array bounds
+    // We'll duplicate slides at the beginning and end for seamless transitions
+    const [virtualIndex, setVirtualIndex] = useState(1); // Start at 1 (first real slide after duplicate)
+    const [isTransitioning, setIsTransitioning] = useState(true);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState(0);
+    const [dragOffset, setDragOffset] = useState(0);
+    const [hasDragged, setHasDragged] = useState(false);
+    const carouselRef = useRef<HTMLDivElement>(null);
+    const autoRotateRef = useRef<NodeJS.Timeout | null>(null);
+    const transitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    
+    // Create extended carousel array with duplicates for infinite loop
+    const extendedCarousels = carousels.length > 0 
+        ? [carousels[carousels.length - 1], ...carousels, carousels[0]]
+        : [];
+    
+    // Calculate real index from virtual index
+    const getRealIndex = (vIndex: number) => {
+        if (carousels.length === 0) return 0;
+        if (vIndex === 0) return carousels.length - 1; // Last slide (duplicate at start)
+        if (vIndex === extendedCarousels.length - 1) return 0; // First slide (duplicate at end)
+        return vIndex - 1; // Real slides are offset by 1
+    };
+    
+    const currentCarouselIndex = getRealIndex(virtualIndex);
+    const currentCarousel = carousels[currentCarouselIndex];
 
     useEffect(() => {
         async function fetchTopCategories() {
@@ -54,6 +86,33 @@ export default function HeroSection() {
 
         fetchTopCategories();
     }, []);
+
+    // Auto-rotate carousel (paused when dragging)
+    useEffect(() => {
+        if (carousels.length <= 1 || isDragging) return;
+
+        autoRotateRef.current = setInterval(() => {
+            setVirtualIndex((prev) => {
+                const next = prev + 1;
+                // If we reach the duplicate at the end, jump to real first slide without animation
+                if (next >= extendedCarousels.length - 1) {
+                    setTimeout(() => {
+                        setIsTransitioning(false);
+                        setVirtualIndex(1); // Jump to real first slide
+                        setTimeout(() => setIsTransitioning(true), 50);
+                    }, 300);
+                    return next;
+                }
+                return next;
+            });
+        }, 5000); // Change slide every 5 seconds
+
+        return () => {
+            if (autoRotateRef.current) {
+                clearInterval(autoRotateRef.current);
+            }
+        };
+    }, [carousels.length, isDragging, extendedCarousels.length]);
 
     // Handle search suggestions
     useEffect(() => {
@@ -121,138 +180,284 @@ export default function HeroSection() {
         }
     };
 
+    const goToSlide = (index: number) => {
+        // Convert real index to virtual index (add 1 for the duplicate at start)
+        setVirtualIndex(index + 1);
+    };
+
+    const goToPrevious = () => {
+        setVirtualIndex((prev) => {
+            const next = prev - 1;
+            // If we go before the duplicate at start, jump to real last slide without animation
+            if (next < 0) {
+                setTimeout(() => {
+                    setIsTransitioning(false);
+                    setVirtualIndex(extendedCarousels.length - 2); // Jump to real last slide
+                    setTimeout(() => setIsTransitioning(true), 50);
+                }, 300);
+                return 0; // Show duplicate
+            }
+            return next;
+        });
+    };
+
+    const goToNext = () => {
+        setVirtualIndex((prev) => {
+            const next = prev + 1;
+            // If we reach the duplicate at the end, jump to real first slide without animation
+            if (next >= extendedCarousels.length - 1) {
+                setTimeout(() => {
+                    setIsTransitioning(false);
+                    setVirtualIndex(1); // Jump to real first slide
+                    setTimeout(() => setIsTransitioning(true), 50);
+                }, 300);
+                return extendedCarousels.length - 1; // Show duplicate
+            }
+            return next;
+        });
+    };
+
+    // Mouse/Touch drag handlers
+    const handleDragStart = (clientX: number) => {
+        setIsDragging(true);
+        setDragStart(clientX);
+        setDragOffset(0);
+        setHasDragged(false);
+    };
+
+    const handleDragMove = (clientX: number) => {
+        if (!isDragging) return;
+        const offset = clientX - dragStart;
+        setDragOffset(offset);
+        // Mark as dragged if movement is significant
+        if (Math.abs(offset) > 5) {
+            setHasDragged(true);
+        }
+    };
+
+    const handleDragEnd = () => {
+        if (!isDragging) return;
+        
+        const threshold = 50; // Minimum drag distance to trigger slide change
+        const containerWidth = carouselRef.current?.offsetWidth || 1;
+        const dragPercentage = (dragOffset / containerWidth) * 100;
+        
+        if (Math.abs(dragPercentage) > 10) { // 10% of container width
+            if (dragOffset > 0) {
+                // Dragged right, go to previous slide
+                goToPrevious();
+            } else {
+                // Dragged left, go to next slide
+                goToNext();
+            }
+        }
+        
+        setIsDragging(false);
+        setDragOffset(0);
+        setDragStart(0);
+        // Reset hasDragged after a short delay to allow click handler to check it
+        setTimeout(() => setHasDragged(false), 100);
+    };
+
+    // Mouse event handlers
+    const handleMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault();
+        handleDragStart(e.clientX);
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (isDragging) {
+            handleDragMove(e.clientX);
+        }
+    };
+
+    const handleMouseUp = () => {
+        handleDragEnd();
+    };
+
+    const handleMouseLeave = () => {
+        if (isDragging) {
+            handleDragEnd();
+        }
+    };
+
+    // Touch event handlers
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (e.touches[0]) {
+            handleDragStart(e.touches[0].clientX);
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (isDragging && e.touches[0]) {
+            handleDragMove(e.touches[0].clientX);
+        }
+    };
+
+    // Handle carousel click to navigate to linked category
+    const handleCarouselClick = (e: React.MouseEvent) => {
+        // Only navigate if it wasn't a drag operation
+        if (!hasDragged && !isDragging && currentCarousel?.category?.slug) {
+            e.preventDefault();
+            e.stopPropagation();
+            router.push(`/services/${currentCarousel.category.slug}`);
+        }
+    };
+
+    // Handle touch click (tap) to navigate to linked category
+    const handleTouchEndWithClick = () => {
+        handleDragEnd();
+        // Check if it was a tap (not a drag) after a short delay
+        setTimeout(() => {
+            if (!hasDragged && currentCarousel?.category?.slug) {
+                router.push(`/services/${currentCarousel.category.slug}`);
+            }
+        }, 100);
+    };
+
     return (
         <section className="h-[450px] md:h-[500px] bg-white w-full py-3 md:py-6 flex items-center justify-center overflow-hidden">
-            <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 h-full">
-                {/* Background Image Overlay */}
-                <div className="relative w-full h-full rounded-xl md:rounded-2xl flex items-center justify-center">
-                    <div className="absolute inset-0 rounded-xl md:rounded-2xl bg-[url('/images/hero-image.png')] bg-cover bg-center opacity-90"></div>
-                    <div className="absolute inset-0 rounded-xl md:rounded-2xl bg-gradient-to-b from-black/50 to-black/40"></div>
-                    {/* Content */}
-                    <div className="relative z-10 max-w-4xl mx-auto px-4 py-4 md:px-6 text-center w-full">
-                        {/* Main Title */}
-                        <h1 className="text-2xl md:text-4xl lg:text-5xl font-hkgb text-white mb-4 md:mb-6 tracking-tight leading-tight">
-                            Print Your Vision.<br className="hidden md:block" /> Quality Printing Services.
-                        </h1>
-
-                        {/* Search Bar */}
-                        <form onSubmit={handleSearch} className="mb-6 md:mb-6">
-                            <div ref={searchRef} className="relative max-w-2xl mx-auto">
-                                <div className="relative flex items-center bg-white rounded-full shadow-lg">
-                                    <div className="absolute left-4 md:left-6">
-                                        <svg
-                                            width="18"
-                                            height="18"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            className="text-gray-400"
-                                        >
-                                            <circle cx="11" cy="11" r="8"></circle>
-                                            <path d="m21 21-4.35-4.35"></path>
-                                        </svg>
-                                    </div>
-                                    <input
-                                        type="text"
-                                        placeholder="Search services..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        onFocus={() => searchQuery.trim() && setShowSuggestions(true)}
-                                        onKeyDown={handleKeyDown}
-                                        className="flex-1 pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3 rounded-full outline-none text-gray-900 placeholder:text-gray-400 text-sm md:text-base"
-                                    />
-                                    <button
-                                        type="submit"
-                                        className="absolute right-1.5 md:right-2 w-10 h-10 bg-[#008ECC] rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors"
-                                        aria-label="Search"
-                                    >
-                                        <svg
-                                            width="18"
-                                            height="18"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            className="text-white"
-                                        >
-                                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                                            <polyline points="12 5 19 12 12 19"></polyline>
-                                        </svg>
-                                    </button>
-                                </div>
-                                
-                                {/* Search Suggestions Dropdown */}
-                                {showSuggestions && searchSuggestions.length > 0 && (
-                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 max-h-64 overflow-y-auto z-50">
-                                        {searchSuggestions.map((category) => (
-                                            <Link
-                                                key={category.id}
-                                                href={`/services/${category.slug}`}
-                                                onClick={() => {
-                                                    setSearchQuery('');
-                                                    setShowSuggestions(false);
-                                                }}
-                                                className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 flex items-center gap-3 cursor-pointer"
-                                            >
-                                                <div className="flex-1">
-                                                    <div className="font-medium text-gray-900">{category.name}</div>
-                                                    {category.description && (
-                                                        <div className="text-sm text-gray-500 mt-1 line-clamp-1">
-                                                            {category.description}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <svg
-                                                    width="16"
-                                                    height="16"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    className="text-gray-400"
-                                                >
-                                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                                    <polyline points="12 5 19 12 12 19"></polyline>
-                                                </svg>
-                                            </Link>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </form>
-
-                        {/* Category Buttons */}
-                        {loading ? (
-                            <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
-                                {[1, 2, 3].map((i) => (
-                                    <div
-                                        key={i}
-                                        className="px-4 md:px-6 py-2 md:py-2.5 bg-gray-200 rounded-full animate-pulse h-9 md:h-10 w-24 md:w-32"
-                                    />
-                                ))}
-                            </div>
-                        ) : categories.length > 0 ? (
-                            <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
-                                {categories.map((category) => (
-                                    <Link
-                                        key={category.name}
-                                        href={category.href}
-                                        className="px-4 md:px-6 py-2 md:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full font-medium transition-colors text-sm md:text-base"
-                                    >
-                                        {category.name}
-                                    </Link>
-                                ))}
-                            </div>
-                        ) : null}
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 h-full">
+                {carouselLoading ? (
+                    <div className="relative w-full h-full rounded-xl md:rounded-2xl bg-gray-200 animate-pulse flex items-center justify-center">
+                        <div className="text-gray-400">Loading carousel...</div>
                     </div>
-                </div>
+                ) : carousels.length === 0 ? (
+                    <div className="relative w-full h-full rounded-xl md:rounded-2xl bg-gray-100 flex items-center justify-center">
+                        <div className="text-gray-500 text-center">
+                            <p className="text-lg font-medium mb-2">No carousel items available</p>
+                            <p className="text-sm">Please add carousel items from the admin dashboard</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div 
+                        ref={carouselRef}
+                        className={`relative w-full h-full rounded-xl md:rounded-2xl overflow-hidden select-none ${
+                            currentCarousel?.category?.slug 
+                                ? 'cursor-pointer' 
+                                : 'cursor-grab active:cursor-grabbing'
+                        }`}
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onMouseLeave={handleMouseLeave}
+                        onClick={handleCarouselClick}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEndWithClick}
+                    >
+                        {/* Carousel Images */}
+                        <div 
+                            className="relative w-full h-full"
+                            style={{
+                                transform: isDragging 
+                                    ? `translateX(calc(-${virtualIndex * 100}% + ${dragOffset}px))` 
+                                    : `translateX(-${virtualIndex * 100}%)`,
+                                transition: isDragging || !isTransitioning 
+                                    ? 'none' 
+                                    : 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                            }}
+                        >
+                            {extendedCarousels.map((carousel, index) => {
+                                if (!carousel) return null;
+                                
+                                return (
+                                    <div
+                                        key={`${carousel.id}-${index}`}
+                                        className="absolute inset-0"
+                                        style={{
+                                            left: `${index * 100}%`,
+                                            width: '100%',
+                                        }}
+                                    >
+                                        <Image
+                                            src={carousel.imageUrl}
+                                            alt={carousel.alt || 'Carousel image'}
+                                            fill
+                                            className="object-cover"
+                                            priority={index === 1} // Prioritize first real slide
+                                            draggable={false}
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-b from-black/50 to-black/40"></div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Content Overlay */}
+                        {currentCarousel && (
+                            <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                                <div className="text-center px-4 md:px-6 max-w-4xl">
+                                    {currentCarousel.alt && (
+                                        <h2 className="text-2xl md:text-4xl lg:text-5xl font-bold text-white mb-4 md:mb-6 tracking-tight">
+                                            {currentCarousel.alt}
+                                        </h2>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Navigation Arrows */}
+                        {carousels.length > 1 && (
+                            <>
+                                <button
+                                    onClick={goToPrevious}
+                                    className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-black/30 hover:bg-black/50 text-white p-2 rounded-full transition-colors"
+                                    aria-label="Previous slide"
+                                >
+                                    <svg
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <polyline points="15 18 9 12 15 6"></polyline>
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={goToNext}
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 z-20 bg-black/30 hover:bg-black/50 text-white p-2 rounded-full transition-colors"
+                                    aria-label="Next slide"
+                                >
+                                    <svg
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    >
+                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                    </svg>
+                                </button>
+                            </>
+                        )}
+
+                        {/* Dots Indicator */}
+                        {carousels.length > 1 && (
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-2">
+                                {carousels.map((_, index) => (
+                                    <button
+                                        key={index}
+                                        onClick={() => goToSlide(index)}
+                                        className={`h-2 rounded-full transition-all ${
+                                            index === currentCarouselIndex
+                                                ? 'w-8 bg-white'
+                                                : 'w-2 bg-white/50 hover:bg-white/75'
+                                        }`}
+                                        aria-label={`Go to slide ${index + 1}`}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </section>
     );

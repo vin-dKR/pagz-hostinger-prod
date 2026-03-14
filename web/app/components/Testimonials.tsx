@@ -80,7 +80,7 @@ export default function Testimonials() {
 
     return (
         <section className="py-6 md:py-8 bg-white pb-0 sm:pb-40">
-            <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Section Header with Navigation Buttons */}
                 <div className="flex items-center justify-between mb-4 md:mb-5">
                     <div>

@@ -94,6 +94,7 @@ model Category {
   pricingRules   CategoryPricingRule[]
   configuration  CategoryConfiguration?
   images         CategoryImage[]
+  carousels      Carousel[]
 
   @@index([parentId])
   @@index([isActive])
@@ -216,6 +217,26 @@ model CategoryImage {
   @@index([categoryId, displayOrder])
   @@index([isPrimary])
   @@map("category_images")
+}
+
+// Carousel model (Homepage carousel items)
+model Carousel {
+  id           String   @id @default(uuid())
+  imageUrl     String
+  alt          String?
+  categoryId   String? // Optional link to category
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([isActive])
+  @@index([displayOrder])
+  @@index([isActive, displayOrder])
+  @@index([categoryId])
+  @@map("carousels")
 }
 
 // Enums for Category Specifications

@@ -34,7 +34,7 @@ export function MainNav({
         <>
             {/* Top Bar */}
             <div className="hidden lg:block bg-gray-100">
-                <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-1.5">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-1.5">
                     <div className="flex items-center justify-between text-xs">
                         <div className="text-gray-600 text-xs font-light font-hkgr">
                             Welcome to worldwide Megamart!
@@ -62,7 +62,7 @@ export function MainNav({
 
             {/* Main Header */}
             <div className="bg-white w-full border-b border-gray-100">
-                <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-between gap-3 sm:gap-4 py-3">
                         {/* Logo */}
                         <Link href="/" className="flex items-center">

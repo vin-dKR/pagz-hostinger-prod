@@ -11,7 +11,7 @@ export default function AccountLayout({
     return (
         <ProtectedRoute>
             <div className="min-h-screen bg-white py-4 sm:py-8 pb-10 lg:pb-40">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex flex-col lg:flex-row gap-4 sm:gap-6">
                         {/* Sidebar Navigation */}
                         <div className="lg:w-64">

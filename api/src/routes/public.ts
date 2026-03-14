@@ -17,6 +17,7 @@ import {
     getOfferById,
     getOfferProducts,
 } from "../controllers/offerController.js";
+import { getCarousels } from "../controllers/carouselController.js";
 
 const router: IRouter = Router();
 
@@ -42,6 +43,12 @@ router.get("/search", searchProducts);
 router.get("/offers", getOffers);
 router.get("/offers/:id", getOfferById);
 router.get("/offers/:id/products", getOfferProducts);
+
+/**
+ * Public Carousel Routes
+ * Routes for fetching homepage carousel items
+ */
+router.get("/carousels", getCarousels);
 
 export default router;
 

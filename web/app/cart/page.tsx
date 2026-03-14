@@ -284,7 +284,7 @@ function CartPageContent() {
     return (
         <div className="min-h-screen py-4 sm:py-6 lg:py-8">
             {ConfirmDialog}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Breadcrumbs */}
                 <Breadcrumbs items={breadcrumbs} />
 

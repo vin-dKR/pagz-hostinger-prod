@@ -75,7 +75,7 @@ export function CategoryBar({
                 zIndex: 40,
             }}
         >
-            <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-1.5">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-1.5">
                 <div className="flex xl:justify-center overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pb-2">
                     <div className="flex items-center gap-2 lg:gap-4 min-w-3xl">
                         {isLoading ? (
