@@ -12,6 +12,7 @@ import {
     getProductsBySpecifications,
     getCategoryAddonsPublic,
 } from "../controllers/categoryController.js";
+import { getCategoryTemplatesBySlug } from "../controllers/categoryTemplateController.js";
 import {
     getOffers,
     getOfferById,
@@ -31,6 +32,7 @@ router.get("/categories/:slug", getCategoryBySlug);
 router.get("/categories/:slug/products", getProductsBySpecifications);
 router.post("/categories/:slug/calculate-price", calculateCategoryPricePublic);
 router.get("/categories/:slug/addons", getCategoryAddonsPublic);
+router.get("/categories/:slug/templates", getCategoryTemplatesBySlug);
 router.get("/products", getProducts);
 router.get("/products/:id", getProduct);
 router.get("/products/:id/addons", getProductAddons);

@@ -24,13 +24,14 @@ import {
 import { CategorySpecifications } from './category-specifications';
 import { CategoryPricing } from './category-pricing';
 import { CategoryImages } from './category-images';
+import { CategoryTemplatesForms } from './category-templates-forms';
 import { getProducts, type Product } from '@/lib/api/products.service';
 
 interface CategoryDetailProps {
     categoryId: string;
 }
 
-type TabType = 'overview' | 'specifications' | 'pricing' | 'products' | 'images';
+type TabType = 'overview' | 'specifications' | 'pricing' | 'products' | 'images' | 'templates';
 
 export function CategoryDetail({ categoryId }: CategoryDetailProps) {
     const router = useRouter();
@@ -44,6 +45,8 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
     const [category, setCategory] = useState<Category | null>(null);
     const [config, setConfig] = useState<CategoryConfiguration | null>(null);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _config = config; // Keep for potential future use
 
     const [basicForm, setBasicForm] = useState<{
         name: string;
@@ -110,6 +113,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         if (activeTab === 'products') {
             loadProducts();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, categoryId]);
 
     const loadProducts = async () => {
@@ -198,6 +202,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         { id: 'pricing', label: 'Pricing' },
         { id: 'products', label: 'Products' },
         { id: 'images', label: 'Images' },
+        { id: 'templates', label: 'Templates & Forms' },
     ];
 
     return (
@@ -461,6 +466,10 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
             {activeTab === 'images' && (
                 <CategoryImages categoryId={categoryId} />
+            )}
+
+            {activeTab === 'templates' && (
+                <CategoryTemplatesForms categoryId={categoryId} />
             )}
         </div>
     );

@@ -95,6 +95,7 @@ model Category {
   configuration  CategoryConfiguration?
   images         CategoryImage[]
   carousels      Carousel[]
+  templates      CategoryTemplate[]
 
   @@index([parentId])
   @@index([isActive])
@@ -237,6 +238,44 @@ model Carousel {
   @@index([isActive, displayOrder])
   @@index([categoryId])
   @@map("carousels")
+}
+
+// Category Template model (Templates for categories)
+model CategoryTemplate {
+  id            String   @id @default(uuid())
+  categoryId    String
+  name          String
+  description   String?
+  previewImageUrl String?
+  displayOrder  Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category Category              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  form     CategoryTemplateForm?
+
+  @@index([categoryId])
+  @@index([categoryId, displayOrder])
+  @@index([categoryId, isActive])
+  @@index([isActive])
+  @@map("category_templates")
+}
+
+// Category Template Form model (Dynamic forms for templates)
+model CategoryTemplateForm {
+  id                  String   @id @default(uuid())
+  templateId           String   @unique
+  fields              Json // Array of form field definitions
+  requiresImageUpload Boolean  @default(false)
+  imageUploadRequired Boolean  @default(false) // If requiresImageUpload is true, this determines if mandatory
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  template CategoryTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@map("category_template_forms")
 }
 
 // Enums for Category Specifications

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductPageTemplate } from '@/app/components/services/ProductPageTemplate';
+import { TemplateSelector } from '@/app/components/services/TemplateSelector';
 import { ChevronDown } from 'lucide-react';
 import { QuantitySelector } from '@/app/components/services/QuantitySelector';
 import { PageCountDisplay } from '@/app/components/services/PageCountDisplay';
@@ -81,6 +82,11 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [buyNowLoading, setBuyNowLoading] = useState(false);
     const [availableAddons, setAvailableAddons] = useState<CategoryAddon[]>([]);
     const [uploadedFilesS3, setUploadedFilesS3] = useState<FileDetail[]>([]);
+    
+    // Template selection state
+    const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+    const [templateFormData, setTemplateFormData] = useState<Record<string, any>>({});
+    const [templateFormImages, setTemplateFormImages] = useState<string[]>([]);
 
     // Check if files are currently uploading
     const isUploadingFiles = useMemo(() => {
@@ -755,6 +761,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         copies: pageCount > 0 ? copies : undefined,
                         priceBreakdown,
                         selectedAddons: selectedAddonIds,
+                        templateId: selectedTemplateId || undefined,
+                        templateFormData: Object.keys(templateFormData).length > 0 ? templateFormData : undefined,
+                        templateFormImages: templateFormImages.length > 0 ? templateFormImages : undefined,
                     },
                     hasAddon: selectedAddonIds.length > 0,
                     addons: selectedAddonIds,
@@ -1126,6 +1135,21 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 uploadedFilesS3={uploadedFilesS3}
                 setUploadedFilesS3={setUploadedFilesS3}
             >
+                {/* Template Selection */}
+                {category && (
+                    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
+                        <TemplateSelector
+                            categorySlug={categorySlug}
+                            onTemplateSelect={(templateId, formData, formImages) => {
+                                setSelectedTemplateId(templateId);
+                                setTemplateFormData(formData);
+                                setTemplateFormImages(formImages);
+                            }}
+                            selectedTemplateId={selectedTemplateId}
+                        />
+                    </div>
+                )}
+
                 {/* Dynamic Configuration Options */}
                 <div className="space-y-8">
                     {visibleSpecifications.map((spec: CategorySpecification) => {

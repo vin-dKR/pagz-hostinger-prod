@@ -131,6 +131,16 @@ import {
     deleteCarousel,
     reorderCarousels,
 } from "../controllers/carouselController.js";
+import {
+    getCategoryTemplates,
+    getCategoryTemplate,
+    createCategoryTemplate,
+    updateCategoryTemplate,
+    deleteCategoryTemplate,
+    getTemplateForm,
+    upsertTemplateForm,
+    deleteTemplateForm,
+} from "../controllers/categoryTemplateController.js";
 
 const router: IRouter = Router();
 
@@ -269,6 +279,18 @@ router.get("/categories/:id/images", getCategoryImages);
 router.post("/categories/:id/images", createCategoryImage);
 router.put("/categories/:id/images/:imageId", updateCategoryImage);
 router.delete("/categories/:id/images/:imageId", deleteCategoryImage);
+
+// Category Templates Management (admin only)
+router.get("/categories/:categoryId/templates", getCategoryTemplates);
+router.post("/categories/:categoryId/templates", createCategoryTemplate);
+router.get("/categories/:categoryId/templates/:templateId", getCategoryTemplate);
+router.put("/categories/:categoryId/templates/:templateId", updateCategoryTemplate);
+router.delete("/categories/:categoryId/templates/:templateId", deleteCategoryTemplate);
+
+// Category Template Forms Management (admin only)
+router.get("/categories/:categoryId/templates/:templateId/form", getTemplateForm);
+router.put("/categories/:categoryId/templates/:templateId/form", upsertTemplateForm);
+router.delete("/categories/:categoryId/templates/:templateId/form", deleteTemplateForm);
 
 // Publish Pricing Rule as Product (admin only)
 router.get("/categories/:categoryId/pricing-rules/:ruleId/preview-product", previewProductFromPricingRule);

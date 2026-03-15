@@ -19,6 +19,7 @@ import { getOrder, type Order, type OrderStatusHistory } from "@/lib/api/orders"
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
 import { downloadInvoicePDF } from "@/lib/api/invoice";
 import { toastSuccess, toastError } from "@/lib/utils/toast";
+import { TemplateDataDisplay } from "@/app/components/orders/TemplateDataDisplay";
 
 interface OrderItem {
     id: string;
@@ -39,6 +40,11 @@ interface OrderItem {
         basePrice?: number | null;
         quantityMultiplier: boolean;
     }>;
+    templateId?: string;
+    templateName?: string;
+    templatePreviewImage?: string;
+    templateFormData?: Record<string, any>;
+    templateFormImages?: string[];
 }
 
 interface OrderStatusHistoryDisplay {
@@ -206,6 +212,7 @@ function transformOrder(order: Order): OrderDetails {
                 return sum + rawPrice * multiplier;
             }, 0);
 
+            const metadata = item.metadata || {};
             return {
                 id: item.id,
                 productId: item.productId,
@@ -223,6 +230,11 @@ function transformOrder(order: Order): OrderDetails {
                     basePrice: addon.basePrice,
                     quantityMultiplier: addon.quantityMultiplier,
                 })) : undefined,
+                templateId: metadata.templateId,
+                templateName: metadata.templateName,
+                templatePreviewImage: metadata.templatePreviewImage,
+                templateFormData: metadata.templateFormData,
+                templateFormImages: metadata.templateFormImages,
             } as OrderItem;
         }),
         shippingAddress: {
@@ -457,6 +469,13 @@ function OrderDetailsPageContent({
                                                         )}
                                                     </div>
                                                 )}
+                                                <TemplateDataDisplay
+                                                    templateId={item.templateId}
+                                                    templateName={item.templateName}
+                                                    templatePreviewImage={item.templatePreviewImage}
+                                                    formData={item.templateFormData}
+                                                    formImages={item.templateFormImages}
+                                                />
                                             </div>
                                         </div>
                                     </div>
