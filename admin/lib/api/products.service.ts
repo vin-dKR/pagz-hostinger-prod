@@ -109,7 +109,6 @@ export interface Product {
 export interface CreateProductData {
     // Step 1: Basic info
     name: string;
-    slug?: string;
     shortDescription?: string;
     description?: string;
     isActive?: boolean;

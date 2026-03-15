@@ -32,11 +32,17 @@ export interface PendingPurchaseData {
     copies?: number;
     pageCount?: number;
     customText?: string;
+    templateId?: string;
+    templateFormData?: Record<string, any>;
+    templateFormImages?: string[];
     metadata?: {
         pageCount?: number;
         copies?: number;
         selectedAddons?: string[];
         priceBreakdown?: Array<{ label: string; value: number }>;
+        templateId?: string;
+        templateFormData?: Record<string, any>;
+        templateFormImages?: string[];
     };
     currentPrice?: number;
     totalPrice?: number;

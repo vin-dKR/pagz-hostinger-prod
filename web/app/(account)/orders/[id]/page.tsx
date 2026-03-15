@@ -13,7 +13,6 @@ import {
     HelpCircle,
     ArrowLeft,
     Check,
-    Printer,
 } from "lucide-react";
 import { getOrder, type Order, type OrderStatusHistory } from "@/lib/api/orders";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
@@ -213,6 +212,15 @@ function transformOrder(order: Order): OrderDetails {
             }, 0);
 
             const metadata = item.metadata || {};
+            
+            
+            // Ensure templateFormImages is an array
+            const templateFormImages = Array.isArray(metadata.templateFormImages) 
+                ? metadata.templateFormImages 
+                : metadata.templateFormImages 
+                    ? [metadata.templateFormImages] 
+                    : undefined;
+            
             return {
                 id: item.id,
                 productId: item.productId,
@@ -234,7 +242,7 @@ function transformOrder(order: Order): OrderDetails {
                 templateName: metadata.templateName,
                 templatePreviewImage: metadata.templatePreviewImage,
                 templateFormData: metadata.templateFormData,
-                templateFormImages: metadata.templateFormImages,
+                templateFormImages: templateFormImages,
             } as OrderItem;
         }),
         shippingAddress: {
@@ -475,6 +483,7 @@ function OrderDetailsPageContent({
                                                     templatePreviewImage={item.templatePreviewImage}
                                                     formData={item.templateFormData}
                                                     formImages={item.templateFormImages}
+                                                    productId={item.productId}
                                                 />
                                             </div>
                                         </div>

@@ -56,6 +56,9 @@ export interface OrderItem {
             label: string;
             value: number;
         }>;
+        templateId?: string;
+        templateFormData?: Record<string, any>;
+        templateFormImages?: string[];
     } | null;
 }
 

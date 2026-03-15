@@ -40,11 +40,14 @@ interface ProductPageTemplateProps {
     hasHalfPageAdjustment?: boolean; // Whether half-page adjustment was applied
     copies?: number; // For price breakdown display
     quantity?: number; // For price breakdown display
-    hasUploadedFiles?: boolean; // Whether files have been uploaded
+    hasUploadedFiles?: boolean; // Whether files have been uploaded or template selected
+    hasTemplates?: boolean; // Whether category has templates
     calculatingPrice?: boolean; // Whether price is being calculated
     isUploadingFiles?: boolean; // Whether files are currently uploading
     uploadedFilesS3: FileDetail[]
     setUploadedFilesS3: React.Dispatch<React.SetStateAction<FileDetail[]>>
+    hideFileUpload?: boolean;
+    templateSelector?: React.ReactNode; // Template selector component to show when templates exist
 }
 
 export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
@@ -76,10 +79,13 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
     copies,
     quantity,
     hasUploadedFiles = false,
+    hasTemplates = false,
     calculatingPrice = false,
     isUploadingFiles = false,
     uploadedFilesS3,
-    setUploadedFilesS3
+    setUploadedFilesS3,
+    hideFileUpload = false,
+    templateSelector
 }) => {
     const router = useRouter();
     const outOfStock = isOutOfStock || (stock !== null && stock !== undefined && stock <= 0);
@@ -103,7 +109,9 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
     const getButtonText = (isAddToCart: boolean) => {
         if (outOfStock) return 'Out of Stock';
         if (isInCart && isAddToCart) return 'Go to Cart';
-        if (!hasUploadedFiles) return 'Upload the files first';
+        if (!hasUploadedFiles) {
+            return hasTemplates ? 'Upload files or select Template first' : 'Upload the files first';
+        }
         if (!areRequiredFieldsFilled) return 'Please select the mandatory field';
         if (isAddToCart) return `Add to Cart to Buy - ₹${totalPrice.toFixed(2)}`;
         return 'Buy Now';
@@ -176,27 +184,31 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
 
                             {/* File Upload Section */}
                             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
-                                <ProductDocumentUpload
-                                    onFileSelect={(files: File[], pageCount: number, fileDetails?: FileDetail[]) => {
-                                        // Use the new callback if provided, otherwise use legacy callback
-                                        if (onFileSelectWithQuantity) {
-                                            onFileSelectWithQuantity(files, pageCount, fileDetails);
-                                        } else {
-                                            // Legacy: pass first file to onFileSelect
-                                            const firstFile: File | null = files.length > 0 && files[0] ? files[0] : null;
-                                            onFileSelect(firstFile);
-                                        }
-                                    }}
-                                    onQuantityChange={(calculatedQuantity: number) => {
-                                        // Call the quantity change callback if provided
-                                        if (onQuantityChange && calculatedQuantity > 0) {
-                                            onQuantityChange(calculatedQuantity);
-                                        }
-                                    }}
-                                    maxSizeMB={50}
-                                    uploadedFilesS3={uploadedFilesS3}
-                                    setUploadedFilesS3={setUploadedFilesS3}
-                                />
+                                {!hideFileUpload ? (
+                                    <ProductDocumentUpload
+                                        onFileSelect={(files: File[], pageCount: number, fileDetails?: FileDetail[]) => {
+                                            // Use the new callback if provided, otherwise use legacy callback
+                                            if (onFileSelectWithQuantity) {
+                                                onFileSelectWithQuantity(files, pageCount, fileDetails);
+                                            } else {
+                                                // Legacy: pass first file to onFileSelect
+                                                const firstFile: File | null = files.length > 0 && files[0] ? files[0] : null;
+                                                onFileSelect(firstFile);
+                                            }
+                                        }}
+                                        onQuantityChange={(calculatedQuantity: number) => {
+                                            // Call the quantity change callback if provided
+                                            if (onQuantityChange && calculatedQuantity > 0) {
+                                                onQuantityChange(calculatedQuantity);
+                                            }
+                                        }}
+                                        maxSizeMB={50}
+                                        uploadedFilesS3={uploadedFilesS3}
+                                        setUploadedFilesS3={setUploadedFilesS3}
+                                    />
+                                ) : (
+                                    templateSelector
+                                )}
                             </div>
 
                             {/* Configuration Options */}
@@ -249,7 +261,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="space-y-3">
+                            <div className="flex gap-3">
                                 <Button
                                     variant="primary"
                                     size="lg"
@@ -268,15 +280,14 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                             : getButtonText(true)}
                                 </Button>
 
-                                {/* FUTURE: Add Buy Now button */}
-                                {/* <Button
+                                <Button
                                     variant="primary"
                                     size="lg"
                                     fullWidth
                                     isLoading={isUploadingFiles || buyNowLoading || calculatingPrice}
                                     disabled={isButtonDisabled || isUploadingFiles || buyNowLoading || calculatingPrice}
                                     onClick={onBuyNow}
-                                    className="font-medium"
+                                    className="text-base font-medium bg-orange-600 hover:bg-orange-700"
                                     useCircularLoader={isUploadingFiles}
                                 >
                                     {isUploadingFiles
@@ -284,7 +295,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                         : calculatingPrice
                                             ? 'Calculating...'
                                             : getButtonText(false)}
-                                </Button> */}
+                                </Button>
                             </div>
                         </div>
                     </div>

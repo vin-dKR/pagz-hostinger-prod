@@ -13,16 +13,11 @@ interface TemplateGalleryProps {
 
 export function TemplateGallery({ templates, onTemplateSelect }: TemplateGalleryProps) {
     if (templates.length === 0) {
-        return (
-            <div className="py-12 text-center text-gray-500">
-                <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                <p>No templates available for this category.</p>
-            </div>
-        );
+        return null; // Return null, upload card will be shown instead
     }
 
     return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4 lg:gap-6">
+        <>
             {templates.map((template) => (
                 <div
                     key={template.id}
@@ -54,6 +49,6 @@ export function TemplateGallery({ templates, onTemplateSelect }: TemplateGallery
                     </div>
                 </div>
             ))}
-        </div>
+        </>
     );
 }

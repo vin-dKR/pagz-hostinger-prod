@@ -523,19 +523,6 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                                     required
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="slug">Slug</Label>
-                                <Input
-                                    id="slug"
-                                    value={formData.slug || ''}
-                                    placeholder="auto-generated from name if left empty"
-                                    onChange={(e) =>
-                                        setFormData((prev) =>
-                                            prev ? { ...prev, slug: e.target.value } : prev,
-                                        )
-                                    }
-                                />
-                            </div>
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="shortDescription">Short Description</Label>

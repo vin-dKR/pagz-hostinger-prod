@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, use } from 'react';
+import React, { useState, useEffect, use, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type CategoryTemplate } from '@/lib/api/templates';
 import { useCategoryTemplates } from '@/lib/hooks/use-category-templates';
@@ -8,21 +8,25 @@ import { getPublicS3Url } from '@/lib/utils/s3';
 import { TemplateGallery } from '@/app/components/services/TemplateGallery';
 import { TemplateForm } from '@/app/components/services/TemplateForm';
 import { Dialog, DialogContent, DialogClose } from '@/app/components/ui/dialog';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Upload } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
+import ProductDocumentUpload, { FileDetail } from '@/app/components/products/ProductDocumentUpload';
 
-interface TemplatePageProps {
+interface TemplatePageProps { 
     params: Promise<{ categorySlug: string }>;
 }
 
 export default function TemplatePage({ params }: TemplatePageProps) {
     const { categorySlug } = use(params);
     const router = useRouter();
+    const fileInputRef = useRef<HTMLInputElement>(null);
     
     const [dialogOpen, setDialogOpen] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState<CategoryTemplate | null>(null);
     const [formData, setFormData] = useState<Record<string, any>>({});
     const [formImages, setFormImages] = useState<string[]>([]);
+    const [showUploadDialog, setShowUploadDialog] = useState(false);
+    const [uploadedFilesS3, setUploadedFilesS3] = useState<FileDetail[]>([]);
 
     // Use TanStack Query for data fetching with caching
     const { 
@@ -45,6 +49,8 @@ export default function TemplatePage({ params }: TemplatePageProps) {
             // Store the selected template data in sessionStorage to pass back to the service page
             const templateData = {
                 templateId: selectedTemplate.id,
+                templateName: selectedTemplate.name,
+                templatePreviewImage: selectedTemplate.previewImageUrl,
                 formData: data,
                 formImages: images,
             };
@@ -76,6 +82,45 @@ export default function TemplatePage({ params }: TemplatePageProps) {
 
     const handleBackToService = () => {
         router.push(`/services/${categorySlug}`);
+    };
+
+    const handleUploadClick = () => {
+        setShowUploadDialog(true);
+    };
+
+    const handleFileSelect = (files: File[], pageCount: number, fileDetails?: FileDetail[]) => {
+        if (fileDetails && fileDetails.length > 0) {
+            // Check if all files have been uploaded (have s3Key)
+            const allFilesUploaded = fileDetails.every(fd => fd.uploadStatus === 'uploaded' && fd.s3Key);
+            
+            if (allFilesUploaded) {
+                // Store upload data in sessionStorage to pass back to service page
+                const uploadData = {
+                    uploadedFiles: fileDetails.map(fd => ({
+                        name: fd.file.name,
+                        s3Key: fd.s3Key,
+                        type: fd.type,
+                        pageCount: fd.pageCount,
+                        id: fd.id,
+                        size: fd.file.size, // Store file size
+                    })),
+                    pageCount,
+                };
+                sessionStorage.setItem('uploadedFileData', JSON.stringify(uploadData));
+                
+                // Navigate back to service page
+                setShowUploadDialog(false);
+                router.push(`/services/${categorySlug}`);
+            } else {
+                // Files are still uploading, wait for them to complete
+                // The callback will be called again when uploads complete
+                console.log('Files are still uploading, waiting for completion...');
+            }
+        }
+    };
+
+    const handleCloseUploadDialog = () => {
+        setShowUploadDialog(false);
     };
 
     return (
@@ -115,10 +160,30 @@ export default function TemplatePage({ params }: TemplatePageProps) {
 
                     {!loading && !error && (
                         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
-                            <TemplateGallery
-                                templates={templates}
-                                onTemplateSelect={handleTemplateClick}
-                            />
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4 lg:gap-6">
+                                {/* Upload Image Card - First Option */}
+                                <div
+                                    className="border-2 border-dashed border-gray-300 rounded-xl overflow-hidden hover:border-blue-500 hover:shadow-lg transition-all duration-200 cursor-pointer bg-white"
+                                    onClick={handleUploadClick}
+                                >
+                                    <div className="aspect-square bg-gray-50 flex items-center justify-center p-2">
+                                        <div className="text-center w-full">
+                                            <Upload className="h-12 w-12 sm:h-16 sm:w-16 text-gray-400 mx-auto mb-2" />
+                                            <p className="text-xs sm:text-sm font-medium text-gray-600">Upload Image</p>
+                                        </div>
+                                    </div>
+                                    <div className="p-3 sm:p-4">
+                                        <h3 className="font-semibold text-gray-900 mb-1.5 text-sm sm:text-base">Upload Your Design</h3>
+                                        <p className="text-xs text-gray-600 line-clamp-2">Upload your own image or document</p>
+                                    </div>
+                                </div>
+
+                                {/* Template Cards */}
+                                <TemplateGallery
+                                    templates={templates}
+                                    onTemplateSelect={handleTemplateClick}
+                                />
+                            </div>
                         </div>
                     )}
                 </div>
@@ -169,6 +234,25 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                 </div>
                             </div>
                         )}
+                    </DialogContent>
+                </Dialog>
+
+                {/* Upload Dialog */}
+                <Dialog open={showUploadDialog} onOpenChange={handleCloseUploadDialog}>
+                    <DialogContent className="relative max-w-2xl max-h-[calc(100vh-8rem)] overflow-y-auto">
+                        <DialogClose onClose={handleCloseUploadDialog} />
+                        <div className="space-y-4">
+                            <h2 className="text-xl font-semibold text-gray-900">Upload Your Design</h2>
+                            <p className="text-sm text-gray-600">
+                                Upload your image or document to use as your design
+                            </p>
+                            <ProductDocumentUpload
+                                onFileSelect={handleFileSelect}
+                                maxSizeMB={50}
+                                uploadedFilesS3={uploadedFilesS3}
+                                setUploadedFilesS3={setUploadedFilesS3}
+                            />
+                        </div>
                     </DialogContent>
                 </Dialog>
             </div>

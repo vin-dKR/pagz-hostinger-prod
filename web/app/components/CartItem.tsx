@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import PriceDisplay from "./PriceDisplay";
 import { CartItem as CartItemType, AddonRule } from "@/lib/api/cart";
 import Image from "next/image";
@@ -39,26 +39,104 @@ export default function CartItem({
     const variant = item.variant;
     const productName = product?.name || 'Unknown Product';
 
+    // Debug: Log the entire item to see what metadata is present
+    useEffect(() => {
+        console.log('CartItem - Full item data for:', productName, {
+            itemId: item.id,
+            productId: item.productId,
+            hasMetadata: !!item.metadata,
+            metadata: item.metadata,
+            hasTemplateId: !!item.metadata?.templateId,
+            templateId: item.metadata?.templateId,
+            hasTemplateFormData: !!(item.metadata?.templateFormData && Object.keys(item.metadata.templateFormData || {}).length > 0),
+            templateFormData: item.metadata?.templateFormData,
+            templateFormDataKeys: item.metadata?.templateFormData ? Object.keys(item.metadata.templateFormData) : [],
+            customDesignUrl: item.customDesignUrl,
+            fullItem: item
+        });
+    }, [item, productName]);
+
     // Get uploaded files from cart item (S3 URLs already stored)
     const uploadedFileUrls = Array.isArray(item.customDesignUrl)
         ? item.customDesignUrl
         : (item.customDesignUrl ? [item.customDesignUrl] : []);
 
-    // Check if item has images
+    // Check if item has images, template, or template form data
     const hasImages = useMemo(() => {
-        if (!item.customDesignUrl) return false;
-        if (Array.isArray(item.customDesignUrl)) {
-            return item.customDesignUrl.length > 0 &&
-                item.customDesignUrl.some(url => url && url.trim() !== '');
+        // Check for uploaded design files
+        if (item.customDesignUrl) {
+            if (Array.isArray(item.customDesignUrl)) {
+                if (item.customDesignUrl.length > 0 &&
+                    item.customDesignUrl.some(url => url && url.trim() !== '')) {
+                    return true;
+                }
+            } else if (typeof item.customDesignUrl === 'string' &&
+                item.customDesignUrl.trim() !== '') {
+                return true;
+            }
         }
-        return typeof item.customDesignUrl === 'string' &&
-            item.customDesignUrl.trim() !== '';
-    }, [item.customDesignUrl]);
+        // Check for template selection with form data (template form data means files not required)
+        if (item.metadata?.templateId) {
+            // If template has form data, consider it as having "files" (form data replaces file requirement)
+            const hasFormData = item.metadata?.templateFormData && Object.keys(item.metadata.templateFormData).length > 0;
+            if (hasFormData) {
+                return true;
+            }
+            // Also check for template form images
+            if (item.metadata?.templateFormImages && item.metadata.templateFormImages.length > 0) {
+                return true;
+            }
+            // If template preview image exists, also consider it valid
+            if (item.metadata?.templatePreviewImage) {
+                return true;
+            }
+        }
+        return false;
+    }, [item.customDesignUrl, item.metadata]);
+    
+    // Check if template form data exists (for display purposes)
+    const hasTemplateFormData = useMemo(() => {
+        // Always log to see what we have
+        console.log('CartItem - Checking template form data:', {
+            itemId: item.id,
+            hasMetadata: !!item.metadata,
+            metadata: item.metadata,
+            templateId: item.metadata?.templateId,
+            templateFormData: item.metadata?.templateFormData,
+            templateFormDataKeys: item.metadata?.templateFormData ? Object.keys(item.metadata.templateFormData) : []
+        });
+        
+        const hasData = !!(item.metadata?.templateId && 
+                  item.metadata?.templateFormData && 
+                  Object.keys(item.metadata.templateFormData).length > 0);
+        return hasData;
+    }, [item.metadata, item.id]);
 
+    // Get template preview image if template is selected
+    const templateId = item.metadata?.templateId;
+    const templateFormImages = item.metadata?.templateFormImages || [];
+    const hasTemplate = !!templateId;
+    
     // Get product image
     const productImage = product?.images?.find(img => img.isPrimary)?.url ||
         product?.images?.[0]?.url ||
         '/images/placeholder.png';
+    
+    // Determine display image: template form images > uploaded files > product image
+    const displayImage = useMemo(() => {
+        if (hasTemplate && templateFormImages.length > 0 && templateFormImages[0]) {
+            // Show first template form image
+            return getPublicS3Url(templateFormImages[0]);
+        }
+        if (uploadedFileUrls.length > 0 && uploadedFileUrls[0]) {
+            // Show first uploaded file if it's an image
+            const firstUrl = uploadedFileUrls[0];
+            if (firstUrl && isImageFile(firstUrl)) {
+                return getPublicS3Url(firstUrl);
+            }
+        }
+        return productImage;
+    }, [hasTemplate, templateFormImages, uploadedFileUrls, productImage]);
 
     // Calculate price
     const basePrice = Number(product?.sellingPrice || product?.basePrice || 0);
@@ -261,8 +339,57 @@ export default function CartItem({
                     )}
 
 
-                    {/* Image Upload Section - Show if no images */}
-                    {!hasImages && (
+                    {/* Template/Design Display or Upload Section */}
+                    {hasImages || hasTemplateFormData ? (
+                        // Show template/design preview if available
+                        <div className="p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
+                            <div className="flex items-center gap-3">
+                                {displayImage && displayImage !== '/images/placeholder.png' && (
+                                    <div className="w-16 h-16 rounded-lg overflow-hidden bg-white border border-gray-200 shrink-0">
+                                        <Image
+                                            src={displayImage}
+                                            alt={hasTemplate ? 'Template preview' : 'Design preview'}
+                                            width={64}
+                                            height={64}
+                                            className="w-full h-full object-cover"
+                                            unoptimized={displayImage.includes('amazonaws.com') || displayImage.includes('s3.')}
+                                        />
+                                    </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-900">
+                                        {hasTemplate ? 'Template Selected' : 'Design Uploaded'}
+                                    </p>
+                                    {hasTemplate && (
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            Template form completed
+                                        </p>
+                                    )}
+                                    {!hasTemplate && uploadedFileUrls.length > 0 && (
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            {uploadedFileUrls.length} file{uploadedFileUrls.length !== 1 ? 's' : ''} uploaded
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            {/* Show template form data if available */}
+                            {hasTemplateFormData && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                    <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Form Data</p>
+                                    <div className="space-y-1.5">
+                                        {Object.entries(item.metadata!.templateFormData!).map(([key, value]) => (
+                                            <div key={key} className="flex justify-between text-xs">
+                                                <span className="text-gray-600 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                                <span className="text-gray-900 font-medium text-right ml-2">
+                                                    {typeof value === 'string' || typeof value === 'number' ? String(value) : JSON.stringify(value)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
                         <div className="p-3 sm:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                             <div className="flex items-center justify-between mb-3">
                                 <p className="text-sm sm:text-base font-medium text-yellow-900">

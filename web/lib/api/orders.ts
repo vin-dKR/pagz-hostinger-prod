@@ -39,6 +39,17 @@ export interface OrderItem {
     customText?: string;
     createdAt: string;
     addons?: OrderItemAddon[];
+    metadata?: {
+        pageCount?: number;
+        copies?: number;
+        selectedAddons?: string[];
+        priceBreakdown?: Array<{ label: string; value: number }>;
+        templateId?: string;
+        templateName?: string;
+        templatePreviewImage?: string;
+        templateFormData?: Record<string, any>;
+        templateFormImages?: string[];
+    } | null;
     product?: {
         id: string;
         name: string;

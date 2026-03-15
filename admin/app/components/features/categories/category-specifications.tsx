@@ -59,14 +59,12 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
     const [specForm, setSpecForm] = useState<{
         id?: string;
         name: string;
-        slug: string;
         type: SpecificationType;
         isRequired: boolean;
         displayOrder: number;
         dependsOn?: { specificationSlug: string; required: boolean } | null;
     }>({
         name: '',
-        slug: '',
         type: 'SELECT',
         isRequired: true,
         displayOrder: 0,
@@ -76,13 +74,11 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
     const [optionForm, setOptionForm] = useState<{
         id?: string;
         label: string;
-        value: string;
         displayOrder: number;
         allowedParentValues: string[]; // For dependencies: which parent spec values this option applies to
         isHalfPage: boolean; // For half-page option: divides page count by 2 for pricing
     }>({
         label: '',
-        value: '',
         displayOrder: 0,
         allowedParentValues: [],
         isHalfPage: false,
@@ -112,10 +108,9 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
     const resetSpecForm = () => {
         setSpecForm({
             name: '',
-            slug: '',
             type: 'SELECT',
             isRequired: true,
-            displayOrder: specs.length,
+            displayOrder: specs.length, // Default to current count, but editable
             dependsOn: null,
         });
     };
@@ -123,8 +118,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
     const resetOptionForm = () => {
         setOptionForm({
             label: '',
-            value: '',
-            displayOrder: options.length,
+            displayOrder: options.length, // Default to current count, but editable
             allowedParentValues: [],
             isHalfPage: false,
         });
@@ -139,7 +133,6 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             if (specForm.id) {
                 const updated = await updateCategorySpecificationApi(categoryId, specForm.id, {
                     name: specForm.name.trim(),
-                    slug: specForm.slug.trim(),
                     type: specForm.type,
                     isRequired: specForm.isRequired,
                     displayOrder: specForm.displayOrder,
@@ -149,10 +142,9 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             } else {
                 const created = await createCategorySpecificationApi(categoryId, {
                     name: specForm.name.trim(),
-                    slug: specForm.slug.trim(),
                     type: specForm.type,
                     isRequired: specForm.isRequired,
-                    displayOrder: specForm.displayOrder,
+                    displayOrder: specForm.displayOrder || undefined, // Send if provided, otherwise backend auto-calculates
                     dependsOn: specForm.dependsOn,
                 });
                 setSpecs((prev) => [...prev, created].sort((a, b) => a.displayOrder - b.displayOrder));
@@ -170,7 +162,6 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
         setSpecForm({
             id: spec.id,
             name: spec.name,
-            slug: spec.slug,
             type: spec.type,
             isRequired: spec.isRequired,
             displayOrder: spec.displayOrder,
@@ -263,7 +254,6 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                     optionForm.id,
                     {
                         label: optionForm.label.trim(),
-                        value: optionForm.value.trim(),
                         displayOrder: optionForm.displayOrder,
                         metadata: metadataPayload, 
                     } as UpdateSpecificationOptionData
@@ -272,8 +262,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             } else {
                 const created = await createSpecificationOptionApi(categoryId, selectedSpecId, {
                     label: optionForm.label.trim(),
-                    value: optionForm.value.trim(),
-                    displayOrder: optionForm.displayOrder,
+                    displayOrder: optionForm.displayOrder || undefined, // Send if provided, otherwise backend auto-calculates
                     metadata: metadataPayload,
                 } as CreateSpecificationOptionData);
                 setOptions((prev) => [...prev, created].sort((a, b) => a.displayOrder - b.displayOrder));
@@ -292,7 +281,6 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
         setOptionForm({
             id: opt.id,
             label: opt.label,
-            value: opt.value,
             displayOrder: opt.displayOrder,
             allowedParentValues: metadata?.allowedParentValues || [],
             isHalfPage: metadata?.isHalfPage || false,
@@ -396,26 +384,6 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                     />
                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="spec-slug">Slug</Label>
-                                    <Input
-                                        id="spec-slug"
-                                        value={specForm.slug}
-                                        onChange={(e) =>
-                                            setSpecForm((prev) => ({
-                                                ...prev,
-                                                slug: e.target.value
-                                                    .toLowerCase()
-                                                    .trim()
-                                                    .replace(/[^\w\s-]/g, '')
-                                                    .replace(/\s+/g, '-')
-                                                    .replace(/-+/g, '-'),
-                                            }))
-                                        }
-                                        placeholder="e.g. paper-size"
-                                        required
-                                    />
-                                </div>
 
                                 <div className="space-y-2">
                                     <Label htmlFor="spec-type">Type</Label>
@@ -467,6 +435,9 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                             }))
                                         }
                                     />
+                                    {!specForm.id && (
+                                        <p className="text-xs text-gray-500">Default: {specs.length} (will be auto-set to {specs.length + 1} if left empty)</p>
+                                    )}
                                 </div>
 
                                 {/* Dependency Selector */}
@@ -665,21 +636,6 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                             />
                                         </div>
 
-                                        <div className="space-y-2">
-                                            <Label htmlFor="opt-value">Value</Label>
-                                            <Input
-                                                id="opt-value"
-                                                value={optionForm.value}
-                                                onChange={(e) =>
-                                                    setOptionForm((prev) => ({
-                                                        ...prev,
-                                                        value: e.target.value,
-                                                    }))
-                                                }
-                                                placeholder="e.g. a4"
-                                                required
-                                            />
-                                        </div>
 
                                         <div className="space-y-2">
                                             <Label htmlFor="opt-order">Display Order</Label>
@@ -694,6 +650,9 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                     }))
                                                 }
                                             />
+                                            {!optionForm.id && (
+                                                <p className="text-xs text-gray-500">Default: {options.length} (will be auto-set to {options.length + 1} if left empty)</p>
+                                            )}
                                         </div>
 
                                         {/* Dependency: Applies to parent spec values */}

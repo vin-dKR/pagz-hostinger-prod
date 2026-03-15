@@ -18,7 +18,7 @@ export default function CollapsibleSection({
     const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
     return (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-md p-6 mb-6">
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
             <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="w-full flex items-center justify-between"

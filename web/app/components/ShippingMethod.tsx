@@ -32,7 +32,7 @@ export default function ShippingMethod({ options, selectedId, onSelect }: Shippi
     };
 
     return (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-md p-6 mb-6">
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
             <h2 className="text-xl font-hkgb font-bold text-gray-900 mb-6">Shipping Method</h2>
 
             <div className="space-y-3">

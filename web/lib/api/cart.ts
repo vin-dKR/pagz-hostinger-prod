@@ -47,6 +47,8 @@ export interface CartItem {
         selectedAddons?: string[];
         priceBreakdown?: Array<{ label: string; value: number }>;
         templateId?: string;
+        templateName?: string;
+        templatePreviewImage?: string;
         templateFormData?: Record<string, any>;
         templateFormImages?: string[];
     } | null;
@@ -96,6 +98,8 @@ export interface AddToCartData {
         selectedAddons?: string[];
         priceBreakdown?: Array<{ label: string; value: number }>;
         templateId?: string;
+        templateName?: string;
+        templatePreviewImage?: string;
         templateFormData?: Record<string, any>;
         templateFormImages?: string[];
     };

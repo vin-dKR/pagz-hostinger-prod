@@ -13,15 +13,6 @@ import { Label } from '@/app/components/ui/label';
 import { Alert } from '@/app/components/ui/alert';
 import { createCategory, getCategories, type CreateCategoryData, type Category } from '@/lib/api/categories.service';
 
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .substring(0, 100);
-}
 
 export function CreateCategoryForm() {
   const router = useRouter();
@@ -57,7 +48,6 @@ export function CreateCategoryForm() {
 
   const [formData, setFormData] = useState<CreateCategoryData>({
     name: '',
-    slug: '',
     description: '',
     parentId: undefined,
     priority: autoDisplayOrder,
@@ -81,7 +71,6 @@ export function CreateCategoryForm() {
     try {
       const payload: CreateCategoryData = {
         name: formData.name.trim(),
-        slug: (formData.slug || generateSlug(formData.name)).trim(),
         description: formData.description?.trim() || undefined,
         parentId: formData.parentId || undefined,
         priority: formData.priority || autoDisplayOrder,
@@ -109,40 +98,21 @@ export function CreateCategoryForm() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => {
-                  const name = e.target.value;
-                  setFormData((prev) => ({
-                    ...prev,
-                    name,
-                    slug: prev.slug || generateSlug(name),
-                  }));
-                }}
-                placeholder="e.g. PDF Printing"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="slug">Slug *</Label>
-              <Input
-                id="slug"
-                value={formData.slug}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    slug: generateSlug(e.target.value),
-                  }))
-                }
-                placeholder="e.g. pdf-printing"
-                required
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="name">Name *</Label>
+            <Input
+              id="name"
+              value={formData.name}
+              onChange={(e) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  name: e.target.value,
+                }));
+              }}
+              placeholder="e.g. PDF Printing"
+              required
+            />
+            <p className="text-xs text-gray-500">Slug will be auto-generated from the name</p>
           </div>
 
           <div className="space-y-2">

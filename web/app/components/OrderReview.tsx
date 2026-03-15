@@ -80,6 +80,24 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                 <p className="text-xs text-gray-600">Size: {variant.name}</p>
                             )}
 
+                            {/* Template Form Data - Show if template form data exists */}
+                            {item.metadata?.templateId && item.metadata?.templateFormData && Object.keys(item.metadata.templateFormData).length > 0 && (
+                                <div className="mt-1.5 mb-1.5">
+                                    <div className="text-xs font-semibold text-amber-700 mb-1 flex items-center gap-1">
+                                        <FileText className="h-3 w-3" />
+                                        Template Form Data
+                                    </div>
+                                    <div className="mt-1 space-y-0.5 pl-4 border-l-2 border-amber-200">
+                                        {Object.entries(item.metadata.templateFormData).map(([key, value]) => (
+                                            <div key={key} className="text-xs text-amber-600">
+                                                <span className="font-medium">{key}:</span>{' '}
+                                                <span>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Uploaded Files - Show if files are uploaded (S3 URLs stored in cart) */}
                             {uploadedFileUrls.length > 0 && (
                                 <div className="mt-1.5 mb-1.5">

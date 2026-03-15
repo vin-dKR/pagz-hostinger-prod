@@ -5,9 +5,10 @@ import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductPageTemplate } from '@/app/components/services/ProductPageTemplate';
 import { TemplateSelector } from '@/app/components/services/TemplateSelector';
+import { Select, type SelectOption } from '@/app/components/ui/select';
+import { useCategoryTemplates } from '@/lib/hooks/use-category-templates';
 import { ChevronDown } from 'lucide-react';
 import { QuantitySelector } from '@/app/components/services/QuantitySelector';
-import { PageCountDisplay } from '@/app/components/services/PageCountDisplay';
 import { CopiesSelector } from '@/app/components/services/CopiesSelector';
 import { QuantityWithCopiesSelector } from '@/app/components/services/QuantityWithCopiesSelector';
 import { FileDetail } from '@/app/components/products/ProductDocumentUpload';
@@ -19,7 +20,7 @@ import {
     type Category,
     type CategorySpecification,
     type CategoryAddon,
-} from '@/lib/api/categories';
+} from '@/lib/api/categories'; 
 import {
     getAvailableOptions as getAvailableOptionsUtil,
     isSpecificationVisible as isSpecificationVisibleUtil,
@@ -83,10 +84,72 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [availableAddons, setAvailableAddons] = useState<CategoryAddon[]>([]);
     const [uploadedFilesS3, setUploadedFilesS3] = useState<FileDetail[]>([]);
     
+    // Check if templates exist for this category
+    const { data: categoryTemplates = [] } = useCategoryTemplates(categorySlug, !!category);
+    const hasTemplates = categoryTemplates.length > 0;
+
     // Template selection state
     const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+    const [selectedTemplateName, setSelectedTemplateName] = useState<string | null>(null);
+    const [selectedTemplatePreviewImage, setSelectedTemplatePreviewImage] = useState<string | null>(null);
     const [templateFormData, setTemplateFormData] = useState<Record<string, any>>({});
     const [templateFormImages, setTemplateFormImages] = useState<string[]>([]);
+
+    // Check for uploaded file data from template page
+    useEffect(() => {
+        const uploadedFileData = sessionStorage.getItem('uploadedFileData');
+        if (uploadedFileData) {
+            try {
+                const data = JSON.parse(uploadedFileData);
+                if (data.uploadedFiles && data.uploadedFiles.length > 0) {
+                    // Convert stored data back to FileDetail format
+                    // Note: We need to reconstruct File objects, but since we only have metadata,
+                    // we'll create a minimal FileDetail structure that matches what's expected
+                    const fileDetails: FileDetail[] = data.uploadedFiles.map((f: any) => {
+                        // Create a File object with stored metadata
+                        // We can't restore the actual file content, but we can preserve the size
+                        // Create a minimal Blob and then create a File with size override
+                        const blob = new Blob([], { 
+                            type: f.type === 'pdf' ? 'application/pdf' : 'image/jpeg' 
+                        });
+                        const file = new File([blob], f.name, { 
+                            type: f.type === 'pdf' ? 'application/pdf' : 'image/jpeg',
+                            lastModified: Date.now()
+                        });
+                        // Override the size property to show correct file size
+                        if (f.size && f.size > 0) {
+                            Object.defineProperty(file, 'size', {
+                                value: f.size,
+                                writable: false,
+                                enumerable: true,
+                                configurable: true
+                            });
+                        }
+                        return {
+                            file,
+                            s3Key: f.s3Key || undefined, // Ensure s3Key is set, even if undefined
+                            type: f.type,
+                            pageCount: f.pageCount,
+                            id: f.id || `uploaded-${Date.now()}-${Math.random()}`,
+                            uploadStatus: f.s3Key ? ('uploaded' as const) : ('pending' as const), // Set status based on s3Key presence
+                        };
+                    });
+                    setUploadedFileDetails(fileDetails);
+                    setUploadedFilesS3(fileDetails);
+                    // Also set uploadedFiles array for button logic
+                    setUploadedFiles(fileDetails.map(fd => fd.file));
+                    if (data.pageCount > 0) {
+                        setPageCount(data.pageCount);
+                        setMinQuantityFromFiles(data.pageCount);
+                    }
+                }
+                // Clear the stored data after using it
+                sessionStorage.removeItem('uploadedFileData');
+            } catch (error) {
+                console.error('Error parsing uploaded file data:', error);
+            }
+        }
+    }, []);
 
     // Check if files are currently uploading
     const isUploadingFiles = useMemo(() => {
@@ -164,67 +227,89 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             if (!pendingData || pendingData.categorySlug !== categorySlug) return;
 
             try {
-                // Restore files
+                // Restore files (if any)
                 if (pendingData.files && pendingData.files.length > 0) {
-                    const restoredFiles = await restoreFilesFromPendingData(pendingData.files);
-                    const restoredFileDetails: FileDetail[] = [];
-                    
-                    for (let i = 0; i < pendingData.files.length; i++) {
-                        const fileData = pendingData.files[i];
-                        const file = restoredFiles[i];
-                        if (file && fileData) {
-                            restoredFileDetails.push({
-                                file,
-                                type: fileData.type,
-                                pageCount: fileData.pageCount,
-                                id: fileData.id,
-                                uploadStatus: 'pending' as const,
+                    try {
+                        const restoredFiles = await restoreFilesFromPendingData(pendingData.files);
+                        const restoredFileDetails: FileDetail[] = [];
+                        
+                        for (let i = 0; i < pendingData.files.length; i++) {
+                            const fileData = pendingData.files[i];
+                            const file = restoredFiles[i];
+                            if (file && fileData) {
+                                restoredFileDetails.push({
+                                    file,
+                                    type: fileData.type,
+                                    pageCount: fileData.pageCount,
+                                    id: fileData.id,
+                                    uploadStatus: 'pending' as const,
+                                });
+                            }
+                        }
+
+                        if (restoredFileDetails.length > 0) {
+                            setUploadedFiles(restoredFiles.filter(f => f !== null));
+                            setUploadedFileDetails(restoredFileDetails);
+                            setUploadedFilesS3(restoredFileDetails);
+                            setPageCount(pendingData.pageCount || 0);
+
+                            // Upload files to S3 now that user is authenticated
+                            restoredFileDetails.forEach(async (fileDetail) => {
+                                try {
+                                    const response = await uploadOrderFilesToS3([fileDetail.file]);
+                                    if (response.success && response.data?.files?.[0]?.key) {
+                                        const key = response.data.files[0].key;
+                                        setUploadedFileDetails(prev => 
+                                            prev.map(fd => 
+                                                fd.id === fileDetail.id 
+                                                    ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                    : fd
+                                            )
+                                        );
+                                        setUploadedFilesS3(prev => 
+                                            prev.map(fd => 
+                                                fd.id === fileDetail.id 
+                                                    ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                    : fd
+                                            )
+                                        );
+                                    }
+                                } catch (error) {
+                                    console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
+                                    setUploadedFileDetails(prev => 
+                                        prev.map(fd => 
+                                            fd.id === fileDetail.id 
+                                                ? { ...fd, uploadStatus: 'error' as const }
+                                                : fd
+                                        )
+                                    );
+                                }
                             });
                         }
+                    } catch (fileError) {
+                        console.error('Failed to restore files:', fileError);
+                        // Continue with template restoration even if file restoration fails
                     }
-
-                    setUploadedFiles(restoredFiles);
-                    setUploadedFileDetails(restoredFileDetails);
-                    setUploadedFilesS3(restoredFileDetails);
-                    setPageCount(pendingData.pageCount || 0);
-
-                    // Upload files to S3 now that user is authenticated
-                    restoredFileDetails.forEach(async (fileDetail) => {
-                        try {
-                            const response = await uploadOrderFilesToS3([fileDetail.file]);
-                            if (response.success && response.data?.files?.[0]?.key) {
-                                const key = response.data.files[0].key;
-                                setUploadedFileDetails(prev => 
-                                    prev.map(fd => 
-                                        fd.id === fileDetail.id 
-                                            ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
-                                            : fd
-                                    )
-                                );
-                                setUploadedFilesS3(prev => 
-                                    prev.map(fd => 
-                                        fd.id === fileDetail.id 
-                                            ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
-                                            : fd
-                                    )
-                                );
-                            }
-                        } catch (error) {
-                            console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
-                            setUploadedFileDetails(prev => 
-                                prev.map(fd => 
-                                    fd.id === fileDetail.id 
-                                        ? { ...fd, uploadStatus: 'error' as const }
-                                        : fd
-                                )
-                            );
-                        }
-                    });
                 }
 
                 // Restore selections
                 if (pendingData.specifications) setSelectedSpecifications(pendingData.specifications);
                 // Note: selectedAddonIds is computed automatically from selectedSpecifications via useMemo
+
+                // Restore template data (check both direct properties and metadata)
+                const templateId = pendingData.templateId || pendingData.metadata?.templateId;
+                const templateFormData = pendingData.templateFormData || pendingData.metadata?.templateFormData;
+                const templateFormImages = pendingData.templateFormImages || pendingData.metadata?.templateFormImages;
+
+                if (templateId) {
+                    setSelectedTemplateId(templateId);
+                }
+                if (templateFormData) {
+                    setTemplateFormData(templateFormData);
+                }
+                if (templateFormImages) {
+                    setTemplateFormImages(templateFormImages);
+                }
                 // No need to restore it directly - it will be computed when specifications are restored
                 if (pendingData.quantity) setQuantity(pendingData.quantity);
                 if (pendingData.copies) setCopies(pendingData.copies);
@@ -269,11 +354,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 quantity: totalQuantity,
                 pageCount: pageCount > 0 ? pageCount : undefined,
                 copies: pageCount > 0 ? copies : undefined,
-            });
-
-            console.log('💰 Price Calculation Result:', {
-                totalPrice: result.totalPrice,
-                breakdown: result.breakdown,
             });
 
             setPriceBreakdown(result.breakdown);
@@ -354,18 +434,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 }
             });
             
-            console.log('🔍 Selected specifications:', selectedSpecifications);
-            console.log('🔍 Product spec slugs (from published rules):', Array.from(productSpecSlugs));
-            console.log('🔍 Addon-only spec slugs (not in products):', Array.from(addonOnlySpecSlugs));
-            console.log('🔍 Product match - using specifications:', specsForProduct);
-
             const products = await getProductsBySpecifications(categorySlug, specsForProduct);
             // Find the first matching product (should be only one if published correctly)
             setMatchingProduct(products.length > 0 ? products[0] : null);
         } catch (err: any) {
             // Only log network errors, don't show toasts or redirect
             if (err?.message?.includes('NetworkError') || err?.name === 'TypeError') {
-                console.warn('Product check network error (will retry):', err);
             } else {
                 console.error('Product check error:', err);
             }
@@ -612,8 +686,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
         if (requiredSpecs.length > 0) return false;
 
-        // Check if file upload is required
-        if (category.configuration?.fileUploadRequired && uploadedFiles.length === 0) {
+        // Check if file upload is required (or template selected)
+        if (category.configuration?.fileUploadRequired && uploadedFiles.length === 0 && !selectedTemplateId) {
             return false;
         }
 
@@ -668,9 +742,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             return;
         }
 
-        // Check if file is required and uploaded
-        if (category?.configuration?.fileUploadRequired && uploadedFiles.length === 0) {
-            toastWarning('Please upload a file to continue.');
+        // Check if file is required and uploaded (or template is selected)
+        if (category?.configuration?.fileUploadRequired && uploadedFiles.length === 0 && !selectedTemplateId) {
+            toastWarning('Please upload a file or select a template to continue.');
             return;
         }
 
@@ -710,7 +784,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 .filter(Boolean);
 
             // If we have files but no S3 keys, upload them now
-            if (uploadedFiles.length > 0 && s3Keys.length === 0) {
+            // Only check this if files are actually required (not if template is selected)
+            if (uploadedFiles.length > 0 && s3Keys.length === 0 && !selectedTemplateId) {
                 const pendingFiles = uploadedFilesS3.filter(f => f.uploadStatus === 'pending');
                 if (pendingFiles.length > 0) {
                     // Upload pending files
@@ -743,28 +818,103 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         }
                     }
                 } else {
-                    toastError('Files are not ready yet. Please wait for uploads to complete.');
-                    setAddingToCart(false);
-                    return;
+                    // Files exist but no pending files and no S3 keys - might be already uploaded but s3Key not set
+                    // Try to extract from uploadedFilesS3 that might have s3Key but status is not 'uploaded'
+                    const filesWithKeys = uploadedFilesS3.filter(f => f.s3Key);
+                    if (filesWithKeys.length > 0) {
+                        s3Keys = filesWithKeys.map(f => f.s3Key!).filter(Boolean);
+                    } else {
+                        // Files don't have s3Key - they need to be uploaded
+                        // Try to upload files that don't have s3Key
+                        const filesToUpload = uploadedFilesS3.filter(f => !f.s3Key && f.uploadStatus !== 'uploading');
+                        if (filesToUpload.length > 0) {
+                            // Upload files that don't have s3Key
+                            for (const fileDetail of filesToUpload) {
+                                try {
+                                    const response = await uploadOrderFilesToS3([fileDetail.file]);
+                                    if (response.success && response.data?.files?.[0]?.key) {
+                                        const key = response.data.files[0].key;
+                                        s3Keys.push(key);
+                                        setUploadedFilesS3(prev => 
+                                            prev.map(fd => 
+                                                fd.id === fileDetail.id 
+                                                    ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                    : fd
+                                            )
+                                        );
+                                        setUploadedFileDetails(prev => 
+                                            prev.map(fd => 
+                                                fd.id === fileDetail.id 
+                                                    ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                    : fd
+                                            )
+                                        );
+                                    }
+                                } catch (error) {
+                                    console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
+                                    toastError(`Failed to upload ${fileDetail.file.name}. Please try again.`);
+                                    setAddingToCart(false);
+                                    return;
+                                }
+                            }
+                        } else {
+                            toastError('Files are not ready yet. Please wait for uploads to complete.');
+                            setAddingToCart(false);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // When using templates, don't add template preview image to customDesignUrl
+            // The template preview image should only be in metadata.templatePreviewImage
+            // customDesignUrl should only contain user-uploaded files
+            
+            // Prepare metadata with template information
+            const hasTemplateFormData = Object.keys(templateFormData).length > 0;
+            const metadata: any = {
+                pageCount: pageCount > 0 ? pageCount : undefined,
+                copies: pageCount > 0 ? copies : undefined,
+                priceBreakdown,
+                selectedAddons: selectedAddonIds,
+            };
+
+            // Include template data if template is selected
+            if (selectedTemplateId) {
+                metadata.templateId = selectedTemplateId;
+                if (selectedTemplateName) {
+                    metadata.templateName = selectedTemplateName;
+                }
+                if (selectedTemplatePreviewImage) {
+                    // Keep the original template preview image URL (DB string) in metadata
+                    metadata.templatePreviewImage = selectedTemplatePreviewImage;
+                }
+                // Always include templateFormData if template is selected, even if empty
+                if (hasTemplateFormData) {
+                    metadata.templateFormData = templateFormData;
+                }
+                if (templateFormImages.length > 0) {
+                    metadata.templateFormImages = templateFormImages;
                 }
             }
 
             // Add to cart with S3 URLs
             // Always use totalQuantity which already includes copies multiplication
+            console.log('Adding to cart with metadata:', {
+                metadata,
+                hasTemplateFormData,
+                templateFormData,
+                selectedTemplateId,
+                metadataKeys: Object.keys(metadata)
+            });
+            
             const response = await toastPromise(
                 addToCart({
                     productId: matchingProduct.id,
                     quantity: totalQuantity,
+                    // Only include customDesignUrl if user uploaded files (not template preview image)
                     customDesignUrl: s3Keys.length > 0 ? s3Keys : undefined,
-                    metadata: {
-                        pageCount: pageCount > 0 ? pageCount : undefined,
-                        copies: pageCount > 0 ? copies : undefined,
-                        priceBreakdown,
-                        selectedAddons: selectedAddonIds,
-                        templateId: selectedTemplateId || undefined,
-                        templateFormData: Object.keys(templateFormData).length > 0 ? templateFormData : undefined,
-                        templateFormImages: templateFormImages.length > 0 ? templateFormImages : undefined,
-                    },
+                    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
                     hasAddon: selectedAddonIds.length > 0,
                     addons: selectedAddonIds,
                 }),
@@ -854,9 +1004,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             return;
         }
 
-        // Check if file is required and uploaded
-        if (category?.configuration?.fileUploadRequired && uploadedFiles.length === 0) {
-            toastWarning('Please upload a file to continue.');
+        // Check if file is required and uploaded (or template is selected)
+        if (category?.configuration?.fileUploadRequired && uploadedFiles.length === 0 && !selectedTemplateId) {
+            toastWarning('Please upload a file or select a template to continue.');
             return;
         }
 
@@ -903,7 +1053,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 .filter(Boolean);
 
             // If we have files but no S3 keys, upload them now
-            if (uploadedFiles.length > 0 && s3Keys.length === 0) {
+            // Only check this if files are actually required (not if template is selected)
+            if (uploadedFiles.length > 0 && s3Keys.length === 0 && !selectedTemplateId) {
                 const pendingFiles = uploadedFilesS3.filter(f => f.uploadStatus === 'pending');
                 if (pendingFiles.length > 0) {
                     // Upload pending files
@@ -936,9 +1087,83 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         }
                     }
                 } else {
-                    toastError('Files are not ready yet. Please wait for uploads to complete.');
-                    setBuyNowLoading(false);
-                    return;
+                    // Files exist but no pending files and no S3 keys - might be already uploaded but s3Key not set
+                    // Try to extract from uploadedFilesS3 that might have s3Key but status is not 'uploaded'
+                    const filesWithKeys = uploadedFilesS3.filter(f => f.s3Key);
+                    if (filesWithKeys.length > 0) {
+                        s3Keys = filesWithKeys.map(f => f.s3Key!).filter(Boolean);
+                    } else {
+                        // Files don't have s3Key - they need to be uploaded
+                        // Try to upload files that don't have s3Key
+                        const filesToUpload = uploadedFilesS3.filter(f => !f.s3Key && f.uploadStatus !== 'uploading');
+                        if (filesToUpload.length > 0) {
+                            // Upload files that don't have s3Key
+                            for (const fileDetail of filesToUpload) {
+                                try {
+                                    const response = await uploadOrderFilesToS3([fileDetail.file]);
+                                    if (response.success && response.data?.files?.[0]?.key) {
+                                        const key = response.data.files[0].key;
+                                        s3Keys.push(key);
+                                        setUploadedFilesS3(prev => 
+                                            prev.map(fd => 
+                                                fd.id === fileDetail.id 
+                                                    ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                    : fd
+                                            )
+                                        );
+                                        setUploadedFileDetails(prev => 
+                                            prev.map(fd => 
+                                                fd.id === fileDetail.id 
+                                                    ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                    : fd
+                                            )
+                                        );
+                                    }
+                                } catch (error) {
+                                    console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
+                                    toastError(`Failed to upload ${fileDetail.file.name}. Please try again.`);
+                                    setBuyNowLoading(false);
+                                    return;
+                                }
+                            }
+                        } else {
+                            toastError('Files are not ready yet. Please wait for uploads to complete.');
+                            setBuyNowLoading(false);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // When using templates, don't add template preview image to customDesignUrl
+            // The template preview image should only be in metadata.templatePreviewImage
+            // customDesignUrl should only contain user-uploaded files
+            
+            // Prepare metadata with template information
+            const hasTemplateFormData = Object.keys(templateFormData).length > 0;
+            const buyNowMetadata: any = {
+                pageCount: pageCount > 0 ? pageCount : undefined,
+                copies: pageCount > 0 ? copies : undefined,
+                priceBreakdown,
+                selectedAddons: selectedAddonIds,
+            };
+
+            // Include template data if template is selected
+            if (selectedTemplateId) {
+                buyNowMetadata.templateId = selectedTemplateId;
+                if (selectedTemplateName) {
+                    buyNowMetadata.templateName = selectedTemplateName;
+                }
+                if (selectedTemplatePreviewImage) {
+                    // Keep the original template preview image URL (DB string) in metadata
+                    buyNowMetadata.templatePreviewImage = selectedTemplatePreviewImage;
+                }
+                // Always include templateFormData if template is selected, even if empty
+                if (hasTemplateFormData) {
+                    buyNowMetadata.templateFormData = templateFormData;
+                }
+                if (templateFormImages.length > 0) {
+                    buyNowMetadata.templateFormImages = templateFormImages;
                 }
             }
             
@@ -951,18 +1176,14 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             const buyNowData = {
                 productId: matchingProduct.id,
                 quantity: totalQuantity,
+                // Only include customDesignUrl if user uploaded files (not template preview image)
                 customDesignUrl: s3Keys.length > 0 ? s3Keys : undefined,
                 product: matchingProduct,
                 price: totalPrice,
                 priceBreakdown,
                 pageCount: pageCount > 0 ? pageCount : undefined,
                 copies: pageCount > 0 ? copies : undefined,
-                metadata: {
-                    pageCount: pageCount > 0 ? pageCount : undefined,
-                    copies: pageCount > 0 ? copies : undefined,
-                    priceBreakdown,
-                    selectedAddons: selectedAddonIds,
-                },
+                metadata: Object.keys(buyNowMetadata).length > 0 ? buyNowMetadata : undefined,
                 hasAddon: selectedAddonIds.length > 0,
                 addons: selectedAddonIds,
             };
@@ -1129,26 +1350,38 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 images={categoryImages}
                 minQuantity={minQuantityFromFiles}
                 areRequiredFieldsFilled={areAllRequiredFieldsFilled}
-                hasUploadedFiles={uploadedFiles.length > 0}
+                hasUploadedFiles={uploadedFiles.length > 0 || !!selectedTemplateId}
+                hasTemplates={hasTemplates}
                 calculatingPrice={calculatingPrice}
                 isUploadingFiles={isUploadingFiles}
                 uploadedFilesS3={uploadedFilesS3}
                 setUploadedFilesS3={setUploadedFilesS3}
-            >
-                {/* Template Selection */}
-                {category && (
-                    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
+                hideFileUpload={hasTemplates}
+                templateSelector={
+                    hasTemplates ? (
                         <TemplateSelector
                             categorySlug={categorySlug}
-                            onTemplateSelect={(templateId, formData, formImages) => {
+                            onTemplateSelect={(templateId, formData, formImages, templateName, templatePreviewImage) => {
                                 setSelectedTemplateId(templateId);
+                                setSelectedTemplateName(templateName || null);
+                                setSelectedTemplatePreviewImage(templatePreviewImage || null);
                                 setTemplateFormData(formData);
                                 setTemplateFormImages(formImages);
                             }}
                             selectedTemplateId={selectedTemplateId}
+                            selectedFormData={templateFormData}
+                            selectedFormImages={templateFormImages}
+                            uploadedFiles={uploadedFilesS3}
+                            onFileSelect={(files) => {
+                                // When files are selected from template selector (no templates case)
+                                // This shouldn't happen since we hide the selector when no templates
+                                // But keeping it for safety
+                                handleFileSelect(files, 0, undefined);
+                            }}
                         />
-                    </div>
-                )}
+                    ) : undefined
+                }
+            >
 
                 {/* Dynamic Configuration Options */}
                 <div className="space-y-8">
@@ -1179,51 +1412,24 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                         {spec.name}
                                         {spec.isRequired && <span className="text-red-500 ml-1">*</span>}
                                     </label>
-                                    <div className="relative">
-                                        <select
-                                            id={`spec-${spec.slug}`}
-                                            value={selectedValue || ''}
-                                            onChange={(e) => handleSpecificationChange(spec.slug, e.target.value)}
-                                            className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#008ECC] focus:border-transparent bg-white text-gray-900 text-sm sm:text-base appearance-none cursor-pointer"
-                                            required={spec.isRequired}
-                                        >
-                                            <option value="" disabled={spec.isRequired}>
-                                                {spec.isRequired ? `Select ${spec.name}` : `Select ${spec.name} (Optional)`}
-                                            </option>
-                                            {!spec.isRequired && (
-                                                <option value="">
-                                                    None (Clear selection)
-                                                </option>
-                                            )}
-                                            {availableOptions.map((option) => (
-                                                <option
-                                                    key={option.id}
-                                                    value={option.value}
-                                                    disabled={option.disabled}
-                                                >
-                                                    {option.label}
-                                                    {option.description && ` - ${option.description}`}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                                    </div>
+                                    <Select
+                                        value={selectedValue || ''}
+                                        onChange={(value) => handleSpecificationChange(spec.slug, value)}
+                                        options={[
+                                            ...(!spec.isRequired
+                                                ? [{ value: '', label: 'None (Clear selection)', disabled: false }]
+                                                : []),
+                                            ...availableOptions.map((option) => ({
+                                                value: option.value,
+                                                label: option.label,
+                                                description: option.description,
+                                                disabled: option.disabled,
+                                            })),
+                                        ]}
+                                        placeholder={spec.isRequired ? `Select ${spec.name}` : `Select ${spec.name} (Optional)`}
+                                        required={spec.isRequired}
+                                    />
 
-                                    {/* Half Page Option Indicator */}
-                                    {(() => {
-                                        // Find the actual option from category specifications to check metadata
-                                        const actualOption = spec.options.find((opt) => opt.value === selectedValue);
-                                        if (actualOption?.metadata?.isHalfPage) {
-                                            return (
-                                                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                                                    <p className="text-xs text-blue-800">
-                                                        <span className="font-semibold">ℹ️ Half Page Option:</span> Page count will be divided by 2 for pricing calculations.
-                                                    </p>
-                                                </div>
-                                            );
-                                        }
-                                        return null;
-                                    })()}
 
                                 </div>
                             );
@@ -1254,21 +1460,19 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                         {spec.isRequired && <span className="text-red-500 ml-1">*</span>}
                                         {isMissing && <span className="text-red-500 text-xs ml-2 font-normal">(Required - Please select)</span>}
                                     </label>
-                                    <div className="relative">
-                                        <select
-                                            id={`spec-${spec.slug}`}
-                                            value={selectedSpecifications[spec.slug] || ''}
-                                            onChange={(e) => handleSpecificationChange(spec.slug, e.target.value)}
-                                            className={`w-full px-4 py-2.5 pr-10 border rounded-lg focus:ring-2 focus:ring-[#008ECC] focus:border-transparent bg-white text-gray-900 text-sm sm:text-base appearance-none cursor-pointer ${isMissing ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                                                }`}
-                                            required={spec.isRequired}
-                                        >
-                                            <option value="">Select {spec.name}</option>
-                                            <option value="true">Yes</option>
-                                            <option value="false">No</option>
-                                        </select>
-                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                                    </div>
+                                    <Select
+                                        value={selectedSpecifications[spec.slug] || ''}
+                                        onChange={(value) => handleSpecificationChange(spec.slug, value)}
+                                        options={availableOptions.map((option) => ({
+                                            value: option.value,
+                                            label: option.label,
+                                            description: option.description,
+                                            disabled: option.disabled,
+                                        }))}
+                                        placeholder={`Select ${spec.name}`}
+                                        error={isMissing}
+                                        required={spec.isRequired}
+                                    />
                                 </div>
                             );
                         } else if (spec.type === 'TEXT') {

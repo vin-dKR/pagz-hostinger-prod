@@ -126,7 +126,7 @@ export default function BillingAddressForm({
 
     if (loading) {
         return (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-md p-6 mb-6">
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
                 <div className="flex items-center justify-center py-8">
                     <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                 </div>
@@ -135,7 +135,7 @@ export default function BillingAddressForm({
     }
 
     return (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-md p-6 mb-6">
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
             <h2 className="text-xl font-hkgb font-bold text-gray-900 mb-6">Billing Address</h2>
 
             {/* Address Selection - Always show if addresses exist */}

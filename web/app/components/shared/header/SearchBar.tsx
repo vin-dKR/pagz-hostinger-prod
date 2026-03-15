@@ -65,13 +65,11 @@ export function SearchBar({ searchQuery, setSearchQuery, isMobile = false, onClo
             const target = event.target as HTMLElement;
             // Don't close if clicking on a suggestion button
             if (target.closest('button[type="button"]') && target.closest('.z-50')) {
-                console.log('🔍 SearchBar - Click on suggestion button detected, not closing');
                 return;
             }
             // Add delay to allow button click to process first
             setTimeout(() => {
                 if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-                    console.log('🔍 SearchBar - Click outside detected, closing suggestions');
                     setShowSuggestions(false);
                 }
             }, 200);
@@ -87,22 +85,11 @@ export function SearchBar({ searchQuery, setSearchQuery, isMobile = false, onClo
     const handleSubmit = (e: FormEvent) => {
         e.preventDefault();
         if (searchQuery.trim()) {
-            console.log('🔍 SearchBar - Form submitted:', {
-                searchQuery: searchQuery.trim(),
-                suggestionsCount: searchSuggestions.length,
-                firstSuggestion: searchSuggestions[0] ? {
-                    id: searchSuggestions[0].id,
-                    name: searchSuggestions[0].name,
-                    slug: searchSuggestions[0].slug
-                } : null
-            });
             if (onClose) onClose();
             // If there's a matching suggestion, go to the first one
             if (searchSuggestions.length > 0 && searchSuggestions[0]) {
-                console.log('🔍 SearchBar - Navigating to first suggestion:', `/services/${searchSuggestions[0].slug}`);
                 router.push(`/services/${searchSuggestions[0].slug}`);
             } else {
-                console.log('🔍 SearchBar - No suggestions, navigating to services page');
                 // Otherwise, go to services page to show all services
                 router.push('/services');
             }
@@ -112,12 +99,6 @@ export function SearchBar({ searchQuery, setSearchQuery, isMobile = false, onClo
     };
 
     const handleSuggestionClick = (category: Category) => {
-        console.log('🔍 SearchBar - handleSuggestionClick called:', {
-            categoryId: category.id,
-            categoryName: category.name,
-            categorySlug: category.slug,
-            targetUrl: `/services/${category.slug}`
-        });
         // Close dropdown and clear search first
         setShowSuggestions(false);
         setSearchQuery('');
@@ -125,7 +106,6 @@ export function SearchBar({ searchQuery, setSearchQuery, isMobile = false, onClo
         
         // Use setTimeout to ensure state updates complete before navigation
         setTimeout(() => {
-            console.log('🔍 SearchBar - Navigating to:', `/services/${category.slug}`);
             window.location.href = `/services/${category.slug}`;
         }, 0);
     };
@@ -182,34 +162,15 @@ export function SearchBar({ searchQuery, setSearchQuery, isMobile = false, onClo
                                                 type="button"
                                                 onMouseDown={(e) => {
                                                     // Don't prevent default here - let onClick handle it
-                                                    console.log('🔍 SearchBar Mobile - MouseDown event:', {
-                                                        categoryId: category.id,
-                                                        categoryName: category.name,
-                                                        categorySlug: category.slug
-                                                    });
                                                 }}
                                                 onClick={(e) => {
                                                     e.preventDefault();
                                                     e.stopPropagation();
-                                                    console.log('🔍 SearchBar Mobile - onClick event fired:', {
-                                                        categoryId: category.id,
-                                                        categoryName: category.name,
-                                                        categorySlug: category.slug,
-                                                        href: `/services/${category.slug}`,
-                                                        eventType: e.type,
-                                                        timestamp: Date.now()
-                                                    });
                                                     handleSuggestionClick(category);
                                                 }}
                                                 onMouseUp={(e) => {
                                                     e.preventDefault();
                                                     e.stopPropagation();
-                                                    console.log('🔍 SearchBar Mobile - MouseUp event (triggering navigation):', {
-                                                        categoryId: category.id,
-                                                        categoryName: category.name,
-                                                        categorySlug: category.slug,
-                                                        timestamp: Date.now()
-                                                    });
                                                     handleSuggestionClick(category);
                                                 }}
                                                 className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 flex items-center gap-3 cursor-pointer"
@@ -308,34 +269,15 @@ export function SearchBar({ searchQuery, setSearchQuery, isMobile = false, onClo
                                 key={category.id}
                                 type="button"
                                 onMouseDown={(e) => {
-                                    console.log('🔍 SearchBar Desktop - MouseDown event:', {
-                                        categoryId: category.id,
-                                        categoryName: category.name,
-                                        categorySlug: category.slug
-                                    });
                                 }}
                                 onMouseUp={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    console.log('🔍 SearchBar Desktop - MouseUp event (triggering navigation):', {
-                                        categoryId: category.id,
-                                        categoryName: category.name,
-                                        categorySlug: category.slug,
-                                        timestamp: Date.now()
-                                    });
                                     handleSuggestionClick(category);
                                 }}
                                 onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    console.log('🔍 SearchBar Desktop - onClick event fired:', {
-                                        categoryId: category.id,
-                                        categoryName: category.name,
-                                        categorySlug: category.slug,
-                                        href: `/services/${category.slug}`,
-                                        eventType: e.type,
-                                        timestamp: Date.now()
-                                    });
                                     handleSuggestionClick(category);
                                 }}
                                 className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 flex items-center gap-3 cursor-pointer"

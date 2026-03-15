@@ -138,7 +138,6 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
             const updated = await updateCategory(category.id, {
                 name: basicForm.name.trim(),
-                slug: basicForm.slug.trim(),
                 description: basicForm.description.trim() || undefined,
                 priority: basicForm.priority,
             });
@@ -268,20 +267,6 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                                     />
                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="slug">Slug</Label>
-                                    <Input
-                                        id="slug"
-                                        value={basicForm.slug}
-                                        onChange={(e) =>
-                                            setBasicForm((prev) => ({
-                                                ...prev,
-                                                slug: e.target.value,
-                                            }))
-                                        }
-                                        required
-                                    />
-                                </div>
 
                                 <div className="space-y-2">
                                     <Label htmlFor="description">Description</Label>

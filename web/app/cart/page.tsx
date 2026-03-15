@@ -151,17 +151,38 @@ function CartPageContent() {
         setSelectedItems(new Set());
     };
 
-    // Helper function to check if item has images
+    // Helper function to check if item has images or template form data
     const itemHasImages = (item: typeof items[0]): boolean => {
-        if (!item.customDesignUrl) return false;
-
-        if (Array.isArray(item.customDesignUrl)) {
-            return item.customDesignUrl.length > 0 &&
-                item.customDesignUrl.some(url => url && url.trim() !== '');
+        // Check for uploaded design files
+        if (item.customDesignUrl) {
+            if (Array.isArray(item.customDesignUrl)) {
+                if (item.customDesignUrl.length > 0 &&
+                    item.customDesignUrl.some(url => url && url.trim() !== '')) {
+                    return true;
+                }
+            } else if (typeof item.customDesignUrl === 'string' &&
+                item.customDesignUrl.trim() !== '') {
+                return true;
+            }
         }
-
-        return typeof item.customDesignUrl === 'string' &&
-            item.customDesignUrl.trim() !== '';
+        
+        // Check for template with form data (template form data means files not required)
+        if (item.metadata?.templateId) {
+            // If template has form data, consider it as having "files" (form data replaces file requirement)
+            if (item.metadata?.templateFormData && Object.keys(item.metadata.templateFormData).length > 0) {
+                return true;
+            }
+            // Also check for template form images
+            if (item.metadata?.templateFormImages && item.metadata.templateFormImages.length > 0) {
+                return true;
+            }
+            // If template preview image exists, also consider it valid
+            if (item.metadata?.templatePreviewImage) {
+                return true;
+            }
+        }
+        
+        return false;
     };
 
     // Check if all selected items have images

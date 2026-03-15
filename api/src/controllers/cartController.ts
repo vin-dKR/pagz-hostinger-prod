@@ -24,9 +24,12 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                         id: true,
                         cartId: true,
                         productId: true,
+                        variantId: true,
                         quantity: true,
                         customDesignUrl: true,
+                        customText: true,
                         hasAddon: true,
+                        metadata: true,
                         product: {
                             select: {
                                 id: true,
@@ -40,6 +43,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                         variant: {
                             select: {
                                 id: true,
+                                name: true,
                                 priceModifier: true,
                             },
                         },

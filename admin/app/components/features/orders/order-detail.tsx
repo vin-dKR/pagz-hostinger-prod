@@ -44,6 +44,7 @@ import Link from 'next/link';
 import { toastError, toastSuccess, toastWarning } from '@/lib/utils/toast';
 import Image from 'next/image';
 import { imageLoader } from '@/lib/utils/image-loader';
+import { TemplateDisplay } from './TemplateDisplay';
 
 export function OrderDetail({ orderId, initialOrder }: { orderId: string; initialOrder?: Order }) {
     const router = useRouter();
@@ -144,7 +145,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
             setLoadingInvoice(true);
             loadInvoicePDF();
         }
-        
+
         // Cleanup blob URL when component unmounts or tab changes
         return () => {
             if (invoicePdfUrl && activeTab !== 'invoice') {
@@ -281,7 +282,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                             : order.items.reduce((sum, item) => {
                                                 return sum + (Number(item.price) * item.quantity);
                                             }, 0);
-                                        
+
                                         // Use stored addonsSubtotal from database, fallback to calculating if not stored
                                         const addonsSubtotal = (() => {
                                             // First try database value
@@ -294,26 +295,26 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                 const pageCount = (item as any).metadata?.pageCount || 1;
                                                 const copies = (item as any).metadata?.copies || 1;
                                                 const effectivePages = pageCount > 1 ? pageCount * copies : null;
-                                                
+
                                                 const itemAddonsTotal = addons.reduce((addonSum: number, addon: any) => {
                                                     // Check page range if addon has minQuantity/maxQuantity
                                                     const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
                                                     if (hasPageRange && effectivePages != null) {
-                                                        const inRange = 
+                                                        const inRange =
                                                             (addon.minQuantity == null || effectivePages >= addon.minQuantity) &&
                                                             (addon.maxQuantity == null || effectivePages <= addon.maxQuantity);
                                                         if (!inRange) {
                                                             return addonSum; // Skip this addon if not in range
                                                         }
                                                     }
-                                                    
+
                                                     const rawPrice =
                                                         addon.priceModifier !== null && addon.priceModifier !== undefined
                                                             ? Number(addon.priceModifier)
                                                             : addon.basePrice !== null && addon.basePrice !== undefined
                                                                 ? Number(addon.basePrice)
                                                                 : 0;
-                                                    
+
                                                     // Calculate multiplier based on quantity multiplier and page count
                                                     let multiplier = 1;
                                                     if (addon.quantityMultiplier) {
@@ -323,13 +324,13 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                             multiplier = item.quantity;
                                                         }
                                                     }
-                                                    
+
                                                     return addonSum + rawPrice * multiplier;
                                                 }, 0);
                                                 return sum + itemAddonsTotal;
                                             }, 0);
                                         })();
-                                        
+
                                         return (
                                             <>
                                                 <div className="flex justify-between text-sm mb-2">
@@ -488,206 +489,303 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                             <CardTitle>Order Items ({order.items.length})</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="space-y-6">
+                            <div className="space-y-8">
                                 {order.items.map((item, index) => (
-                                    <div key={item.id || index} className="flex gap-4 border-b pb-6 last:border-0">
-                                        {item.product?.images?.[0] && (
-                                            <div className="w-24 h-24 rounded border overflow-hidden bg-gray-100 shrink-0">
-                                                <Image
-                                                    src={item.product.images[0].url}
-                                                    alt={item.product.name}
-                                                    className="w-full h-full object-cover"
-                                                    width={96}
-                                                    height={96}
-                                                    loader={imageLoader}
-                                                />
-                                            </div>
-                                        )}
-                                        {/* Pricing metadata (pages, copies, addons, breakdown) */}
-                                        {item.metadata?.pageCount && (
-                                            <div className="mt-2 p-2 bg-gray-50 rounded text-xs space-y-1">
-                                                <p>
-                                                    <strong>Pages:</strong> {item.metadata.pageCount}
-                                                </p>
-                                                {item.metadata.copies && (
-                                                    <p>
-                                                        <strong>Copies:</strong> {item.metadata.copies}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {item.metadata?.selectedAddons && item.metadata.selectedAddons.length > 0 && (
-                                            <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
-                                                <p className="text-xs font-semibold text-blue-900 mb-1">Applied Addons (IDs):</p>
-                                                {item.metadata.selectedAddons.map((addonId, idx) => (
-                                                    <p key={idx} className="text-[11px] text-blue-700 break-all">
-                                                        {addonId}
-                                                    </p>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0 && (
-                                            <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
-                                                <p className="text-xs font-semibold text-green-900 mb-1">Price Breakdown:</p>
-                                                {item.metadata.priceBreakdown.map((pbItem, idx) => {
-                                                    // Highlight half-page adjustments
-                                                    const isHalfPageAdjustment = pbItem.value === 0 && 
-                                                        typeof pbItem.label === 'string' && 
-                                                        (pbItem.label.toLowerCase().includes('both side') || 
-                                                         pbItem.label.toLowerCase().includes('half page') ||
-                                                         pbItem.label.toLowerCase().includes('→'));
-                                                    
-                                                    return (
-                                                        <div 
-                                                            key={idx} 
-                                                            className={`flex justify-between text-[11px] ${
-                                                                isHalfPageAdjustment 
-                                                                    ? 'text-blue-800 font-medium bg-blue-100 p-1.5 rounded mb-1' 
-                                                                    : 'text-green-700'
-                                                            }`}
-                                                        >
-                                                            <span>{pbItem.label}</span>
-                                                            {pbItem.value > 0 && (
-                                                                <span>₹{pbItem.value.toFixed(2)}</span>
-                                                            )}
-                                                            {isHalfPageAdjustment && (
-                                                                <span className="text-blue-600 text-[10px] italic">(Info)</span>
-                                                            )}
+                                    <Card key={item.id || index} className="border-2">
+                                        <CardContent className="p-6">
+                                            <div className="space-y-3">
+                                                {/* Main Product Info Section */}
+                                                <div className="flex gap-6">
+                                                    {/* Product Image */}
+                                                    {item.product?.images?.[0] && (
+                                                        <div className="w-32 h-32 rounded-lg border-2 overflow-hidden bg-gray-50 shrink-0 flex items-center justify-center">
+                                                            <Image
+                                                                src={item.product.images[0].url}
+                                                                alt={item.product.name}
+                                                                className="w-full h-full object-cover"
+                                                                width={128}
+                                                                height={128}
+                                                                loader={imageLoader}
+                                                            />
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                        {Array.isArray((item as any).addons) && (item as any).addons.length > 0 && (
-                                            <div className="mt-2 p-2 bg-purple-50 rounded border border-purple-200">
-                                                <p className="text-xs font-semibold text-purple-900 mb-1">Addons:</p>
-                                                {((item as any).addons as any[]).map((addon, idx) => {
-                                                    const rawPrice =
-                                                        addon.priceModifier !== null && addon.priceModifier !== undefined
-                                                            ? Number(addon.priceModifier)
-                                                            : addon.basePrice !== null && addon.basePrice !== undefined
-                                                                ? Number(addon.basePrice)
-                                                                : 0;
-                                                    const multiplier = addon.quantityMultiplier ? item.quantity : 1;
-                                                    const total = rawPrice * multiplier;
-                                                    const specValues = (addon.specificationValues || {}) as Record<string, any>;
-                                                    const specDetails = Object.entries(specValues)
-                                                        .map(([key, value]) => `${key}: ${value}`)
-                                                        .join(', ');
-                                                    return (
-                                                        <div key={idx} className="mb-2 last:mb-0 p-2 bg-white rounded border border-purple-200">
-                                                            <div className="flex justify-between items-start mb-1">
-                                                                <span className="text-xs font-medium text-purple-900">
-                                                                    {specDetails || `Addon #${idx + 1}`}
-                                                                </span>
-                                                                <span className="text-xs text-purple-700 font-semibold">
-                                                                    ₹{rawPrice.toFixed(2)}
-                                                                    {multiplier > 1 && ` × ${multiplier} = ₹${total.toFixed(2)}`}
-                                                                </span>
+                                                    )}
+
+                                                    {/* Product Details */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex justify-between items-start gap-4 mb-4">
+                                                            <div className="flex-1 min-w-0">
+                                                                <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                                                                    {item.product?.name || `Product ${item.productId}`}
+                                                                </h3>
+                                                                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                                                                    {item.product?.sku && (
+                                                                        <span className="flex items-center gap-1">
+                                                                            <span className="font-medium">SKU:</span>
+                                                                            <span className="font-mono">{item.product.sku}</span>
+                                                                        </span>
+                                                                    )}
+                                                                    {item.variant && (
+                                                                        <span className="flex items-center gap-1">
+                                                                            <span className="font-medium">Variant:</span>
+                                                                            <span>{item.variant.name}</span>
+                                                                        </span>
+                                                                    )}
+                                                                    {item.product?.category && (
+                                                                        <span className="flex items-center gap-1">
+                                                                            <span className="font-medium">Category:</span>
+                                                                            <span>{item.product.category.name}</span>
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Price Section */}
+                                                            <div className="flex flex-row gap-3 shrink-0">
+                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[120px]">
+                                                                    <p className="text-xs text-gray-600 mb-1">Unit Price</p>
+                                                                    <p className="text-lg font-semibold text-gray-900">
+                                                                        {formatCurrency(item.price)}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[120px]">
+                                                                    <p className="text-xs text-gray-600 mb-1">Quantity</p>
+                                                                    <p className="text-lg font-semibold text-gray-900">
+                                                                        {item.quantity}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[140px]">
+                                                                    <p className="text-xs text-gray-600 mb-1">Total</p>
+                                                                    <p className="text-xl font-bold text-gray-900">
+                                                                        {formatCurrency(item.price * item.quantity)}
+                                                                    </p>
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                        <div className="flex-1">
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <h4 className="font-semibold text-lg">
-                                                        {item.product?.name || `Product ${item.productId}`}
-                                                    </h4>
-                                                    {item.product?.sku && (
-                                                        <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
-                                                    )}
-                                                    {item.variant && (
-                                                        <p className="text-sm text-gray-600">Variant: {item.variant.name}</p>
-                                                    )}
-                                                    {item.product?.category && (
-                                                        <p className="text-sm text-gray-500">
-                                                            Category: {item.product.category.name}
-                                                        </p>
-                                                    )}
+                                                    </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <p className="font-semibold">{formatCurrency(item.price)}</p>
-                                                    <p className="text-sm text-gray-500">× {item.quantity}</p>
-                                                    <p className="font-bold mt-1">
-                                                        {formatCurrency(item.price * item.quantity)}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            {item.customText && (
-                                                <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
-                                                    <strong>Custom Text:</strong> {item.customText}
-                                                </div>
-                                            )}
-                                            {((Array.isArray(item.customDesignUrl) && item.customDesignUrl.length > 0) ||
-                                                (typeof item.customDesignUrl === 'string' && item.customDesignUrl) ||
-                                                (Array.isArray(item.customDesignPresignedUrls) && item.customDesignPresignedUrls.length > 0) ||
-                                                item.customDesignPresignedUrl) && (
-                                                    <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
-                                                        <p className="text-sm font-medium text-blue-900 mb-2">
-                                                            Custom Design Files {Array.isArray(item.customDesignUrl) ? `(${item.customDesignUrl.length})` : ''}
-                                                        </p>
-                                                        <div className="space-y-2">
-                                                            {/* Handle array of files */}
-                                                            {Array.isArray(item.customDesignPresignedUrls) && item.customDesignPresignedUrls.length > 0 ? (
-                                                                item.customDesignPresignedUrls.map((presignedUrl, index) => {
-                                                                    const fileUrl = Array.isArray(item.customDesignUrl) ? item.customDesignUrl[index] : '';
-                                                                    return (
-                                                                        <div key={index} className="flex items-center justify-between p-2 bg-white rounded border">
+
+                                                {/* Specifications Section */}
+                                                {(item.metadata?.pageCount || item.metadata?.copies) && (
+                                                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                                        <h4 className="font-semibold text-blue-900 mb-3 text-sm uppercase tracking-wide">
+                                                            Specifications
+                                                        </h4>
+                                                        <div className="flex gap-6">
+                                                            {item.metadata.pageCount && (
+                                                                <div>
+                                                                    <span className="text-xs text-blue-700 font-medium">Pages</span>
+                                                                    <p className="text-lg font-bold text-blue-900">{item.metadata.pageCount}</p>
+                                                                </div>
+                                                            )}
+                                                            {item.metadata.copies && (
+                                                                <div>
+                                                                    <span className="text-xs text-blue-700 font-medium">Copies</span>
+                                                                    <p className="text-lg font-bold text-blue-900">{item.metadata.copies}</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Custom Text */}
+                                                {item.customText && (
+                                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                                        <h4 className="font-semibold text-gray-900 mb-2 text-sm uppercase tracking-wide">
+                                                            Custom Text
+                                                        </h4>
+                                                        <p className="text-base text-gray-800">{item.customText}</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Custom Design Files */}
+                                                {((Array.isArray(item.customDesignUrl) && item.customDesignUrl.length > 0) ||
+                                                    (typeof item.customDesignUrl === 'string' && item.customDesignUrl) ||
+                                                    (Array.isArray(item.customDesignPresignedUrls) && item.customDesignPresignedUrls.length > 0) ||
+                                                    item.customDesignPresignedUrl) && (
+                                                        <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
+                                                            <h4 className="font-semibold text-indigo-900 mb-3 text-sm uppercase tracking-wide">
+                                                                Custom Design Files {Array.isArray(item.customDesignUrl) ? `(${item.customDesignUrl.length})` : ''}
+                                                            </h4>
+                                                            <div className="space-y-2">
+                                                                {Array.isArray(item.customDesignPresignedUrls) && item.customDesignPresignedUrls.length > 0 ? (
+                                                                    item.customDesignPresignedUrls.map((presignedUrl, fileIndex) => {
+                                                                        const fileUrl = Array.isArray(item.customDesignUrl) ? item.customDesignUrl[fileIndex] : '';
+                                                                        const fileName = fileUrl ? fileUrl.split('/').pop() : `File ${fileIndex + 1}`;
+                                                                        return (
                                                                             <a
+                                                                                key={fileIndex}
                                                                                 href={presignedUrl || fileUrl || '#'}
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
-                                                                                className="text-blue-600 hover:underline text-sm flex items-center gap-1 flex-1"
+                                                                                className="flex items-center gap-2 p-3 bg-white rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors"
                                                                             >
-                                                                                <Download className="h-4 w-4" />
-                                                                                <span>File {index + 1}: {fileUrl ? fileUrl.split('/').pop() : `Download File ${index + 1}`}</span>
-                                                                            </a>
-                                                                            {fileUrl && (
-                                                                                <span className="text-xs text-gray-400 font-mono ml-2 truncate max-w-xs" title={fileUrl}>
-                                                                                    {fileUrl.split('/').pop()}
+                                                                                <Download className="h-5 w-5 text-indigo-600 shrink-0" />
+                                                                                <span className="text-sm font-medium text-indigo-900 flex-1">
+                                                                                    {fileName}
                                                                                 </span>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })
-                                                            ) : (
-                                                                /* Legacy: single file (backward compatibility) */
-                                                                <a
-                                                                    href={item.customDesignPresignedUrl || (typeof item.customDesignUrl === 'string' ? item.customDesignUrl : '') || '#'}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                                                                >
-                                                                    <Download className="h-4 w-4" />
-                                                                    <span>View/Download File</span>
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                        {Array.isArray(item.customDesignUrl) && item.customDesignUrl.length > 0 && (
-                                                            <div className="mt-2 space-y-1">
-                                                                {item.customDesignUrl.map((url, index) => (
-                                                                    <p key={index} className="text-xs text-gray-500 font-mono truncate" title={url}>
-                                                                        File {index + 1}: {url.split('/').pop()}
-                                                                    </p>
-                                                                ))}
+                                                                            </a>
+                                                                        );
+                                                                    })
+                                                                ) : (
+                                                                    <a
+                                                                        href={item.customDesignPresignedUrl || (typeof item.customDesignUrl === 'string' ? item.customDesignUrl : '') || '#'}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="flex items-center gap-2 p-3 bg-white rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors"
+                                                                    >
+                                                                        <Download className="h-5 w-5 text-indigo-600 shrink-0" />
+                                                                        <span className="text-sm font-medium text-indigo-900">
+                                                                            View/Download File
+                                                                        </span>
+                                                                    </a>
+                                                                )}
                                                             </div>
-                                                        )}
+                                                        </div>
+                                                    )}
+
+                                                {/* Template Data */}
+                                                {item.metadata?.templateId && (
+                                                    <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                                                        <h4 className="font-semibold text-amber-900 mb-3 text-sm uppercase tracking-wide">
+                                                            Template Information
+                                                        </h4>
+                                                        <TemplateDisplay
+                                                            templateId={item.metadata.templateId}
+                                                            categoryId={item.product?.category?.id}
+                                                            formData={item.metadata.templateFormData}
+                                                            formImages={item.metadata.templateFormImages}
+                                                        />
                                                     </div>
                                                 )}
-                                        </div>
-                                    </div>
+
+                                                {/* Addons Section */}
+                                                {Array.isArray((item as any).addons) && (item as any).addons.length > 0 && (
+                                                    <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                                                        <h4 className="font-semibold text-purple-900 mb-3 text-sm uppercase tracking-wide">
+                                                            Addons ({(item as any).addons.length})
+                                                        </h4>
+                                                        <div className="space-y-2">
+                                                            {((item as any).addons as any[]).map((addon, addonIdx) => {
+                                                                const rawPrice =
+                                                                    addon.priceModifier !== null && addon.priceModifier !== undefined
+                                                                        ? Number(addon.priceModifier)
+                                                                        : addon.basePrice !== null && addon.basePrice !== undefined
+                                                                            ? Number(addon.basePrice)
+                                                                            : 0;
+                                                                const pageCount = (item as any).metadata?.pageCount || 1;
+                                                                const copies = (item as any).metadata?.copies || 1;
+                                                                const effectivePages = pageCount > 1 ? pageCount * copies : null;
+                                                                const multiplier = addon.quantityMultiplier
+                                                                    ? (effectivePages != null ? effectivePages : item.quantity)
+                                                                    : 1;
+                                                                const total = rawPrice * multiplier;
+                                                                const specValues = (addon.specificationValues || {}) as Record<string, any>;
+                                                                const specDetails = Object.entries(specValues)
+                                                                    .map(([key, value]) => `${key}: ${value}`)
+                                                                    .join(', ');
+
+                                                                return (
+                                                                    <div key={addonIdx} className="bg-white rounded-lg p-3 border border-purple-200">
+                                                                        <div className="flex justify-between items-start gap-4">
+                                                                            <div className="flex-1">
+                                                                                <p className="font-medium text-purple-900 text-sm mb-1">
+                                                                                    {specDetails || `Addon ${addonIdx + 1}`}
+                                                                                </p>
+                                                                                {addon.ruleType && (
+                                                                                    <p className="text-xs text-purple-600">
+                                                                                        Type: {addon.ruleType.replace(/_/g, ' ')}
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="text-right shrink-0">
+                                                                                <p className="text-sm font-semibold text-purple-900">
+                                                                                    {formatCurrency(rawPrice)}
+                                                                                    {multiplier > 1 && (
+                                                                                        <span className="text-xs text-purple-600 ml-1">
+                                                                                            × {multiplier}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </p>
+                                                                                {multiplier > 1 && (
+                                                                                    <p className="text-xs font-bold text-purple-900 mt-1">
+                                                                                        = {formatCurrency(total)}
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Price Breakdown */}
+                                                {item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0 && (
+                                                    <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                                                        <h4 className="font-semibold text-green-900 mb-3 text-sm uppercase tracking-wide">
+                                                            Price Breakdown
+                                                        </h4>
+                                                        <div className="space-y-2">
+                                                            {item.metadata.priceBreakdown.map((pbItem, pbIdx) => {
+                                                                const isHalfPageAdjustment = pbItem.value === 0 &&
+                                                                    typeof pbItem.label === 'string' &&
+                                                                    (pbItem.label.toLowerCase().includes('both side') ||
+                                                                        pbItem.label.toLowerCase().includes('half page') ||
+                                                                        pbItem.label.toLowerCase().includes('→'));
+
+                                                                return (
+                                                                    <div
+                                                                        key={pbIdx}
+                                                                        className={`flex justify-between items-center p-2 rounded ${isHalfPageAdjustment
+                                                                            ? 'bg-blue-100 border border-blue-300'
+                                                                            : 'bg-white border border-green-200'
+                                                                            }`}
+                                                                    >
+                                                                        <span className={`text-sm ${isHalfPageAdjustment
+                                                                            ? 'text-blue-900 font-medium'
+                                                                            : 'text-green-900'
+                                                                            }`}>
+                                                                            {pbItem.label}
+                                                                        </span>
+                                                                        {pbItem.value > 0 ? (
+                                                                            <span className={`text-sm font-semibold ${isHalfPageAdjustment
+                                                                                ? 'text-blue-900'
+                                                                                : 'text-green-900'
+                                                                                }`}>
+                                                                                {formatCurrency(pbItem.value)}
+                                                                            </span>
+                                                                        ) : isHalfPageAdjustment && (
+                                                                            <span className="text-xs text-blue-600 italic">
+                                                                                Info
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
                                 ))}
-                                <div className="pt-4 border-t">
-                                    <div className="flex justify-between text-lg font-semibold">
-                                        <span>Total Items</span>
-                                        <span>
-                                            {order.items.reduce((sum, item) => sum + item.quantity, 0)} item(s)
-                                        </span>
+
+                                {/* Summary Footer */}
+                                <div className="pt-6 border-t-2">
+                                    <div className="flex justify-between items-center">
+                                        <div>
+                                            <p className="text-sm text-gray-600 mb-1">Total Items</p>
+                                            <p className="text-2xl font-bold text-gray-900">
+                                                {order.items.reduce((sum, item) => sum + item.quantity, 0)} item(s)
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-sm text-gray-600 mb-1">Order Total</p>
+                                            <p className="text-3xl font-bold text-gray-900">
+                                                {formatCurrency(order.total)}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -823,8 +921,8 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                         <CardHeader>
                             <CardTitle className="flex items-center justify-between">
                                 <span>Invoice</span>
-                                <Button 
-                                    variant="outline" 
+                                <Button
+                                    variant="outline"
                                     onClick={handleDownloadInvoice}
                                     isLoading={downloadingInvoice}
                                     disabled={downloadingInvoice}

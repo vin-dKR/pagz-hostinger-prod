@@ -56,3 +56,35 @@ export function getFilenameFromS3Key(s3KeyOrUrl: string): string {
     return parts[parts.length - 1] || 'file';
 }
 
+/**
+ * Extract S3 key from a full S3 URL or return the key if already a key
+ * @param urlOrKey - Full S3 URL or S3 key
+ * @returns S3 key
+ */
+export function extractS3KeyFromUrl(urlOrKey: string): string {
+    // If it's already a key (doesn't start with http), return as-is
+    if (!urlOrKey.startsWith('http://') && !urlOrKey.startsWith('https://')) {
+        return urlOrKey;
+    }
+
+    // Extract key from S3 URL pattern: https://bucket.s3.region.amazonaws.com/key
+    const s3UrlPattern = /https?:\/\/[^/]+\.s3[.-][^/]+\.amazonaws\.com\/(.+)/;
+    const match = urlOrKey.match(s3UrlPattern);
+    
+    const matchedKey = match?.[1];
+    if (matchedKey) {
+        // Remove query parameters if any
+        // split always returns at least one element, so [0] is always defined
+        return (matchedKey.split('?')[0] as string);
+    }
+
+    // If pattern doesn't match, try to extract from any URL path
+    try {
+        const url = new URL(urlOrKey);
+        // Remove leading slash from pathname
+        return url.pathname.startsWith('/') ? url.pathname.substring(1) : url.pathname;
+    } catch {
+        // If URL parsing fails, return as-is
+        return urlOrKey;
+    }
+}

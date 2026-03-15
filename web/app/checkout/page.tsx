@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Breadcrumbs from "../components/Breadcrumbs";
 import BillingAddressForm from "../components/BillingAddressForm";
 import ShippingMethod from "../components/ShippingMethod";
@@ -19,6 +19,7 @@ import { toastWarning, toastError, toastSuccess } from "@/lib/utils/toast";
 
 function CheckoutPageContent() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const {
         cartItems: allCartItems,
         mrp: allMrp,
@@ -48,6 +49,21 @@ function CheckoutPageContent() {
     const isBuyNowFlow = useMemo(() => {
         return allCartItems.some(item => item.id === 'buy-now-temp');
     }, [allCartItems]);
+
+    // Check if accessed directly without cart items or buyNow data
+    useEffect(() => {
+        // Only check after loading is complete
+        if (loading) return;
+        
+        const hasItemsParam = searchParams.get('items');
+        const hasBuyNowData = typeof window !== 'undefined' && sessionStorage.getItem('buyNow');
+        
+        // If no items param, no buyNow data, and no cart items, redirect to cart
+        // This prevents direct access to checkout without proper context
+        if (!hasItemsParam && !hasBuyNowData && allCartItems.length === 0 && !isBuyNowFlow) {
+            router.push('/cart');
+        }
+    }, [loading, allCartItems.length, searchParams, router, isBuyNowFlow]);
 
     // Get selected item IDs from URL params
     const selectedItemIds = useMemo(() => {
@@ -258,7 +274,7 @@ function CheckoutPageContent() {
             <div className="min-h-screen py-8">
                 <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <Breadcrumbs items={breadcrumbs} />
-                    <div className="bg-white rounded-lg shadow-md p-12 text-center">
+                    <div className="bg-white rounded-lg p-12 text-center">
                         <p className="text-gray-600 text-lg mb-4">Your cart is empty</p>
                         <a
                             href="/products"

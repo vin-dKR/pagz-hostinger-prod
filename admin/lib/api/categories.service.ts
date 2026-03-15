@@ -42,7 +42,6 @@ export interface Category {
 
 export interface CreateCategoryData {
     name: string;
-    slug: string;
     description?: string;
     parentId?: string;
     priority?: number;
@@ -50,7 +49,6 @@ export interface CreateCategoryData {
 
 export interface UpdateCategoryData {
     name?: string;
-    slug?: string;
     description?: string;
     parentId?: string;
     priority?: number;
@@ -234,7 +232,6 @@ export async function deleteCategory(id: string): Promise<{ deletedProductsCount
 
 export interface CreateSpecificationData {
     name: string;
-    slug: string;
     type: SpecificationType;
     isRequired?: boolean;
     displayOrder?: number;
@@ -303,7 +300,6 @@ export async function deleteCategorySpecificationApi(
 
 export interface CreateSpecificationOptionData {
     label: string;
-    value: string;
     displayOrder?: number;
     isActive?: boolean;
     metadata?: OptionMetadata;

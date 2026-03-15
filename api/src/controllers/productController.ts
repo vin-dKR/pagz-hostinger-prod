@@ -242,15 +242,31 @@ export const getAdminCategories = async (req: Request, res: Response, next: Next
 };
 
 export const createCategoties = async (req: Request, res: Response, next: NextFunction) => {
-    const { name, slug, description, priority } = req.body
+    const { name, description, priority } = req.body
 
     try {
+        if (!name) {
+            throw new ValidationError("Name is required");
+        }
+
         const { normalizePriority } = await import("../utils/category-ordering.js");
+        const { generateSlug } = await import("../../constants/seed-utils.js");
+        
+        // Auto-generate slug from name
+        const baseSlug = generateSlug(name);
+        let uniqueSlug = baseSlug;
+        let counter = 1;
+
+        // Ensure slug is unique
+        while (await prisma.category.findUnique({ where: { slug: uniqueSlug } })) {
+            uniqueSlug = `${baseSlug}-${counter}`;
+            counter++;
+        }
         
         const category = await prisma.category.create({
             data: {
                 name,
-                slug,
+                slug: uniqueSlug,
                 description,
                 priority: normalizePriority(priority),
             }
@@ -268,7 +284,7 @@ export const createCategoties = async (req: Request, res: Response, next: NextFu
 export const updateCategory = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const id = getParamAsString(req.params.id, "Category ID");
-        const { name, slug, description, parentId, priority } = req.body;
+        const { name, description, parentId, priority } = req.body;
 
         // Check if category exists
         const category = await prisma.category.findUnique({
@@ -279,26 +295,29 @@ export const updateCategory = async (req: Request, res: Response, next: NextFunc
             throw new NotFoundError("Category not found");
         }
 
-        // If slug is being changed, check for conflicts
-        if (slug && slug !== category.slug) {
-            const existing = await prisma.category.findFirst({
-                where: {
-                    slug,
-                    id: { not: id },
-                },
-            });
-
-            if (existing) {
-                throw new ValidationError("A category with this slug already exists");
-            }
-        }
-
         const { normalizePriority } = await import("../utils/category-ordering.js");
+        const { generateSlug } = await import("../../constants/seed-utils.js");
         
         // Build update data
         const updateData: any = {};
-        if (name !== undefined) updateData.name = name;
-        if (slug !== undefined) updateData.slug = slug;
+        if (name !== undefined) {
+            updateData.name = name;
+            // Auto-generate slug from name if name changes
+            if (name !== category.name) {
+                const baseSlug = generateSlug(name);
+                let uniqueSlug = baseSlug;
+                let counter = 1;
+
+                // Ensure slug is unique
+                while (await prisma.category.findFirst({
+                    where: { slug: uniqueSlug, id: { not: id } },
+                })) {
+                    uniqueSlug = `${baseSlug}-${counter}`;
+                    counter++;
+                }
+                updateData.slug = uniqueSlug;
+            }
+        }
         if (description !== undefined) updateData.description = description || null;
         if (priority !== undefined) updateData.priority = normalizePriority(priority);
         if (parentId !== undefined) {
@@ -1023,14 +1042,14 @@ export const createProduct = async (req: Request, res: Response, next: NextFunct
             throw new NotFoundError("Category not found");
         }
 
-        // Generate slug if not provided
-        let productSlug = slug || generateSlug(name);
-        let uniqueSlug = productSlug;
+        // Auto-generate slug from name (ignore slug from request)
+        const baseSlug = generateSlug(name);
+        let uniqueSlug = baseSlug;
         let counter = 1;
 
         // Ensure slug is unique
         while (await prisma.product.findUnique({ where: { slug: uniqueSlug } })) {
-            uniqueSlug = `${productSlug}-${counter}`;
+            uniqueSlug = `${baseSlug}-${counter}`;
             counter++;
         }
 
@@ -1167,20 +1186,23 @@ export const updateProduct = async (req: Request, res: Response, next: NextFunct
         }
 
         const updateData: any = {};
-        if (name) updateData.name = name;
-        if (slug) {
-            // Ensure slug is unique
-            let uniqueSlug = slug;
-            let counter = 1;
-            while (
-                await prisma.product.findFirst({
-                    where: { slug: uniqueSlug, id: { not: id } },
-                })
-            ) {
-                uniqueSlug = `${slug}-${counter}`;
-                counter++;
+        if (name) {
+            updateData.name = name;
+            // Auto-generate slug from name if name changes (ignore slug from request)
+            if (name !== product.name) {
+                const baseSlug = generateSlug(name);
+                let uniqueSlug = baseSlug;
+                let counter = 1;
+                while (
+                    await prisma.product.findFirst({
+                        where: { slug: uniqueSlug, id: { not: id } },
+                    })
+                ) {
+                    uniqueSlug = `${baseSlug}-${counter}`;
+                    counter++;
+                }
+                updateData.slug = uniqueSlug;
             }
-            updateData.slug = uniqueSlug;
         }
         if (description !== undefined) updateData.description = description;
         if (shortDescription !== undefined) updateData.shortDescription = shortDescription;

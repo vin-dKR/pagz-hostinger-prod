@@ -63,10 +63,10 @@ export const createCategorySpecification = async (
 ) => {
     try {
         const id = getParamAsString(req.params.id, "Category ID");
-        const { name, slug, type, isRequired, displayOrder, dependsOn } = req.body;
+        const { name, type, isRequired, displayOrder, dependsOn } = req.body;
 
-        if (!name || !slug || !type) {
-            throw new ValidationError("Name, slug, and type are required");
+        if (!name || !type) {
+            throw new ValidationError("Name and type are required");
         }
 
         const category = await prisma.category.findUnique({
@@ -77,18 +77,23 @@ export const createCategorySpecification = async (
             throw new NotFoundError("Category not found");
         }
 
-        // Check if slug already exists for this category
-        const existing = await prisma.categorySpecification.findUnique({
+        // Auto-generate slug from name
+        const { generateSlug } = await import("../../constants/seed-utils.js");
+        const baseSlug = generateSlug(name);
+        let uniqueSlug = baseSlug;
+        let counter = 1;
+
+        // Ensure slug is unique for this category
+        while (await prisma.categorySpecification.findUnique({
             where: {
                 categoryId_slug: {
                     categoryId: id,
-                    slug,
+                    slug: uniqueSlug,
                 },
             },
-        });
-
-        if (existing) {
-            throw new ValidationError("A specification with this slug already exists for this category");
+        })) {
+            uniqueSlug = `${baseSlug}-${counter}`;
+            counter++;
         }
 
         // Validate dependency structure
@@ -110,17 +115,28 @@ export const createCategorySpecification = async (
                 },
             });
 
-            await validateDependency(id, slug, dependsOn, allSpecs);
+            await validateDependency(id, uniqueSlug, dependsOn, allSpecs);
+        }
+
+        // Auto-calculate display order if not provided (max + 1)
+        let finalDisplayOrder = displayOrder;
+        if (finalDisplayOrder === undefined || finalDisplayOrder === null) {
+            const maxOrder = await prisma.categorySpecification.findFirst({
+                where: { categoryId: id },
+                orderBy: { displayOrder: 'desc' },
+                select: { displayOrder: true },
+            });
+            finalDisplayOrder = maxOrder ? maxOrder.displayOrder + 1 : 0;
         }
 
         const specification = await prisma.categorySpecification.create({
             data: {
                 categoryId: id,
                 name,
-                slug,
+                slug: uniqueSlug,
                 type,
                 isRequired: isRequired ?? false,
-                displayOrder: displayOrder ?? 0,
+                displayOrder: finalDisplayOrder,
                 dependsOn: dependsOn ? (dependsOn as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
             },
             include: {
@@ -150,7 +166,7 @@ export const updateCategorySpecification = async (
     try {
         const id = getParamAsString(req.params.id, "Category ID");
         const specId = getParamAsString(req.params.specId, "Specification ID");
-        const { name, slug, type, isRequired, displayOrder, dependsOn } = req.body;
+        const { name, type, isRequired, displayOrder, dependsOn } = req.body;
 
         const specification = await prisma.categorySpecification.findFirst({
             where: {
@@ -163,20 +179,26 @@ export const updateCategorySpecification = async (
             throw new NotFoundError("Specification not found");
         }
 
-        // If slug is being changed, check for conflicts
-        if (slug && slug !== specification.slug) {
-            const existing = await prisma.categorySpecification.findUnique({
-                where: {
-                    categoryId_slug: {
-                        categoryId: id,
-                        slug,
-                    },
-                },
-            });
+        // Auto-generate slug from name if name changes (ignore slug from request)
+        let newSlug = specification.slug;
+        if (name && name !== specification.name) {
+            const { generateSlug } = await import("../../constants/seed-utils.js");
+            const baseSlug = generateSlug(name);
+            let uniqueSlug = baseSlug;
+            let counter = 1;
 
-            if (existing && existing.id !== specId) {
-                throw new ValidationError("A specification with this slug already exists");
+            // Ensure slug is unique for this category
+            while (await prisma.categorySpecification.findFirst({
+                where: {
+                    categoryId: id,
+                    slug: uniqueSlug,
+                    id: { not: specId },
+                },
+            })) {
+                uniqueSlug = `${baseSlug}-${counter}`;
+                counter++;
             }
+            newSlug = uniqueSlug;
         }
 
         // Validate dependency structure if provided
@@ -199,18 +221,15 @@ export const updateCategorySpecification = async (
                     },
                 });
 
-                await validateDependency(id, slug || specification.slug, dependsOn, allSpecs, specId);
+                await validateDependency(id, newSlug, dependsOn, allSpecs, specId);
             }
         }
-
-        const oldSlug = specification.slug;
-        const newSlug = slug || oldSlug;
 
         const updated = await prisma.categorySpecification.update({
             where: { id: specId },
             data: {
                 ...(name && { name }),
-                ...(slug && { slug }),
+                ...(newSlug !== specification.slug && { slug: newSlug }),
                 ...(type && { type }),
                 ...(isRequired !== undefined && { isRequired }),
                 ...(displayOrder !== undefined && { displayOrder }),
@@ -223,7 +242,7 @@ export const updateCategorySpecification = async (
         });
 
         // If slug changed, update all pricing rules that reference the old slug
-        if (slug && slug !== oldSlug) {
+        if (newSlug !== specification.slug) { 
             try {
                 // Find all pricing rules for this category
                 const pricingRules = await prisma.categoryPricingRule.findMany({
@@ -239,13 +258,13 @@ export const updateCategorySpecification = async (
                     const specValues = rule.specificationValues as Record<string, any>;
                     
                     // Check if this rule references the old slug
-                    if (specValues && specValues[oldSlug] !== undefined) {
+                    if (specValues && specValues[specification.slug] !== undefined) {
                         // Create new specificationValues with the new slug
                         const updatedSpecValues = { ...specValues };
-                        const optionValue = updatedSpecValues[oldSlug];
+                        const optionValue = updatedSpecValues[specification.slug];
                         
                         // Remove old slug and add new slug with the same value
-                        delete updatedSpecValues[oldSlug];
+                        delete updatedSpecValues[specification.slug];
                         updatedSpecValues[newSlug] = optionValue;
 
                         // Update the pricing rule
@@ -362,10 +381,10 @@ export const createSpecificationOption = async (
     try {
         const id = getParamAsString(req.params.id, "Category ID");
         const specId = getParamAsString(req.params.specId, "Specification ID");
-        const { label, value, displayOrder, isActive, metadata } = req.body;
+        const { label, displayOrder, isActive, metadata } = req.body;
 
-        if (!label || !value) {
-            throw new ValidationError("Label and value are required");
+        if (!label) {
+            throw new ValidationError("Label is required");
         }
 
         const specification = await prisma.categorySpecification.findFirst({
@@ -379,26 +398,42 @@ export const createSpecificationOption = async (
             throw new NotFoundError("Specification not found");
         }
 
-        // Check if value already exists for this specification
-        const existing = await prisma.categorySpecificationOption.findUnique({
+        // Auto-generate value from label (ignore value from request)
+        const { generateSlug } = await import("../../constants/seed-utils.js");
+        const baseValue = generateSlug(label);
+        let uniqueValue = baseValue;
+        let counter = 1;
+
+        // Ensure value is unique for this specification
+        while (await prisma.categorySpecificationOption.findUnique({
             where: {
                 specificationId_value: {
                     specificationId: specId,
-                    value,
+                    value: uniqueValue,
                 },
             },
-        });
+        })) {
+            uniqueValue = `${baseValue}-${counter}`;
+            counter++;
+        }
 
-        if (existing) {
-            throw new ValidationError("An option with this value already exists");
+        // Auto-calculate display order if not provided (max + 1)
+        let finalDisplayOrder = displayOrder;
+        if (finalDisplayOrder === undefined || finalDisplayOrder === null) {
+            const maxOrder = await prisma.categorySpecificationOption.findFirst({
+                where: { specificationId: specId },
+                orderBy: { displayOrder: 'desc' },
+                select: { displayOrder: true },
+            });
+            finalDisplayOrder = maxOrder ? maxOrder.displayOrder + 1 : 0;
         }
 
         const option = await prisma.categorySpecificationOption.create({
             data: {
                 specificationId: specId,
                 label,
-                value,
-                displayOrder: displayOrder ?? 0,
+                value: uniqueValue,
+                displayOrder: finalDisplayOrder,
                 isActive: isActive ?? true,
                 metadata: metadata ? metadata : null,
             },
@@ -427,7 +462,7 @@ export const updateSpecificationOption = async (
         const id = getParamAsString(req.params.id, "Category ID");
         const specId = getParamAsString(req.params.specId, "Specification ID");
         const optionId = getParamAsString(req.params.optionId, "Option ID");
-        const { label, value, displayOrder, isActive, metadata } = req.body;
+        const { label, displayOrder, isActive, metadata } = req.body;
 
         const option = await prisma.categorySpecificationOption.findFirst({
             where: {
@@ -452,30 +487,35 @@ export const updateSpecificationOption = async (
             throw new NotFoundError("Specification not found for this category");
         }
 
-        const oldValue = option.value;
-        const newValue = value || oldValue;
+        // Auto-generate value from label if label changes (ignore value from request)
+        let newValue = option.value;
+        if (label && label !== option.label) {
+            const { generateSlug } = await import("../../constants/seed-utils.js");
+            const baseValue = generateSlug(label);
+            let uniqueValue = baseValue;
+            let counter = 1;
 
-        // If value is being changed, check for conflicts
-        if (value && value !== option.value) {
-            const existing = await prisma.categorySpecificationOption.findUnique({
+            // Ensure value is unique for this specification
+            while (await prisma.categorySpecificationOption.findFirst({
                 where: {
-                    specificationId_value: {
-                        specificationId: specId,
-                        value,
-                    },
+                    specificationId: specId,
+                    value: uniqueValue,
+                    id: { not: optionId },
                 },
-            });
-
-            if (existing && existing.id !== optionId) {
-                throw new ValidationError("An option with this value already exists");
+            })) {
+                uniqueValue = `${baseValue}-${counter}`;
+                counter++;
             }
+            newValue = uniqueValue;
         }
+
+        const oldValue = option.value;
 
         const updated = await prisma.categorySpecificationOption.update({
             where: { id: optionId },
             data: {
                 ...(label && { label }),
-                ...(value && { value }),
+                ...(newValue !== option.value && { value: newValue }),
                 ...(displayOrder !== undefined && { displayOrder }),
                 ...(isActive !== undefined && { isActive }),
                 ...(metadata !== undefined && { metadata: metadata || null }),
@@ -490,7 +530,7 @@ export const updateSpecificationOption = async (
         });
 
         // If option value changed, update all pricing rules that reference the old value
-        if (value && value !== oldValue) {
+        if (newValue !== oldValue) {
             try {
                 const specSlug = specification.slug;
                 const categoryId = specification.categoryId;
