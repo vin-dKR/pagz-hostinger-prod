@@ -2,10 +2,11 @@
 
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Image as ImageIcon, X } from 'lucide-react';
+import { FileText, Upload, Image as ImageIcon, X, Edit2, Trash2 } from 'lucide-react';
 import { useCategoryTemplates } from '@/lib/hooks/use-category-templates';
 import { FileDetail } from '@/app/components/products/ProductDocumentUpload';
 import { getPublicS3Url } from '@/lib/utils/s3';
+import { Button } from '@/app/components/ui/button';
 
 interface TemplateSelectorProps {
     categorySlug: string;
@@ -15,6 +16,8 @@ interface TemplateSelectorProps {
     selectedFormImages?: string[];
     uploadedFiles?: FileDetail[];
     onFileSelect?: (files: File[]) => void;
+    onFileRemove?: (fileId: string) => void;
+    onEditTemplateForm?: () => void;
 }
 
 export function TemplateSelector({
@@ -25,6 +28,8 @@ export function TemplateSelector({
     selectedFormImages,
     uploadedFiles,
     onFileSelect,
+    onFileRemove,
+    onEditTemplateForm,
 }: TemplateSelectorProps) {
     const router = useRouter();
     const { data: templates = [], isLoading: loadingTemplates } = useCategoryTemplates(categorySlug, true);
@@ -156,6 +161,16 @@ export function TemplateSelector({
                                             </p>
                                         </div>
                                     </div>
+                                    {onFileRemove && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => onFileRemove(fileDetail.id)}
+                                            className="ml-2 shrink-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                        >
+                                            <Trash2 size={16} />
+                                        </Button>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -165,6 +180,20 @@ export function TemplateSelector({
                 {/* Display Template Form Data */}
                 {selectedTemplateId && selectedFormData && Object.keys(selectedFormData).length > 0 && (
                     <div className="mt-4 space-y-3">
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm font-semibold text-gray-700">Template Form Data</p>
+                            {onEditTemplateForm && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={onEditTemplateForm}
+                                    className="text-sm"
+                                >
+                                    <Edit2 size={14} className="mr-1.5" />
+                                    Edit
+                                </Button>
+                            )}
+                        </div>
                         <div className="space-y-2">
                             {Object.entries(selectedFormData).map(([key, value]) => (
                                 <div

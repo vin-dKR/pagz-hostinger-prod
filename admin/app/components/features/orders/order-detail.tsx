@@ -221,13 +221,14 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                     <OrderStatusBadge status={order.status} />
                     <PaymentStatusBadge status={order.paymentStatus} />
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleDownloadInvoice}>
+                        <Button
+                            variant="outline"
+                            onClick={handleDownloadInvoice}
+                            isLoading={downloadingInvoice}
+                            disabled={downloadingInvoice}
+                        >
                             <Download className="h-4 w-4 mr-2" />
                             Download Invoice
-                        </Button>
-                        <Button variant="outline">
-                            <Mail className="h-4 w-4 mr-2" />
-                            Send Email
                         </Button>
                     </div>
                 </div>
@@ -495,7 +496,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                         <CardContent className="p-6">
                                             <div className="space-y-3">
                                                 {/* Main Product Info Section */}
-                                                <div className="flex gap-6">
+                                                <div className="flex flex-col lg:flex-row gap-6 items-start">
                                                     {/* Product Image */}
                                                     {item.product?.images?.[0] && (
                                                         <div className="w-32 h-32 rounded-lg border-2 overflow-hidden bg-gray-50 shrink-0 flex items-center justify-center">
@@ -510,14 +511,15 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                         </div>
                                                     )}
 
-                                                    {/* Product Details */}
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex justify-between items-start gap-4 mb-4">
+                                                    {/* Product Details and Price */}
+                                                    <div className="flex-1 min-w-0 w-full">
+                                                        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
+                                                            {/* Product Info */}
                                                             <div className="flex-1 min-w-0">
-                                                                <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                                                                <h3 className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
                                                                     {item.product?.name || `Product ${item.productId}`}
                                                                 </h3>
-                                                                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                                                                <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-600">
                                                                     {item.product?.sku && (
                                                                         <span className="flex items-center gap-1">
                                                                             <span className="font-medium">SKU:</span>
@@ -540,22 +542,22 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                             </div>
 
                                                             {/* Price Section */}
-                                                            <div className="flex flex-row gap-3 shrink-0">
-                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[120px]">
+                                                            <div className="flex flex-row gap-3 shrink-0 justify-start lg:justify-end">
+                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[100px] lg:min-w-[120px]">
                                                                     <p className="text-xs text-gray-600 mb-1">Unit Price</p>
-                                                                    <p className="text-lg font-semibold text-gray-900">
+                                                                    <p className="text-base lg:text-lg font-semibold text-gray-900">
                                                                         {formatCurrency(item.price)}
                                                                     </p>
                                                                 </div>
-                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[120px]">
+                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[80px] lg:min-w-[100px]">
                                                                     <p className="text-xs text-gray-600 mb-1">Quantity</p>
-                                                                    <p className="text-lg font-semibold text-gray-900">
+                                                                    <p className="text-base lg:text-lg font-semibold text-gray-900">
                                                                         {item.quantity}
                                                                     </p>
                                                                 </div>
-                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[140px]">
+                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[110px] lg:min-w-[140px]">
                                                                     <p className="text-xs text-gray-600 mb-1">Total</p>
-                                                                    <p className="text-xl font-bold text-gray-900">
+                                                                    <p className="text-lg lg:text-xl font-bold text-gray-900">
                                                                         {formatCurrency(item.price * item.quantity)}
                                                                     </p>
                                                                 </div>
@@ -643,18 +645,70 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                         </div>
                                                     )}
 
-                                                {/* Template Data */}
-                                                {item.metadata?.templateId && (
-                                                    <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-                                                        <h4 className="font-semibold text-amber-900 mb-3 text-sm uppercase tracking-wide">
-                                                            Template Information
-                                                        </h4>
-                                                        <TemplateDisplay
-                                                            templateId={item.metadata.templateId}
-                                                            categoryId={item.product?.category?.id}
-                                                            formData={item.metadata.templateFormData}
-                                                            formImages={item.metadata.templateFormImages}
-                                                        />
+                                                {/* Template Data and Price Breakdown in Row */}
+                                                {(item.metadata?.templateId || (item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0)) && (
+                                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                                        {/* Template Data */}
+                                                        {item.metadata?.templateId && (
+                                                            <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                                                                <h4 className="font-semibold text-amber-900 mb-3 text-sm uppercase tracking-wide">
+                                                                    Template Information
+                                                                </h4>
+                                                                <TemplateDisplay
+                                                                    templateId={item.metadata.templateId}
+                                                                    categoryId={item.product?.category?.id}
+                                                                    formData={item.metadata.templateFormData}
+                                                                    formImages={item.metadata.templateFormImages}
+                                                                />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Price Breakdown */}
+                                                        {item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0 && (
+                                                            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                                                                <h4 className="font-semibold text-green-900 mb-3 text-sm uppercase tracking-wide">
+                                                                    Price Breakdown
+                                                                </h4>
+                                                                <div className="space-y-2">
+                                                                    {item.metadata.priceBreakdown.map((pbItem, pbIdx) => {
+                                                                        const isHalfPageAdjustment = pbItem.value === 0 &&
+                                                                            typeof pbItem.label === 'string' &&
+                                                                            (pbItem.label.toLowerCase().includes('both side') ||
+                                                                                pbItem.label.toLowerCase().includes('half page') ||
+                                                                                pbItem.label.toLowerCase().includes('→'));
+
+                                                                        return (
+                                                                            <div
+                                                                                key={pbIdx}
+                                                                                className={`flex justify-between items-center p-2 rounded ${isHalfPageAdjustment
+                                                                                    ? 'bg-blue-100 border border-blue-300'
+                                                                                    : 'bg-white border border-green-200'
+                                                                                    }`}
+                                                                            >
+                                                                                <span className={`text-sm ${isHalfPageAdjustment
+                                                                                    ? 'text-blue-900 font-medium'
+                                                                                    : 'text-green-900'
+                                                                                    }`}>
+                                                                                    {pbItem.label}
+                                                                        </span>
+                                                                        {pbItem.value > 0 ? (
+                                                                            <span className={`text-sm font-semibold ${isHalfPageAdjustment
+                                                                                ? 'text-blue-900'
+                                                                                : 'text-green-900'
+                                                                                }`}>
+                                                                                {formatCurrency(pbItem.value)}
+                                                                            </span>
+                                                                        ) : isHalfPageAdjustment && (
+                                                                            <span className="text-xs text-blue-600 italic">
+                                                                                Info
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -713,53 +767,6 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                                                 )}
                                                                             </div>
                                                                         </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Price Breakdown */}
-                                                {item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0 && (
-                                                    <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                                                        <h4 className="font-semibold text-green-900 mb-3 text-sm uppercase tracking-wide">
-                                                            Price Breakdown
-                                                        </h4>
-                                                        <div className="space-y-2">
-                                                            {item.metadata.priceBreakdown.map((pbItem, pbIdx) => {
-                                                                const isHalfPageAdjustment = pbItem.value === 0 &&
-                                                                    typeof pbItem.label === 'string' &&
-                                                                    (pbItem.label.toLowerCase().includes('both side') ||
-                                                                        pbItem.label.toLowerCase().includes('half page') ||
-                                                                        pbItem.label.toLowerCase().includes('→'));
-
-                                                                return (
-                                                                    <div
-                                                                        key={pbIdx}
-                                                                        className={`flex justify-between items-center p-2 rounded ${isHalfPageAdjustment
-                                                                            ? 'bg-blue-100 border border-blue-300'
-                                                                            : 'bg-white border border-green-200'
-                                                                            }`}
-                                                                    >
-                                                                        <span className={`text-sm ${isHalfPageAdjustment
-                                                                            ? 'text-blue-900 font-medium'
-                                                                            : 'text-green-900'
-                                                                            }`}>
-                                                                            {pbItem.label}
-                                                                        </span>
-                                                                        {pbItem.value > 0 ? (
-                                                                            <span className={`text-sm font-semibold ${isHalfPageAdjustment
-                                                                                ? 'text-blue-900'
-                                                                                : 'text-green-900'
-                                                                                }`}>
-                                                                                {formatCurrency(pbItem.value)}
-                                                                            </span>
-                                                                        ) : isHalfPageAdjustment && (
-                                                                            <span className="text-xs text-blue-600 italic">
-                                                                                Info
-                                                                            </span>
-                                                                        )}
                                                                     </div>
                                                                 );
                                                             })}

@@ -16,19 +16,22 @@ export const categoryQueryKeys = {
 
 /**
  * Hook to fetch all categories with aggressive caching
+ * Extended cache times to reduce AWS bandwidth costs for category images
  */
 export function useCategories() {
     return useQuery({
         queryKey: categoryQueryKeys.list(),
         queryFn: () => getAllCategories(),
-        staleTime: 5 * 60 * 1000, // 5 minutes - categories don't change often
-        gcTime: 10 * 60 * 1000, // 10 minutes cache
+        staleTime: 30 * 60 * 1000, // 30 minutes - categories don't change often, reduces AWS bandwidth
+        gcTime: 60 * 60 * 1000, // 1 hour cache - keeps category images cached longer
         refetchOnWindowFocus: false,
+        refetchOnMount: false, // Don't refetch if data exists in cache
     });
 }
 
 /**
  * Hook to fetch categories (alternative API endpoint from products API)
+ * Extended cache times to reduce AWS bandwidth costs for category images
  */
 export function useCategoriesList() {
     return useQuery({
@@ -39,8 +42,9 @@ export function useCategoriesList() {
             const response = await getCategories();
             return response.data || [];
         },
-        staleTime: 5 * 60 * 1000,
-        gcTime: 10 * 60 * 1000,
+        staleTime: 30 * 60 * 1000, // 30 minutes - reduces AWS bandwidth
+        gcTime: 60 * 60 * 1000, // 1 hour cache - keeps category images cached longer
         refetchOnWindowFocus: false,
+        refetchOnMount: false, // Don't refetch if data exists in cache
     });
 }

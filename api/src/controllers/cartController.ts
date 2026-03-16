@@ -36,7 +36,27 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                                 name: true,
                                 basePrice: true,
                                 sellingPrice: true,
-                                category: true,
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        slug: true,
+                                        image: true,
+                                        images: {
+                                            select: {
+                                                id: true,
+                                                url: true,
+                                                alt: true,
+                                                isPrimary: true,
+                                                displayOrder: true,
+                                            },
+                                            orderBy: [
+                                                { isPrimary: 'desc' },
+                                                { displayOrder: 'asc' },
+                                            ],
+                                        },
+                                    },
+                                },
                                 images: true,
                             },
                         },
@@ -74,7 +94,16 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                         include: {
                             product: {
                                 include: {
-                                    category: true,
+                                    category: {
+                                        include: {
+                                            images: {
+                                                orderBy: [
+                                                    { isPrimary: 'desc' },
+                                                    { displayOrder: 'asc' },
+                                                ],
+                                            },
+                                        },
+                                    },
                                     images: true,
                                 },
                             },

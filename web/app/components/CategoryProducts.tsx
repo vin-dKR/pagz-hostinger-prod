@@ -1,8 +1,9 @@
 "use client";
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
-import { getAllCategories, type Category } from '@/lib/api/categories';
+import { useState } from 'react';
+import { useCategories } from '@/lib/hooks/use-categories';
+import { type Category } from '@/lib/api/categories';
 
 // Color gradients for category cards (cycling through these)
 const colorGradients = [
@@ -18,28 +19,8 @@ const colorGradients = [
 
 export default function CategoryProducts() {
     const [hoveredCard, setHoveredCard] = useState<string | null>(null);
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        async function fetchCategories() {
-            try {
-                setLoading(true);
-                setError(null);
-                const data = await getAllCategories();
-                // Show all categories
-                setCategories(data);
-            } catch (err: any) {
-                console.error('Failed to fetch categories:', err);
-                setError(err.message || 'Failed to load categories');
-            } finally {
-                setLoading(false);
-            }
-        }
-
-        fetchCategories();
-    }, []);
+    // Use TanStack Query hook for caching - reduces AWS bandwidth costs
+    const { data: categories = [], isLoading: loading, error } = useCategories();
 
     // Map category to product format
     const getCategoryImage = (category: Category): string => {
@@ -97,7 +78,7 @@ export default function CategoryProducts() {
             <section className="py-10 bg-white">
                 <div className="w-full mx-auto px-10">
                     <div className="text-center text-gray-500">
-                        <p>{error || 'No categories available'}</p>
+                        <p>{error?.message || 'No categories available'}</p>
                     </div>
                 </div>
             </section>

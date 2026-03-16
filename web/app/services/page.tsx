@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { getAllCategories, type Category } from '@/lib/api/categories';
+import { useCategories } from '@/lib/hooks/use-categories';
+import { type Category } from '@/lib/api/categories';
 import { ArrowRight } from 'lucide-react';
 
 // Color gradients for category cards (cycling through these)
@@ -19,27 +20,8 @@ const colorGradients = [
 
 export default function ServicesPage() {
     const [hoveredCard, setHoveredCard] = useState<string | null>(null);
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        async function fetchCategories() {
-            try {
-                setLoading(true);
-                setError(null);
-                const data = await getAllCategories();
-                setCategories(data);
-            } catch (err: any) {
-                console.error('Failed to fetch categories:', err);
-                setError(err.message || 'Failed to load services');
-            } finally {
-                setLoading(false);
-            }
-        }
-
-        fetchCategories();
-    }, []);
+    // Use TanStack Query hook for caching - reduces AWS bandwidth costs
+    const { data: categories = [], isLoading: loading, error } = useCategories();
 
     const getCategoryImage = (category: Category): string => {
         // Use primary image if available
@@ -99,7 +81,7 @@ export default function ServicesPage() {
             <div className="min-h-screen bg-white py-10">
                 <div className="w-full mx-auto px-10">
                     <div className="text-center text-gray-500">
-                        <p>{error || 'No categories available'}</p>
+                        <p>{error?.message || 'No categories available'}</p>
                     </div>
                 </div>
             </div>

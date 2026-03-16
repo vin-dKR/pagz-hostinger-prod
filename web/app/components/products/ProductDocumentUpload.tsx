@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, File, AlertTriangle, X, Image as ImageIcon, FileText, Loader2 } from "lucide-react";
+import { Upload, File, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info } from "lucide-react";
 import { uploadOrderFilesToS3, deleteOrderFile } from "@/lib/api/uploads";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { isValidFileType, validateFiles, getFileType } from "@/lib/utils/file-validation";
 
 export interface FileDetail {
     file: File;
@@ -25,6 +26,11 @@ interface ProductDocumentUploadProps {
     className?: string;
     uploadedFilesS3?: FileDetail[]
     setUploadedFilesS3: React.Dispatch<React.SetStateAction<FileDetail[]>>
+    // Page controller props
+    maxPages?: number | null; // Max pages allowed (from page controller rules)
+    currentPageCount?: number; // Current total page count
+    pageControllerError?: string | null; // Error message from page controller validation
+    hasPageControllerRules?: boolean; // Whether page controller rules exist for this category
 }
 
 export default function ProductDocumentUpload({
@@ -35,7 +41,11 @@ export default function ProductDocumentUpload({
     maxFiles,
     className = "",
     uploadedFilesS3,
-    setUploadedFilesS3
+    setUploadedFilesS3,
+    maxPages = null,
+    currentPageCount = 0,
+    pageControllerError = null,
+    hasPageControllerRules = false,
 }: ProductDocumentUploadProps) {
     const { isAuthenticated } = useAuth();
     const [totalQuantity, setTotalQuantity] = useState<number>(0);
@@ -60,15 +70,10 @@ export default function ProductDocumentUpload({
         }
     }, [uploadedFilesS3]);
 
-    // Valid image types
-    const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    // File type validation is now handled by utility functions
+    // Keep these for backward compatibility with existing code
+    const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png'];
     const validPDFType = 'application/pdf';
-
-    const isValidFileType = (file: File): boolean => {
-        const isValidImage = validImageTypes.includes(file.type);
-        const isValidPDF = file.type === validPDFType || file.name.toLowerCase().endsWith('.pdf');
-        return isValidImage || isValidPDF;
-    };
 
     const validateFileSize = (file: File, maxSizeMB: number): boolean => {
         const maxSizeBytes = maxSizeMB * 1024 * 1024;
@@ -160,23 +165,30 @@ export default function ProductDocumentUpload({
         const fileDetails: FileDetail[] = [];
         let totalQuantity = 0;
 
-        for (const file of files) {
-            // Validate file type
-            if (!isValidFileType(file)) {
-                throw new Error(`Invalid file type: ${file.name}. Only images (JPG, PNG, WebP, GIF) and PDFs are allowed.`);
+        // Validate file types first (only JPG, PNG, PDF allowed)
+        const validationResult = validateFiles(files);
+        if (!validationResult.valid) {
+            const invalidFileNames = validationResult.invalidFiles.map(f => f.file.name).join(', ');
+            throw new Error(`Invalid file type(s): ${invalidFileNames}. Only JPG, PNG, and PDF files are allowed.`);
+        }
+
+        // Process only valid files
+        const validFiles = validationResult.validFiles;
+
+        for (const file of validFiles) {
+            // File type already validated, get type
+            const fileType = getFileType(file);
+            if (fileType === 'invalid') {
+                throw new Error(`Invalid file type: ${file.name}. Only JPG, PNG, and PDF files are allowed.`);
             }
 
             // Validate file size
-            const maxSize = file.type.startsWith('image/') ? 10 : 50; // Images: 10MB, PDFs: 50MB
+            const maxSize = fileType === 'image' ? 10 : 50; // Images: 10MB, PDFs: 50MB
             if (!validateFileSize(file, maxSize)) {
                 throw new Error(`File ${file.name} exceeds ${maxSize}MB size limit.`);
             }
 
-            // Determine file type
-            const isImage = validImageTypes.includes(file.type);
-            const isPDF = file.type === validPDFType || file.name.toLowerCase().endsWith('.pdf');
-
-            if (isImage) {
+            if (fileType === 'image') {
                 // Image = 1 page
                 fileDetails.push({
                     file,
@@ -186,7 +198,7 @@ export default function ProductDocumentUpload({
                     uploadStatus: 'pending',
                 });
                 totalQuantity += 1;
-            } else if (isPDF) {
+            } else if (fileType === 'pdf') {
                 // Extract PDF page count
                 try {
                     const pageCount = await countPDFPages(file);
@@ -436,9 +448,15 @@ export default function ProductDocumentUpload({
                         )}
                     </label>
                     <p className="mt-2 text-xs text-gray-500">
-                        Supported formats: Images (JPG, PNG, WebP, GIF - Max 10MB) and PDFs (Max 50MB)
+                        Supported formats: Images (JPG, PNG - Max 10MB) and PDFs (Max 50MB)
                         {maxFiles && ` • Max ${maxFiles} files`}
                     </p>
+                    {hasPageControllerRules && maxPages !== null && (
+                        <p className="mt-1 text-xs text-blue-600 flex items-center gap-1">
+                            <Info size={12} />
+                            Maximum {maxPages} page{maxPages !== 1 ? 's' : ''} allowed based on your selections
+                        </p>
+                    )}
                 </div>
 
                 {/* Error Display */}
@@ -446,6 +464,28 @@ export default function ProductDocumentUpload({
                     <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                         <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
                         <p className="text-sm text-red-700">{error}</p>
+                    </div>
+                )}
+
+                {/* Page Controller Error Display */}
+                {pageControllerError && (
+                    <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-red-700">Page Limit Exceeded</p>
+                            <p className="text-sm text-red-600 mt-1">{pageControllerError}</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Page Count Info */}
+                {hasPageControllerRules && currentPageCount > 0 && maxPages !== null && (
+                    <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <Info size={16} className="text-blue-600 shrink-0" />
+                        <p className="text-sm text-blue-700">
+                            Current: <span className="font-semibold">{currentPageCount}</span> page{currentPageCount !== 1 ? 's' : ''} • 
+                            Maximum: <span className="font-semibold">{maxPages}</span> page{maxPages !== 1 ? 's' : ''}
+                        </p>
                     </div>
                 )}
 

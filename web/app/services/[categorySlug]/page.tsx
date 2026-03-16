@@ -7,6 +7,7 @@ import { ProductPageTemplate } from '@/app/components/services/ProductPageTempla
 import { TemplateSelector } from '@/app/components/services/TemplateSelector';
 import { Select, type SelectOption } from '@/app/components/ui/select';
 import { useCategoryTemplates } from '@/lib/hooks/use-category-templates';
+import { usePageController } from '@/lib/hooks/use-page-controller';
 import { ChevronDown } from 'lucide-react';
 import { QuantitySelector } from '@/app/components/services/QuantitySelector';
 import { CopiesSelector } from '@/app/components/services/CopiesSelector';
@@ -20,7 +21,7 @@ import {
     type Category,
     type CategorySpecification,
     type CategoryAddon,
-} from '@/lib/api/categories'; 
+} from '@/lib/api/categories';
 import {
     getAvailableOptions as getAvailableOptionsUtil,
     isSpecificationVisible as isSpecificationVisibleUtil,
@@ -34,9 +35,9 @@ import { Option } from '@/types';
 import { uploadOrderFilesToS3 } from '@/lib/api/uploads';
 import { toastWarning, toastError, toastSuccess, toastPromise } from '@/lib/utils/toast';
 import { redirectToLoginWithReturn } from '@/lib/utils/auth-redirect';
-import { 
-    savePendingPurchaseData, 
-    getPendingPurchaseData, 
+import {
+    savePendingPurchaseData,
+    getPendingPurchaseData,
     clearPendingPurchaseData,
     prepareFilesForStorage,
     restoreFilesFromPendingData,
@@ -58,7 +59,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [category, setCategory] = useState<Category | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    
+
     // Check if this service is coming soon
     const isComingSoon = COMING_SOON_SERVICES.includes(categorySlug);
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
@@ -83,10 +84,23 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [buyNowLoading, setBuyNowLoading] = useState(false);
     const [availableAddons, setAvailableAddons] = useState<CategoryAddon[]>([]);
     const [uploadedFilesS3, setUploadedFilesS3] = useState<FileDetail[]>([]);
-    
+
     // Check if templates exist for this category
     const { data: categoryTemplates = [] } = useCategoryTemplates(categorySlug, !!category);
     const hasTemplates = categoryTemplates.length > 0;
+
+    // Page controller validation
+    const {
+        hasRules: hasPageControllerRules,
+        maxPages,
+        currentPageCount: pageControllerPageCount,
+        validate: pageControllerValidation,
+    } = usePageController({
+        categorySlug,
+        selectedSpecifications,
+        files: uploadedFiles,
+        enabled: !!category,
+    });
 
     // Template selection state
     const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -109,10 +123,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         // Create a File object with stored metadata
                         // We can't restore the actual file content, but we can preserve the size
                         // Create a minimal Blob and then create a File with size override
-                        const blob = new Blob([], { 
-                            type: f.type === 'pdf' ? 'application/pdf' : 'image/jpeg' 
+                        const blob = new Blob([], {
+                            type: f.type === 'pdf' ? 'application/pdf' : 'image/jpeg'
                         });
-                        const file = new File([blob], f.name, { 
+                        const file = new File([blob], f.name, {
                             type: f.type === 'pdf' ? 'application/pdf' : 'image/jpeg',
                             lastModified: Date.now()
                         });
@@ -232,7 +246,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     try {
                         const restoredFiles = await restoreFilesFromPendingData(pendingData.files);
                         const restoredFileDetails: FileDetail[] = [];
-                        
+
                         for (let i = 0; i < pendingData.files.length; i++) {
                             const fileData = pendingData.files[i];
                             const file = restoredFiles[i];
@@ -259,16 +273,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                     const response = await uploadOrderFilesToS3([fileDetail.file]);
                                     if (response.success && response.data?.files?.[0]?.key) {
                                         const key = response.data.files[0].key;
-                                        setUploadedFileDetails(prev => 
-                                            prev.map(fd => 
-                                                fd.id === fileDetail.id 
+                                        setUploadedFileDetails(prev =>
+                                            prev.map(fd =>
+                                                fd.id === fileDetail.id
                                                     ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                                     : fd
                                             )
                                         );
-                                        setUploadedFilesS3(prev => 
-                                            prev.map(fd => 
-                                                fd.id === fileDetail.id 
+                                        setUploadedFilesS3(prev =>
+                                            prev.map(fd =>
+                                                fd.id === fileDetail.id
                                                     ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                                     : fd
                                             )
@@ -276,9 +290,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                     }
                                 } catch (error) {
                                     console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
-                                    setUploadedFileDetails(prev => 
-                                        prev.map(fd => 
-                                            fd.id === fileDetail.id 
+                                    setUploadedFileDetails(prev =>
+                                        prev.map(fd =>
+                                            fd.id === fileDetail.id
                                                 ? { ...fd, uploadStatus: 'error' as const }
                                                 : fd
                                         )
@@ -401,8 +415,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
             // Extract specs from published product rules (SPECIFICATION_COMBINATION with isPublished=true)
             category.pricingRules
-                .filter(rule => 
-                    rule.ruleType === 'SPECIFICATION_COMBINATION' && 
+                .filter(rule =>
+                    rule.ruleType === 'SPECIFICATION_COMBINATION' &&
                     rule.isPublished === true &&
                     rule.isActive === true
                 )
@@ -433,7 +447,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     specsForProduct[slug] = value;
                 }
             });
-            
+
             const products = await getProductsBySpecifications(categorySlug, specsForProduct);
             // Find the first matching product (should be only one if published correctly)
             setMatchingProduct(products.length > 0 ? products[0] : null);
@@ -465,7 +479,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const getAvailableOptions = (spec: CategorySpecification): Option[] => {
         // Use the optimized utility function
         const availableOptions = getAvailableOptionsUtil(spec, selectedSpecifications);
-        
+
         // Map to Option format
         return availableOptions.map((option) => ({
             id: option.id,
@@ -623,6 +637,47 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         setCopies(1);
     };
 
+    // Handle file removal
+    const handleFileRemove = (fileId: string) => {
+        // Find the file detail to get its page count
+        const fileDetailToRemove = uploadedFilesS3.find(fd => fd.id === fileId);
+
+        // Remove file from all file state arrays
+        setUploadedFilesS3(prev => {
+            const updated = prev.filter(fd => fd.id !== fileId);
+            // Recalculate page count after removal
+            const newPageCount = updated.reduce((total, fd) => {
+                return total + (fd.pageCount || (fd.type === 'image' ? 1 : 0));
+            }, 0);
+            setPageCount(newPageCount);
+            setMinQuantityFromFiles(newPageCount > 0 ? newPageCount : 1);
+            return updated;
+        });
+
+        setUploadedFileDetails(prev => prev.filter(fd => fd.id !== fileId));
+
+        // Remove from uploadedFiles array
+        if (fileDetailToRemove) {
+            setUploadedFiles(prev => prev.filter(f => f !== fileDetailToRemove.file));
+        }
+    };
+
+    // Handle edit template form - navigate to template page with current template selected
+    const handleEditTemplateForm = () => {
+        if (selectedTemplateId) {
+            // Store current template data so it can be pre-filled when editing
+            const templateData = {
+                templateId: selectedTemplateId,
+                templateName: selectedTemplateName,
+                templatePreviewImage: selectedTemplatePreviewImage,
+                formData: templateFormData,
+                formImages: templateFormImages,
+            };
+            sessionStorage.setItem('selectedTemplateData', JSON.stringify(templateData));
+            router.push(`/services/${categorySlug}/templates`);
+        }
+    };
+
     // Helper function to get file type for display
     const getFileType = (fileDetails: FileDetail[]): 'pdf' | 'image' | 'mixed' => {
         if (fileDetails.length === 0) return 'pdf';
@@ -697,19 +752,25 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
 
     const handleAddToCart = async () => {
+        // Validate page controller rules if they exist
+        if (hasPageControllerRules && !pageControllerValidation.isValid) {
+            toastError(pageControllerValidation.errorMessage || 'Page limit exceeded. Please reduce the number of pages.');
+            return;
+        }
+
         // Check authentication - if not authenticated, save data and redirect
         if (!isAuthenticated) {
             try {
                 // Prepare files for storage
                 const preparedFiles = uploadedFileDetails.length > 0
                     ? await prepareFilesForStorage(
-                          uploadedFiles,
-                          uploadedFileDetails.map(fd => ({
-                              id: fd.id,
-                              type: fd.type,
-                              pageCount: fd.pageCount,
-                          }))
-                      )
+                        uploadedFiles,
+                        uploadedFileDetails.map(fd => ({
+                            id: fd.id,
+                            type: fd.type,
+                            pageCount: fd.pageCount,
+                        }))
+                    )
                     : [];
 
                 const purchaseData: PendingPurchaseData = {
@@ -795,16 +856,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             if (response.success && response.data?.files?.[0]?.key) {
                                 const key = response.data.files[0].key;
                                 s3Keys.push(key);
-                                setUploadedFilesS3(prev => 
-                                    prev.map(fd => 
-                                        fd.id === fileDetail.id 
+                                setUploadedFilesS3(prev =>
+                                    prev.map(fd =>
+                                        fd.id === fileDetail.id
                                             ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                             : fd
                                     )
                                 );
-                                setUploadedFileDetails(prev => 
-                                    prev.map(fd => 
-                                        fd.id === fileDetail.id 
+                                setUploadedFileDetails(prev =>
+                                    prev.map(fd =>
+                                        fd.id === fileDetail.id
                                             ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                             : fd
                                     )
@@ -835,16 +896,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                     if (response.success && response.data?.files?.[0]?.key) {
                                         const key = response.data.files[0].key;
                                         s3Keys.push(key);
-                                        setUploadedFilesS3(prev => 
-                                            prev.map(fd => 
-                                                fd.id === fileDetail.id 
+                                        setUploadedFilesS3(prev =>
+                                            prev.map(fd =>
+                                                fd.id === fileDetail.id
                                                     ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                                     : fd
                                             )
                                         );
-                                        setUploadedFileDetails(prev => 
-                                            prev.map(fd => 
-                                                fd.id === fileDetail.id 
+                                        setUploadedFileDetails(prev =>
+                                            prev.map(fd =>
+                                                fd.id === fileDetail.id
                                                     ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                                     : fd
                                             )
@@ -869,7 +930,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             // When using templates, don't add template preview image to customDesignUrl
             // The template preview image should only be in metadata.templatePreviewImage
             // customDesignUrl should only contain user-uploaded files
-            
+
             // Prepare metadata with template information
             const hasTemplateFormData = Object.keys(templateFormData).length > 0;
             const metadata: any = {
@@ -907,7 +968,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 selectedTemplateId,
                 metadataKeys: Object.keys(metadata)
             });
-            
+
             const response = await toastPromise(
                 addToCart({
                     productId: matchingProduct.id,
@@ -951,19 +1012,25 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     };
 
     const handleBuyNow = async () => {
+        // Validate page controller rules if they exist
+        if (hasPageControllerRules && !pageControllerValidation.isValid) {
+            toastError(pageControllerValidation.errorMessage || 'Page limit exceeded. Please reduce the number of pages.');
+            return;
+        }
+
         // Check authentication - if not authenticated, save data and redirect
         if (!isAuthenticated) {
             try {
                 // Prepare files for storage
                 const preparedFiles = uploadedFileDetails.length > 0
                     ? await prepareFilesForStorage(
-                          uploadedFiles,
-                          uploadedFileDetails.map(fd => ({
-                              id: fd.id,
-                              type: fd.type,
-                              pageCount: fd.pageCount,
-                          }))
-                      )
+                        uploadedFiles,
+                        uploadedFileDetails.map(fd => ({
+                            id: fd.id,
+                            type: fd.type,
+                            pageCount: fd.pageCount,
+                        }))
+                    )
                     : [];
 
                 const purchaseData: PendingPurchaseData = {
@@ -997,7 +1064,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         }
 
         // Check for missing required specifications
-        const missingSpecs = getMissingRequiredSpecs(); 
+        const missingSpecs = getMissingRequiredSpecs();
         if (missingSpecs.length > 0) {
             const missingNames = missingSpecs.map(spec => spec.name).join(', ');
             toastWarning(`Please select the following required specifications: ${missingNames}`);
@@ -1064,16 +1131,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             if (response.success && response.data?.files?.[0]?.key) {
                                 const key = response.data.files[0].key;
                                 s3Keys.push(key);
-                                setUploadedFilesS3(prev => 
-                                    prev.map(fd => 
-                                        fd.id === fileDetail.id 
+                                setUploadedFilesS3(prev =>
+                                    prev.map(fd =>
+                                        fd.id === fileDetail.id
                                             ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                             : fd
                                     )
                                 );
-                                setUploadedFileDetails(prev => 
-                                    prev.map(fd => 
-                                        fd.id === fileDetail.id 
+                                setUploadedFileDetails(prev =>
+                                    prev.map(fd =>
+                                        fd.id === fileDetail.id
                                             ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                             : fd
                                     )
@@ -1104,16 +1171,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                     if (response.success && response.data?.files?.[0]?.key) {
                                         const key = response.data.files[0].key;
                                         s3Keys.push(key);
-                                        setUploadedFilesS3(prev => 
-                                            prev.map(fd => 
-                                                fd.id === fileDetail.id 
+                                        setUploadedFilesS3(prev =>
+                                            prev.map(fd =>
+                                                fd.id === fileDetail.id
                                                     ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                                     : fd
                                             )
                                         );
-                                        setUploadedFileDetails(prev => 
-                                            prev.map(fd => 
-                                                fd.id === fileDetail.id 
+                                        setUploadedFileDetails(prev =>
+                                            prev.map(fd =>
+                                                fd.id === fileDetail.id
                                                     ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
                                                     : fd
                                             )
@@ -1138,7 +1205,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             // When using templates, don't add template preview image to customDesignUrl
             // The template preview image should only be in metadata.templatePreviewImage
             // customDesignUrl should only contain user-uploaded files
-            
+
             // Prepare metadata with template information
             const hasTemplateFormData = Object.keys(templateFormData).length > 0;
             const buyNowMetadata: any = {
@@ -1166,12 +1233,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     buyNowMetadata.templateFormImages = templateFormImages;
                 }
             }
-            
+
             // Clear any existing buyNow data before creating new one (prevents showing old product)
             if (typeof window !== 'undefined') {
                 sessionStorage.removeItem('buyNow');
             }
-            
+
             // Store product data in sessionStorage for direct checkout (bypass cart)
             const buyNowData = {
                 productId: matchingProduct.id,
@@ -1197,7 +1264,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             setPageCount(0);
             setMinQuantityFromFiles(1);
             setCopies(1);
-            
+
             // Clear pending purchase data after successful buy now
             clearPendingPurchaseData();
 
@@ -1226,17 +1293,17 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             </svg>
                             Coming Soon
                         </div>
-                        
+
                         {/* Main Heading */}
                         <h1 className="text-4xl md:text-5xl lg:text-6xl font-hkgb text-gray-900 mb-4">
                             {serviceName}
                         </h1>
-                        
+
                         {/* Subheading */}
                         <p className="text-xl md:text-2xl text-gray-600 mb-8 max-w-2xl mx-auto">
                             We're working hard to bring you this amazing service. Stay tuned!
                         </p>
-                        
+
                         {/* Decorative Icon/Image */}
                         <div className="mb-12 flex justify-center">
                             <div className="relative w-64 h-64 md:w-80 md:h-80 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-3xl flex items-center justify-center shadow-lg">
@@ -1245,7 +1312,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 </svg>
                             </div>
                         </div>
-                        
+
                         {/* Features Preview */}
                         <div className="grid md:grid-cols-3 gap-6 mb-12 max-w-3xl mx-auto">
                             <div className="p-6 bg-gray-50 rounded-xl">
@@ -1257,7 +1324,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 <h3 className="font-semibold text-gray-900 mb-2">Premium Quality</h3>
                                 <p className="text-sm text-gray-600">High-quality printing with professional finishes</p>
                             </div>
-                            
+
                             <div className="p-6 bg-gray-50 rounded-xl">
                                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 mx-auto">
                                     <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1267,7 +1334,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 <h3 className="font-semibold text-gray-900 mb-2">Fast Delivery</h3>
                                 <p className="text-sm text-gray-600">Quick turnaround times for all orders</p>
                             </div>
-                            
+
                             <div className="p-6 bg-gray-50 rounded-xl">
                                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 mx-auto">
                                     <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1278,7 +1345,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 <p className="text-sm text-gray-600">Affordable rates with no hidden costs</p>
                             </div>
                         </div>
-                        
+
                         {/* CTA Buttons */}
                         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                             <button
@@ -1299,7 +1366,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             </div>
         );
     }
-    
+
     // Filter specifications by display order and visibility
     const visibleSpecifications = useMemo(() => {
         if (!category) return [];
@@ -1307,6 +1374,115 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             .filter(isSpecificationVisible)
             .sort((a, b) => a.displayOrder - b.displayOrder);
     }, [category, selectedSpecifications]);
+
+    // Inline skeleton while category & pricing data load on client
+    if (loading || !category) {
+        return (
+            <div className="min-h-screen bg-white py-8 pb-24">
+                <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
+                    {/* Breadcrumbs skeleton - Hidden on mobile, shown on tablet and above */}
+                    <div className="hidden sm:block mb-6">
+                        <div className="flex items-center gap-2">
+                            <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
+                            <div className="h-3 w-3 rounded-full bg-gray-200 animate-pulse" />
+                            <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+                            <div className="h-3 w-3 rounded-full bg-gray-200 animate-pulse" />
+                            <div className="h-4 w-24 bg-gray-200 rounded animate-pulse" />
+                        </div>
+                    </div>
+
+                    {/* Mobile Breadcrumb skeleton */}
+                    <div className="sm:hidden mb-4">
+                        <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+                    </div>
+
+                    {/* Main Product Section - Matching ProductPageTemplate layout */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 mb-12">
+                        {/* Left Column - Product Images */}
+                        <div className="lg:col-span-6 space-y-4 sm:space-y-5">
+                            <div className="bg-white p-3 sm:p-4 rounded-2xl border border-gray-100">
+                                <div className="relative aspect-square rounded-xl bg-gray-200 animate-pulse" />
+                            </div>
+                        </div>
+
+                        {/* Right Column - Info, upload, config, price, actions */}
+                        <div className="lg:col-span-6">
+                            <div className="sticky top-24 space-y-4 sm:space-y-6">
+                                {/* Title & Description */}
+                                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100">
+                                    <div className="h-8 sm:h-9 w-3/4 bg-gray-200 rounded animate-pulse mb-3" />
+                                    <div className="space-y-2">
+                                        <div className="h-4 w-full bg-gray-200 rounded animate-pulse" />
+                                        <div className="h-4 w-5/6 bg-gray-200 rounded animate-pulse" />
+                                    </div>
+                                </div>
+
+                                {/* Features */}
+                                <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100">
+                                    <div className="h-5 w-24 bg-gray-200 rounded animate-pulse mb-4" />
+                                    <div className="space-y-2">
+                                        {Array.from({ length: 3 }).map((_, i) => (
+                                            <div key={i} className="h-4 w-full bg-gray-200 rounded animate-pulse" />
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* File Upload */}
+                                <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
+                                    <div className="h-5 w-32 bg-gray-200 rounded animate-pulse mb-4" />
+                                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center">
+                                        <div className="h-12 w-12 bg-gray-200 rounded-full animate-pulse mb-3" />
+                                        <div className="h-4 w-40 bg-gray-200 rounded animate-pulse mb-2" />
+                                        <div className="h-3 w-32 bg-gray-200 rounded animate-pulse" />
+                                    </div>
+                                </div>
+
+                                {/* Configuration options */}
+                                <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
+                                    <div className="h-6 w-48 bg-gray-200 rounded animate-pulse mb-4" />
+                                    <div className="space-y-4">
+                                        {Array.from({ length: 3 }).map((_, i) => (
+                                            <div key={i} className="space-y-2">
+                                                <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+                                                <div className="h-10 w-full bg-gray-200 rounded-lg animate-pulse" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Price Section */}
+                                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100">
+                                    <div className="space-y-3">
+                                        {Array.from({ length: 3 }).map((_, i) => (
+                                            <div key={i} className="flex items-center justify-between">
+                                                <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+                                                <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+                                            </div>
+                                        ))}
+                                        <div className="pt-3 border-t border-gray-100">
+                                            <div className="flex items-center justify-between">
+                                                <div className="h-5 w-24 bg-gray-200 rounded animate-pulse" />
+                                                <div className="h-6 w-28 bg-gray-200 rounded animate-pulse" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t border-gray-100">
+                                        <div className="h-3 w-32 bg-gray-200 rounded animate-pulse" />
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex gap-3">
+                                    <div className="h-12 flex-1 bg-gray-200 rounded-lg animate-pulse" />
+                                    <div className="h-12 flex-1 bg-gray-200 rounded-lg animate-pulse" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-white">
@@ -1357,6 +1533,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 uploadedFilesS3={uploadedFilesS3}
                 setUploadedFilesS3={setUploadedFilesS3}
                 hideFileUpload={hasTemplates}
+                pageControllerMaxPages={maxPages}
+                pageControllerCurrentPageCount={pageControllerPageCount}
+                pageControllerError={pageControllerValidation.errorMessage}
+                hasPageControllerRules={hasPageControllerRules}
                 templateSelector={
                     hasTemplates ? (
                         <TemplateSelector
@@ -1378,6 +1558,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 // But keeping it for safety
                                 handleFileSelect(files, 0, undefined);
                             }}
+                            onFileRemove={handleFileRemove}
+                            onEditTemplateForm={handleEditTemplateForm}
                         />
                     ) : undefined
                 }
@@ -1497,7 +1679,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             );
                         }
 
-                        return null; 
+                        return null;
                     })}
 
                     {/* Page Count & Copies (if files are uploaded) */}

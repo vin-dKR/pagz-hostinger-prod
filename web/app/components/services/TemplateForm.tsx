@@ -365,11 +365,11 @@ export function TemplateForm({
                 </div>
             )}
 
-            <div className="flex justify-end gap-2 pt-2 sm:pt-4 border-t">
-                <Button variant="outline" onClick={onBack} className="text-xs sm:text-sm px-3 sm:px-4 py-1.5 sm:py-2">
+            <div className="flex justify-end gap-2 pt-2 sm:pt-4 border-t border-gray-200">
+                <Button variant="outline" onClick={onBack} className="text-xs sm:text-sm px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl">
                     Cancel
                 </Button>
-                <Button onClick={handleSubmit} className="text-xs sm:text-sm px-3 sm:px-4 py-1.5 sm:py-2">
+                <Button onClick={handleSubmit} className="text-xs sm:text-sm px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl">
                     Submit
                 </Button>
             </div>

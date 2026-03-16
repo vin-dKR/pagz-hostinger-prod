@@ -155,7 +155,7 @@ function CartPageContent() {
     const itemHasImages = (item: typeof items[0]): boolean => {
         // Check for uploaded design files
         if (item.customDesignUrl) {
-            if (Array.isArray(item.customDesignUrl)) {
+        if (Array.isArray(item.customDesignUrl)) {
                 if (item.customDesignUrl.length > 0 &&
                     item.customDesignUrl.some(url => url && url.trim() !== '')) {
                     return true;

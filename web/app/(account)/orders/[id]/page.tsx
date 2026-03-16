@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { imageLoader } from "@/lib/utils/image-loader";
+import { getPublicS3Url, isImageFile } from "@/lib/utils/s3";
 import { use, useState, useEffect } from "react";
 import {
     Package,
@@ -28,7 +29,7 @@ interface OrderItem {
     price: number;
     size?: string;
     color?: string;
-    image?: string;
+    categoryImage?: string; // Category image URL
     customDesignUrl?: string[]; // Array of S3 URLs
     variant?: string;
     addonsTotal?: number;
@@ -221,13 +222,25 @@ function transformOrder(order: Order): OrderDetails {
                     ? [metadata.templateFormImages] 
                     : undefined;
             
+            // Extract category image (priority: primary image > first image > legacy image field)
+            const category = (item.product as any)?.category;
+            let categoryImage: string | undefined;
+            if (category) {
+                if (category.images && Array.isArray(category.images) && category.images.length > 0) {
+                    const primaryImage = category.images.find((img: any) => img.isPrimary);
+                    categoryImage = primaryImage?.url || category.images[0]?.url;
+                } else if (category.image) {
+                    categoryImage = category.image;
+                }
+            }
+            
             return {
                 id: item.id,
                 productId: item.productId,
                 name: item.product?.name || "Unknown Product",
                 quantity: item.quantity,
                 price: Number(item.price),
-                image: item.product?.images?.[0]?.url,
+                categoryImage,
                 customDesignUrl: item.customDesignUrl,
                 variant: item.variant?.name,
                 addonsTotal: addonsTotal > 0 ? addonsTotal : undefined,
@@ -280,6 +293,8 @@ function OrderDetailsPageContent({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+
+    console.log('Order Details Page:', order);
 
     useEffect(() => {
         async function fetchOrder() {
@@ -399,20 +414,50 @@ function OrderDetailsPageContent({
                                         className="flex gap-3 sm:gap-4 p-3 sm:p-4 border border-gray-100 rounded-xl hover:border-gray-200 transition-all duration-300"
                                     >
                                         {/* Product Image */}
-                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-lg flex items-center justify-center shrink-0 overflow-hidden relative">
-                                            {item.image ? (
-                                                <Image
-                                                    src={item.image}
-                                                    alt={item.name}
-                                                    fill
-                                                    className="object-cover"
-                                                    sizes="(max-width: 640px) 64px, 80px"
-                                                    loader={imageLoader}
-                                                />
-                                            ) : (
-                                                <Package className="text-gray-400 w-6 h-6 sm:w-8 sm:h-8" />
-                                            )}
-                                        </div>
+                                        {(() => {
+                                            // Helper function to get display image with priority:
+                                            // 1. Category image
+                                            // 2. First custom design file (if image)
+                                            // 3. Placeholder icon
+                                            const getDisplayImage = (): { url: string | null; isS3: boolean } | null => {
+                                                // Priority 1: Category image
+                                                if (item.categoryImage) {
+                                                    return { url: item.categoryImage, isS3: false };
+                                                }
+                                                
+                                                // Priority 2: First custom design file (only if it's an image)
+                                                if (item.customDesignUrl && item.customDesignUrl.length > 0) {
+                                                    const firstFile = Array.isArray(item.customDesignUrl) 
+                                                        ? item.customDesignUrl[0] 
+                                                        : item.customDesignUrl;
+                                                    if (firstFile && isImageFile(firstFile)) {
+                                                        return { url: getPublicS3Url(firstFile), isS3: true };
+                                                    }
+                                                }
+                                                
+                                                return null;
+                                            };
+                                            
+                                            const displayImage = getDisplayImage();
+                                            
+                                            return (
+                                                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-lg flex items-center justify-center shrink-0 overflow-hidden relative">
+                                                    {displayImage ? (
+                                                        <Image
+                                                            src={displayImage.url!}
+                                                            alt={item.name}
+                                                            fill
+                                                            className="object-cover"
+                                                            sizes="(max-width: 640px) 64px, 80px"
+                                                            loader={imageLoader}
+                                                            unoptimized={displayImage.isS3 || displayImage.url!.includes('amazonaws.com') || displayImage.url!.includes('s3.')}
+                                                        />
+                                                    ) : (
+                                                        <Package className="text-gray-400 w-6 h-6 sm:w-8 sm:h-8" />
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
 
                                         {/* Product Details */}
                                         <div className="flex-1 min-w-0">
@@ -477,6 +522,49 @@ function OrderDetailsPageContent({
                                                         )}
                                                     </div>
                                                 )}
+                                                {/* Custom Design Files */}
+                                                {item.customDesignUrl && item.customDesignUrl.length > 0 && (
+                                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                                        <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+                                                            Custom Design Files ({item.customDesignUrl.length})
+                                                        </p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {item.customDesignUrl.map((fileUrl, idx) => {
+                                                                const publicUrl = getPublicS3Url(fileUrl);
+                                                                const isImage = isImageFile(fileUrl);
+                                                                
+                                                                return (
+                                                                    <div key={idx} className="relative w-16 h-16 rounded border border-gray-200 overflow-hidden bg-white">
+                                                                        {isImage ? (
+                                                                            <Image
+                                                                                src={publicUrl}
+                                                                                alt={`Design file ${idx + 1}`}
+                                                                                fill
+                                                                                className="object-cover"
+                                                                                sizes="64px"
+                                                                                unoptimized={publicUrl.includes('amazonaws.com') || publicUrl.includes('s3.')}
+                                                                            />
+                                                                        ) : (
+                                                                            <div className="w-full h-full flex items-center justify-center bg-gray-50">
+                                                                                <Package className="h-5 w-5 text-gray-500" />
+                                                                            </div>
+                                                                        )}
+                                                                        <a
+                                                                            href={publicUrl}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/20 transition-colors"
+                                                                            title="View full size"
+                                                                        >
+                                                                            <Download className="h-4 w-4 text-white opacity-0 hover:opacity-100 transition-opacity" />
+                                                                        </a>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
                                                 <TemplateDataDisplay
                                                     templateId={item.templateId}
                                                     templateName={item.templateName}

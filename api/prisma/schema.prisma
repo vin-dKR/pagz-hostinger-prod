@@ -96,6 +96,7 @@ model Category {
   images         CategoryImage[]
   carousels      Carousel[]
   templates      CategoryTemplate[]
+  pageControllerRules CategoryPageControllerRule[]
 
   @@index([parentId])
   @@index([isActive])
@@ -276,6 +277,27 @@ model CategoryTemplateForm {
 
   @@index([templateId])
   @@map("category_template_forms")
+}
+
+// Category Page Controller Rule model (Page upload limits based on specifications)
+model CategoryPageControllerRule {
+  id              String   @id @default(uuid())
+  categoryId      String
+  specificationSlug String? // Nullable for independent rules
+  optionValue     String? // Nullable for independent rules
+  maxPages        Int
+  isActive        Boolean  @default(true)
+  displayOrder    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@index([categoryId, specificationSlug, optionValue])
+  @@index([categoryId, isActive])
+  @@index([isActive])
+  @@map("category_page_controller_rules")
 }
 
 // Enums for Category Specifications

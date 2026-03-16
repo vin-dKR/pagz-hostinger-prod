@@ -9,7 +9,8 @@ import { FormEvent, useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { X } from 'lucide-react';
-import { getAllCategories, type Category } from '@/lib/api/categories';
+import { useCategories } from '@/lib/hooks/use-categories';
+import { type Category } from '@/lib/api/categories';
 
 interface SearchBarProps {
     searchQuery: string;
@@ -20,23 +21,12 @@ interface SearchBarProps {
 
 export function SearchBar({ searchQuery, setSearchQuery, isMobile = false, onClose }: SearchBarProps) {
     const router = useRouter();
-    const [allCategories, setAllCategories] = useState<Category[]>([]);
     const [searchSuggestions, setSearchSuggestions] = useState<Category[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
-
-    // Fetch all categories
-    useEffect(() => {
-        async function fetchCategories() {
-            try {
-                const categories = await getAllCategories();
-                setAllCategories(categories);
-            } catch (err) {
-                console.error('Failed to fetch categories:', err);
-            }
-        }
-        fetchCategories();
-    }, []);
+    
+    // Use TanStack Query for categories (cached to reduce AWS bandwidth costs)
+    const { data: allCategories = [] } = useCategories();
 
     // Handle search suggestions
     useEffect(() => {

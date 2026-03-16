@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAllCategories, type Category } from "@/lib/api/categories";
+import { useCategories } from "@/lib/hooks/use-categories";
+import { type Category } from "@/lib/api/categories";
 import { type Carousel } from "@/lib/api/carousel";
 import { useCarousel } from "@/lib/hooks/use-carousel";
 import Image from "next/image";
@@ -12,13 +13,13 @@ export default function HeroSection() {
     const router = useRouter();
     const [searchQuery, setSearchQuery] = useState("");
     const [categories, setCategories] = useState<Array<{ name: string; href: string }>>([]);
-    const [loading, setLoading] = useState(true);
-    const [allCategories, setAllCategories] = useState<Category[]>([]);
     const [searchSuggestions, setSearchSuggestions] = useState<Category[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
     // Use TanStack Query for carousel data (cached to reduce bandwidth)
     const { data: carousels = [], isLoading: carouselLoading } = useCarousel();
+    // Use TanStack Query for categories (cached to reduce AWS bandwidth costs)
+    const { data: allCategories = [], isLoading: categoriesLoading } = useCategories();
     
     // For infinite circular carousel, we use a virtual index that can go beyond array bounds
     // We'll duplicate slides at the beginning and end for seamless transitions
@@ -48,44 +49,31 @@ export default function HeroSection() {
     const currentCarouselIndex = getRealIndex(virtualIndex);
     const currentCarousel = carousels[currentCarouselIndex];
 
+    // Process categories when they're loaded from cache
     useEffect(() => {
-        async function fetchTopCategories() {
-            try {
-                setLoading(true);
-                const fetchedCategories = await getAllCategories();
-                setAllCategories(fetchedCategories);
-                
-                // Sort by priority (ascending - lower number = higher priority)
-                // Then take top 3
-                const sortedCategories = fetchedCategories
-                    .filter(cat => cat.isActive)
-                    .sort((a, b) => {
-                        const priorityA = a.priority ?? 0;
-                        const priorityB = b.priority ?? 0;
-                        if (priorityA !== priorityB) {
-                            return priorityA - priorityB;
-                        }
-                        // If priorities are equal, sort by name
-                        return a.name.localeCompare(b.name);
-                    })
-                    .slice(0, 3)
-                    .map(cat => ({
-                        name: cat.name,
-                        href: `/services/${cat.slug}`,
-                    }));
-                
-                setCategories(sortedCategories);
-            } catch (err) {
-                console.error('Failed to fetch categories:', err);
-                // Fallback to empty array or default categories
-                setCategories([]);
-            } finally {
-                setLoading(false);
-            }
+        if (allCategories.length > 0) {
+            // Sort by priority (ascending - lower number = higher priority)
+            // Then take top 3
+            const sortedCategories = allCategories
+                .filter(cat => cat.isActive)
+                .sort((a, b) => {
+                    const priorityA = a.priority ?? 0;
+                    const priorityB = b.priority ?? 0;
+                    if (priorityA !== priorityB) {
+                        return priorityA - priorityB;
+                    }
+                    // If priorities are equal, sort by name
+                    return a.name.localeCompare(b.name);
+                })
+                .slice(0, 3)
+                .map(cat => ({
+                    name: cat.name,
+                    href: `/services/${cat.slug}`,
+                }));
+            
+            setCategories(sortedCategories);
         }
-
-        fetchTopCategories();
-    }, []);
+    }, [allCategories]);
 
     // Auto-rotate carousel (paused when dragging)
     useEffect(() => {
@@ -180,12 +168,20 @@ export default function HeroSection() {
         }
     };
 
-    const goToSlide = (index: number) => {
+    const goToSlide = (index: number, e?: React.MouseEvent) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
         // Convert real index to virtual index (add 1 for the duplicate at start)
         setVirtualIndex(index + 1);
     };
 
-    const goToPrevious = () => {
+    const goToPrevious = (e?: React.MouseEvent) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
         setVirtualIndex((prev) => {
             const next = prev - 1;
             // If we go before the duplicate at start, jump to real last slide without animation
@@ -201,7 +197,11 @@ export default function HeroSection() {
         });
     };
 
-    const goToNext = () => {
+    const goToNext = (e?: React.MouseEvent) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
         setVirtualIndex((prev) => {
             const next = prev + 1;
             // If we reach the duplicate at the end, jump to real first slide without animation
@@ -401,7 +401,7 @@ export default function HeroSection() {
                         {carousels.length > 1 && (
                             <>
                                 <button
-                                    onClick={goToPrevious}
+                                    onClick={(e) => goToPrevious(e)}
                                     className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-black/30 hover:bg-black/50 text-white p-2 rounded-full transition-colors"
                                     aria-label="Previous slide"
                                 >
@@ -419,7 +419,7 @@ export default function HeroSection() {
                                     </svg>
                                 </button>
                                 <button
-                                    onClick={goToNext}
+                                    onClick={(e) => goToNext(e)}
                                     className="absolute right-4 top-1/2 -translate-y-1/2 z-20 bg-black/30 hover:bg-black/50 text-white p-2 rounded-full transition-colors"
                                     aria-label="Next slide"
                                 >
@@ -445,7 +445,7 @@ export default function HeroSection() {
                                 {carousels.map((_, index) => (
                                     <button
                                         key={index}
-                                        onClick={() => goToSlide(index)}
+                                        onClick={(e) => goToSlide(index, e)}
                                         className={`h-2 rounded-full transition-all ${
                                             index === currentCarouselIndex
                                                 ? 'w-8 bg-white'

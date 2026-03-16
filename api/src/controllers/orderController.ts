@@ -487,7 +487,16 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
                     include: {
                         product: {
                             include: {
-                                category: true,
+                                category: {
+                                    include: {
+                                        images: {
+                                            orderBy: [
+                                                { isPrimary: 'desc' },
+                                                { displayOrder: 'asc' },
+                                            ],
+                                        },
+                                    },
+                                },
                             },
                         },
                         variant: true,
@@ -940,7 +949,16 @@ export const getAdminOrder = async (req: Request, res: Response, next: NextFunct
                     include: {
                         product: {
                             include: {
-                                category: true,
+                                category: {
+                                    include: {
+                                        images: {
+                                            orderBy: [
+                                                { isPrimary: 'desc' },
+                                                { displayOrder: 'asc' },
+                                            ],
+                                        },
+                                    },
+                                },
                             },
                         },
                         variant: true,

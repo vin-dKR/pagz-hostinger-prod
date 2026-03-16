@@ -48,6 +48,11 @@ interface ProductPageTemplateProps {
     setUploadedFilesS3: React.Dispatch<React.SetStateAction<FileDetail[]>>
     hideFileUpload?: boolean;
     templateSelector?: React.ReactNode; // Template selector component to show when templates exist
+    // Page controller props
+    pageControllerMaxPages?: number | null;
+    pageControllerCurrentPageCount?: number;
+    pageControllerError?: string | null;
+    hasPageControllerRules?: boolean;
 }
 
 export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
@@ -85,7 +90,11 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
     uploadedFilesS3,
     setUploadedFilesS3,
     hideFileUpload = false,
-    templateSelector
+    templateSelector,
+    pageControllerMaxPages = null,
+    pageControllerCurrentPageCount = 0,
+    pageControllerError = null,
+    hasPageControllerRules = false,
 }) => {
     const router = useRouter();
     const outOfStock = isOutOfStock || (stock !== null && stock !== undefined && stock <= 0);
@@ -196,6 +205,10 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                                 onFileSelect(firstFile);
                                             }
                                         }}
+                                        maxPages={pageControllerMaxPages}
+                                        currentPageCount={pageControllerCurrentPageCount}
+                                        pageControllerError={pageControllerError}
+                                        hasPageControllerRules={hasPageControllerRules}
                                         onQuantityChange={(calculatedQuantity: number) => {
                                             // Call the quantity change callback if provided
                                             if (onQuantityChange && calculatedQuantity > 0) {
@@ -301,8 +314,6 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                     </div>
                 </div>
             </div>
-
-
         </div>
     );
 };

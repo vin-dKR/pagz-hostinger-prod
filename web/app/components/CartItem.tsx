@@ -39,23 +39,6 @@ export default function CartItem({
     const variant = item.variant;
     const productName = product?.name || 'Unknown Product';
 
-    // Debug: Log the entire item to see what metadata is present
-    useEffect(() => {
-        console.log('CartItem - Full item data for:', productName, {
-            itemId: item.id,
-            productId: item.productId,
-            hasMetadata: !!item.metadata,
-            metadata: item.metadata,
-            hasTemplateId: !!item.metadata?.templateId,
-            templateId: item.metadata?.templateId,
-            hasTemplateFormData: !!(item.metadata?.templateFormData && Object.keys(item.metadata.templateFormData || {}).length > 0),
-            templateFormData: item.metadata?.templateFormData,
-            templateFormDataKeys: item.metadata?.templateFormData ? Object.keys(item.metadata.templateFormData) : [],
-            customDesignUrl: item.customDesignUrl,
-            fullItem: item
-        });
-    }, [item, productName]);
-
     // Get uploaded files from cart item (S3 URLs already stored)
     const uploadedFileUrls = Array.isArray(item.customDesignUrl)
         ? item.customDesignUrl
@@ -80,11 +63,11 @@ export default function CartItem({
             // If template has form data, consider it as having "files" (form data replaces file requirement)
             const hasFormData = item.metadata?.templateFormData && Object.keys(item.metadata.templateFormData).length > 0;
             if (hasFormData) {
-                return true;
-            }
+            return true;
+        }
             // Also check for template form images
-            if (item.metadata?.templateFormImages && item.metadata.templateFormImages.length > 0) {
-                return true;
+        if (item.metadata?.templateFormImages && item.metadata.templateFormImages.length > 0) {
+            return true;
             }
             // If template preview image exists, also consider it valid
             if (item.metadata?.templatePreviewImage) {
@@ -96,15 +79,6 @@ export default function CartItem({
     
     // Check if template form data exists (for display purposes)
     const hasTemplateFormData = useMemo(() => {
-        // Always log to see what we have
-        console.log('CartItem - Checking template form data:', {
-            itemId: item.id,
-            hasMetadata: !!item.metadata,
-            metadata: item.metadata,
-            templateId: item.metadata?.templateId,
-            templateFormData: item.metadata?.templateFormData,
-            templateFormDataKeys: item.metadata?.templateFormData ? Object.keys(item.metadata.templateFormData) : []
-        });
         
         const hasData = !!(item.metadata?.templateId && 
                   item.metadata?.templateFormData && 
@@ -117,10 +91,34 @@ export default function CartItem({
     const templateFormImages = item.metadata?.templateFormImages || [];
     const hasTemplate = !!templateId;
     
-    // Get product image
-    const productImage = product?.images?.find(img => img.isPrimary)?.url ||
-        product?.images?.[0]?.url ||
-        '/images/placeholder.png';
+    // Get product image with category fallback
+    const productImage = useMemo(() => {
+        // First try product images
+        if (product?.images && product.images.length > 0) {
+            const primaryImage = product.images.find(img => img.isPrimary);
+            if (primaryImage?.url) return primaryImage.url;
+            if (product.images[0]?.url) return product.images[0].url;
+        }
+        
+        // Fallback to category images (category may not be in type but exists in runtime)
+        const productWithCategory = product as any;
+        if (productWithCategory?.category) {
+            const category = productWithCategory.category;
+            // Check if category has images array
+            if (category.images && Array.isArray(category.images) && category.images.length > 0) {
+                const primaryCategoryImage = category.images.find((img: any) => img.isPrimary);
+                if (primaryCategoryImage?.url) return primaryCategoryImage.url;
+                if (category.images[0]?.url) return category.images[0].url;
+            }
+            // Fallback to legacy category image field
+            if (category.image) {
+                return category.image;
+            }
+        }
+        
+        // Default placeholder
+        return '/images/placeholder.png';
+    }, [product]);
     
     // Determine display image: template form images > uploaded files > product image
     const displayImage = useMemo(() => {
@@ -303,75 +301,57 @@ export default function CartItem({
                         </div>
                     </div>
 
-                    {/* Uploaded Files Section - Show if files are uploaded (S3 URLs stored in cart) */}
-                    {uploadedFileUrls.length > 0 && (
-                        <div className="p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200">
-                            <div className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                                <FileText className="h-4 w-4" />
-                                Uploaded Files ({uploadedFileUrls.length})
-                            </div>
-                            <div className="flex flex-wrap gap-2 sm:gap-3">
-                                {uploadedFileUrls.slice(0, 4).map((s3Key, idx) => {
-                                    const publicUrl = getPublicS3Url(s3Key);
-                                    const isImage = isImageFile(s3Key);
-
-                                    return (
-                                        <div key={idx} className="relative w-12 h-12 sm:w-14 sm:h-14 rounded border border-blue-200 overflow-hidden bg-white">
-                                            {isImage ? (
-                                                <Image
-                                                    src={publicUrl}
-                                                    alt={getFilenameFromS3Key(s3Key)}
-                                                    fill
-                                                    className="object-cover"
-                                                    unoptimized={publicUrl.includes('amazonaws.com') || publicUrl.includes('s3.')}
-                                                    sizes="(max-width: 640px) 48px, 56px"
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center bg-gray-50">
-                                                    <FileText className="h-5 w-5 text-gray-500" />
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-
                     {/* Template/Design Display or Upload Section */}
                     {hasImages || hasTemplateFormData ? (
                         // Show template/design preview if available
-                        <div className="p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
+                        <div className="p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-lg">
                             <div className="flex items-center gap-3">
-                                {displayImage && displayImage !== '/images/placeholder.png' && (
-                                    <div className="w-16 h-16 rounded-lg overflow-hidden bg-white border border-gray-200 shrink-0">
-                                        <Image
-                                            src={displayImage}
-                                            alt={hasTemplate ? 'Template preview' : 'Design preview'}
-                                            width={64}
-                                            height={64}
-                                            className="w-full h-full object-cover"
-                                            unoptimized={displayImage.includes('amazonaws.com') || displayImage.includes('s3.')}
-                                        />
-                                    </div>
-                                )}
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-gray-900">
-                                        {hasTemplate ? 'Template Selected' : 'Design Uploaded'}
+                                        {hasTemplate && 'Template Selected' } 
                                     </p>
                                     {hasTemplate && (
                                         <p className="text-xs text-gray-500 mt-0.5">
                                             Template form completed
                                         </p>
                                     )}
-                                    {!hasTemplate && uploadedFileUrls.length > 0 && (
-                                        <p className="text-xs text-gray-500 mt-0.5">
-                                            {uploadedFileUrls.length} file{uploadedFileUrls.length !== 1 ? 's' : ''} uploaded
-                                        </p>
-                                    )}
                                 </div>
                             </div>
+                            
+                            {/* Show uploaded files preview if not template (only show first file as preview) */}
+                            {!hasTemplate && uploadedFileUrls.length > 0 && (
+                                <div className="border-gray-200">
+                                    <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+                                        Uploaded Files ({uploadedFileUrls.length})
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {uploadedFileUrls.slice(0, 4).map((s3Key, idx) => {
+                                            const publicUrl = getPublicS3Url(s3Key);
+                                            const isImage = isImageFile(s3Key);
+
+                                            return (
+                                                <div key={idx} className="relative w-12 h-12 rounded border border-gray-200 overflow-hidden bg-white">
+                                                    {isImage ? (
+                                                        <Image
+                                                            src={publicUrl}
+                                                            alt={getFilenameFromS3Key(s3Key)}
+                                                            fill
+                                                            className="object-cover"
+                                                            unoptimized={publicUrl.includes('amazonaws.com') || publicUrl.includes('s3.')}
+                                                            sizes="48px"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-gray-50">
+                                                            <FileText className="h-5 w-5 text-gray-500" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                            
                             {/* Show template form data if available */}
                             {hasTemplateFormData && (
                                 <div className="mt-3 pt-3 border-t border-gray-200">
@@ -441,19 +421,6 @@ export default function CartItem({
 
                     {/* Pricing Section - Better organized and more visible */}
                     <div className="mt-4 pt-4 border-t border-gray-100">
-                        {/* Show addons with names and prices if available */}
-                        {item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0 && (
-                            <div className="mb-3 space-y-1">
-                                {item.metadata.priceBreakdown.map((breakdown, i) => (
-                                    <div key={i} className="flex items-center justify-between text-sm text-gray-600">
-                                        <span>+ {breakdown.label}</span>
-                                        <span className="font-medium">
-                                            <PriceDisplay currentPrice={breakdown.value} />
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
 
                         {/* Main price display */}
                         <div className="flex items-center justify-between">
