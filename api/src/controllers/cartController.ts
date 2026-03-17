@@ -602,10 +602,7 @@ export const removeFromCart = async (req: Request, res: Response, next: NextFunc
             // Delete all S3 files (use allSettled to continue even if some fail)
             if (s3Keys.length > 0) {
                 const deleteResults = await Promise.allSettled(
-                    s3Keys.map(key => {
-                        console.log(`[Cart] Deleting S3 file: ${key}`);
-                        return deleteFromS3(key);
-                    })
+                    s3Keys.map(key => deleteFromS3(key))
                 );
 
                 // Log any failures (but don't throw - cart item deletion should succeed)
@@ -678,10 +675,7 @@ export const clearCart = async (req: Request, res: Response, next: NextFunction)
             // Delete all S3 files
             if (s3Keys.length > 0) {
                 const deleteResults = await Promise.allSettled(
-                    s3Keys.map(key => {
-                        console.log(`[Cart] Deleting S3 file: ${key}`);
-                        return deleteFromS3(key);
-                    })
+                    s3Keys.map(key => deleteFromS3(key))
                 );
 
                 // Log any failures (but don't throw - cart clearing should succeed)

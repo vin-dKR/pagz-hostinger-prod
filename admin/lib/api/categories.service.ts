@@ -29,6 +29,7 @@ export interface Category {
     images?: CategoryImage[];
     primaryImage?: CategoryImage | null;
     priority: number;
+    isActive: boolean;
     _count?: {
         products: number;
         specifications: number;
@@ -50,8 +51,15 @@ export interface CreateCategoryData {
 export interface UpdateCategoryData {
     name?: string;
     description?: string;
-    parentId?: string;
+    parentId?: string | null;
     priority?: number;
+}
+
+export interface CategorySearchResult {
+    id: string;
+    name: string;
+    slug: string;
+    parentId?: string | null;
 }
 
 export interface PaginationMeta {
@@ -226,6 +234,36 @@ export async function deleteCategory(id: string): Promise<{ deletedProductsCount
     }
 
     return response.data || { deletedProductsCount: 0 };
+}
+
+/**
+ * Search categories by name (for parent category selector)
+ */
+export async function searchCategories(
+    query: string,
+    excludeId?: string,
+    limit: number = 10
+): Promise<CategorySearchResult[]> {
+    if (!query || query.trim().length === 0) {
+        return [];
+    }
+
+    const params = new URLSearchParams({
+        q: query.trim(),
+        limit: limit.toString(),
+    });
+
+    if (excludeId) {
+        params.set('excludeId', excludeId);
+    }
+
+    const response = await get<CategorySearchResult[]>(`/admin/categories/search?${params.toString()}`);
+
+    if (!response.success || !response.data) {
+        return [];
+    }
+
+    return response.data;
 }
 
 // Specifications

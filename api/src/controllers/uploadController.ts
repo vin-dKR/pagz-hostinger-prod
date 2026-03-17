@@ -62,18 +62,15 @@ export const uploadDesign = async (req: Request, res: Response, next: NextFuncti
     }
 };
 
-// Upload multiple order files
+// Upload multiple order files (supports both authenticated and unauthenticated)
 export const uploadOrderFiles = async (req: Request, res: Response, next: NextFunction) => {
     try {
         if (!req.files) {
             throw new ValidationError("No files uploaded");
         }
 
-        if (!req.user || req.user.type !== "customer") {
-            throw new ValidationError("Customer authentication required");
-        }
-
-        const userId = req.user.id;
+        // Allow unauthenticated uploads with session-based storage
+        const userId = req.user?.id || 'guest';
         const sessionId = (req.body.sessionId as string) || randomUUID();
 
         // Handle both single file array and multiple files
@@ -89,7 +86,8 @@ export const uploadOrderFiles = async (req: Request, res: Response, next: NextFu
             throw new ValidationError("No files uploaded");
         }
 
-        const subfolder = `${userId}`;
+        // Use session-based subfolder for unauthenticated users, userId for authenticated
+        const subfolder = req.user?.id ? `${userId}` : `guest/${sessionId}`;
 
         const uploadResults = await Promise.all(
             files.map(async (file) => {

@@ -76,12 +76,22 @@ export interface Category {
     slug: string;
     description?: string;
     image?: string;
+    parentId?: string | null;
     isActive: boolean;
     priority: number;
     specifications: CategorySpecification[];
     pricingRules: CategoryPricingRule[];
     configuration?: CategoryConfiguration;
     images?: CategoryImage[];
+    // Parent-child hierarchy fields
+    parent?: {
+        id: string;
+        name: string;
+        slug: string;
+    } | null;
+    children?: Category[];
+    childrenCount?: number;
+    hasChildren?: boolean;
 }
 
 export interface PriceCalculationRequest {
@@ -99,6 +109,7 @@ export interface PriceCalculationResponse {
     effectivePageCount?: number;
     originalPageCount?: number;
     hasHalfPageAdjustment?: boolean;
+    baseQuantityMultiplierApplied?: boolean;
 }
 
 export interface CategoryAddon {

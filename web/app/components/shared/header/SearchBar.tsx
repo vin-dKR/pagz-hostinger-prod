@@ -47,7 +47,8 @@ export function SearchBar({ searchQuery, setSearchQuery, isMobile = false, onClo
             setSearchSuggestions([]);
             setShowSuggestions(false);
         }
-    }, [searchQuery, allCategories]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchQuery]); // Only depend on searchQuery, not allCategories to avoid infinite loop
 
     // Close suggestions when clicking outside
     useEffect(() => {

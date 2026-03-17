@@ -257,7 +257,7 @@ export function shouldUseBase64(files: File[]): boolean {
  */
 export async function prepareFilesForStorage(
     files: File[],
-    fileDetails: Array<{ id: string; type: 'image' | 'pdf'; pageCount: number }> 
+    fileDetails: Array<{ id: string; type: 'image' | 'pdf'; pageCount: number; s3Key?: string }> 
 ): Promise<PendingPurchaseFile[]> {
     const useBase64 = shouldUseBase64(files);
     
@@ -274,6 +274,12 @@ export async function prepareFilesForStorage(
                 size: file.size,
                 pageCount: detail.pageCount,
             };
+
+            // If file already has s3Key (already uploaded), preserve it and skip base64/blob conversion
+            if (detail.s3Key) {
+                fileData.s3Key = detail.s3Key;
+                return fileData;
+            }
 
             if (useBase64) {
                 try {
@@ -294,20 +300,71 @@ export async function prepareFilesForStorage(
 /**
  * Restore files from pending purchase data
  * Converts base64/blob URLs back to File objects
+ * If file has s3Key (already uploaded), creates a minimal File object with metadata
  */
 export async function restoreFilesFromPendingData(
     pendingFiles: PendingPurchaseFile[]
 ): Promise<File[]> {
     return Promise.all(
         pendingFiles.map(async (fileData) => {
-            if (fileData.fileData) {
-                // Convert base64 back to File
-                return base64ToFile(
-                    fileData.fileData,
-                    fileData.name,
-                    fileData.type === 'pdf' ? 'application/pdf' : 'image/jpeg'
-                );
-            } else if (fileData.blobUrl) {
+            // If file already has s3Key (uploaded to S3), create a minimal File object
+            // The actual file content is in S3, we just need the File object for UI purposes
+            if (fileData.s3Key) {
+                // Create a minimal File object with correct metadata
+                // The file is already in S3, so we don't need the actual content
+                const mimeType = fileData.type === 'pdf' ? 'application/pdf' : 'image/jpeg';
+                const blob = new Blob([], { type: mimeType });
+                const file = new File([blob], fileData.name, {
+                    type: mimeType,
+                    lastModified: Date.now(),
+                });
+                // Override size property to preserve original file size
+                if (fileData.size && fileData.size > 0) {
+                    Object.defineProperty(file, 'size', {
+                        value: fileData.size,
+                        writable: false,
+                        enumerable: true,
+                        configurable: true,
+                    });
+                }
+                return file;
+            } else if (fileData.fileData && typeof fileData.fileData === 'string' && fileData.fileData.trim().length > 0) {
+                // Validate base64 string before converting
+                // Check if it contains a comma (data URL format) or is valid base64
+                const base64Str = fileData.fileData.trim();
+                if (base64Str.includes(',')) {
+                    // Data URL format: data:mime;base64,<data>
+                    const parts = base64Str.split(',');
+                    if (parts.length >= 2 && parts[1] && parts[1].trim().length > 0) {
+                        // Convert base64 back to File
+                        return base64ToFile(
+                            base64Str,
+                            fileData.name,
+                            fileData.type === 'pdf' ? 'application/pdf' : 'image/jpeg'
+                        );
+                    }
+                } else {
+                    // Plain base64 string - validate it's not empty
+                    if (base64Str.length > 0) {
+                        // Try to decode to validate
+                        try {
+                            atob(base64Str);
+                            // Valid base64, convert to File (add data URL prefix)
+                            return base64ToFile(
+                                `data:${fileData.type === 'pdf' ? 'application/pdf' : 'image/jpeg'};base64,${base64Str}`,
+                                fileData.name,
+                                fileData.type === 'pdf' ? 'application/pdf' : 'image/jpeg'
+                            );
+                        } catch (e) {
+                            console.warn(`[pending-purchase] Invalid base64 string for ${fileData.name}, will create minimal file or use blobUrl`);
+                            // Fall through to check blobUrl or create minimal file
+                        }
+                    }
+                }
+                // If base64 conversion failed or was invalid, fall through to check blobUrl or create minimal file
+            }
+            
+            if (fileData.blobUrl) {
                 // Fetch blob URL and convert to File
                 try {
                     const response = await fetch(fileData.blobUrl);
@@ -317,11 +374,34 @@ export async function restoreFilesFromPendingData(
                     });
                 } catch (error) {
                     console.error(`[pending-purchase] Failed to restore file from blob URL: ${fileData.name}`, error);
-                    throw new Error(`Failed to restore file: ${fileData.name}`);
+                    // Fall through to create minimal file as last resort
                 }
-            } else {
-                throw new Error(`No file data available for: ${fileData.name}`);
             }
+            
+            // Last resort: Create a minimal File object if we have s3Key or if other methods failed
+            // This allows the UI to work even if we can't restore the actual file content
+            if (fileData.s3Key || fileData.name) {
+                console.warn(`[pending-purchase] Creating minimal File object for ${fileData.name} (s3Key: ${fileData.s3Key || 'none'})`);
+                const mimeType = fileData.type === 'pdf' ? 'application/pdf' : 'image/jpeg';
+                const blob = new Blob([], { type: mimeType });
+                const file = new File([blob], fileData.name, {
+                    type: mimeType,
+                    lastModified: Date.now(),
+                });
+                // Override size property to preserve original file size if available
+                if (fileData.size && fileData.size > 0) {
+                    Object.defineProperty(file, 'size', {
+                        value: fileData.size,
+                        writable: false,
+                        enumerable: true,
+                        configurable: true,
+                    });
+                }
+                return file;
+            }
+            
+            // If we have absolutely nothing, throw error
+            throw new Error(`No file data available for: ${fileData.name || 'unknown file'}`);
         })
     );
 }

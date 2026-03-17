@@ -91,8 +91,6 @@ export default function ChunkErrorHandler() {
                 }
 
                 if (chunkUrl) {
-                    console.log(`[ChunkErrorHandler] Attempting to reload chunk (attempt ${retryCountRef.current}/${maxRetries}):`, chunkUrl);
-                    
                     // Wait a bit before retrying (exponential backoff)
                     const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 5000);
                     
@@ -111,7 +109,6 @@ export default function ChunkErrorHandler() {
                         script.integrity = ''; // Clear integrity if present
                         
                         script.onload = () => {
-                            console.log('[ChunkErrorHandler] Chunk reloaded successfully, reloading page');
                             retryCountRef.current = 0; // Reset on success
                             // Reload the page to apply the new chunk
                             setTimeout(() => {

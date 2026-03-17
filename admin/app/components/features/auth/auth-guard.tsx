@@ -13,19 +13,39 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    const token = getAuthToken();
+    let isMounted = true;
 
-    if (token) {
-      // User is already logged in, redirect to dashboard
-      router.replace('/dashboard');
-    }
+    const checkAuth = async () => {
+      try {
+        const token = getAuthToken();
+
+        if (token && isMounted) {
+          // User is already logged in, redirect to dashboard
+          router.replace('/dashboard');
+        }
+      } catch (error) {
+        console.error('[AuthGuard] Error checking authentication:', error);
+        // On error, allow the login page to render
+      }
+    };
+
+    checkAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
   // Don't render children if user is logged in (will redirect)
-  const token = typeof window !== 'undefined' ? getAuthToken() : null;
+  try {
+    const token = typeof window !== 'undefined' ? getAuthToken() : null;
 
-  if (token) {
-    return null; // Will redirect, so don't render
+    if (token) {
+      return null; // Will redirect, so don't render
+    }
+  } catch (error) {
+    console.error('[AuthGuard] Error getting token in render:', error);
+    // On error, allow the login page to render
   }
 
   return <>{children}</>;

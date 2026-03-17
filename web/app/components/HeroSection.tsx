@@ -294,25 +294,13 @@ export default function HeroSection() {
         }
     };
 
-    // Handle carousel click to navigate to linked category
-    const handleCarouselClick = (e: React.MouseEvent) => {
-        // Only navigate if it wasn't a drag operation
-        if (!hasDragged && !isDragging && currentCarousel?.category?.slug) {
-            e.preventDefault();
-            e.stopPropagation();
+    // Handle Buy Now button click
+    const handleBuyNowClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (currentCarousel?.category?.slug) {
             router.push(`/services/${currentCarousel.category.slug}`);
         }
-    };
-
-    // Handle touch click (tap) to navigate to linked category
-    const handleTouchEndWithClick = () => {
-        handleDragEnd();
-        // Check if it was a tap (not a drag) after a short delay
-        setTimeout(() => {
-            if (!hasDragged && currentCarousel?.category?.slug) {
-                router.push(`/services/${currentCarousel.category.slug}`);
-            }
-        }, 100);
     };
 
     return (
@@ -332,19 +320,14 @@ export default function HeroSection() {
                 ) : (
                     <div 
                         ref={carouselRef}
-                        className={`relative w-full h-full rounded-xl md:rounded-2xl overflow-hidden select-none ${
-                            currentCarousel?.category?.slug 
-                                ? 'cursor-pointer' 
-                                : 'cursor-grab active:cursor-grabbing'
-                        }`}
+                        className="relative w-full h-full rounded-xl md:rounded-2xl overflow-hidden select-none cursor-grab active:cursor-grabbing"
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
                         onMouseLeave={handleMouseLeave}
-                        onClick={handleCarouselClick}
                         onTouchStart={handleTouchStart}
                         onTouchMove={handleTouchMove}
-                        onTouchEnd={handleTouchEndWithClick}
+                        onTouchEnd={handleDragEnd}
                     >
                         {/* Carousel Images */}
                         <div 
@@ -384,15 +367,32 @@ export default function HeroSection() {
                             })}
                         </div>
 
-                        {/* Content Overlay */}
+                        {/* Content Overlay - Button and Alt Text in Bottom Right */}
                         {currentCarousel && (
-                            <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                                <div className="text-center px-4 md:px-6 max-w-4xl">
-                                    {currentCarousel.alt && (
-                                        <h2 className="text-2xl md:text-4xl lg:text-5xl font-bold text-white mb-4 md:mb-6 tracking-tight">
-                                            {currentCarousel.alt}
-                                        </h2>
-                                    )}
+                            <div className="absolute inset-0 z-10 pointer-events-none">
+                                {/* Black faded shadow overlay for bottom right area */}
+                                <div className="absolute bottom-0 right-0 w-full h-24 md:h-36 bg-gradient-to-t from-black/80 via-black/60 to-transparent pointer-events-none"></div>
+                                
+                                {/* Content container */}
+                                <div className="absolute bottom-0 right-0 p-4 md:p-6 pointer-events-auto z-20">
+                                    <div className="flex flex-col items-end gap-3 md:gap-4">
+                                        {/* Alt Text */}
+                                        {currentCarousel.alt && (
+                                            <h2 className="text-lg md:text-2xl lg:text-3xl font-bold text-white text-right max-w-md drop-shadow-lg">
+                                                {currentCarousel.alt}
+                                            </h2>
+                                        )}
+                                        
+                                        {/* Order Now Button */}
+                                        {currentCarousel.category?.slug && (
+                                            <button
+                                                onClick={handleBuyNowClick}
+                                                className="px-6 py-3 md:px-8 md:py-4 bg-white text-black font-semibold rounded-lg md:rounded-xl hover:bg-gray-100 transition-colors shadow-lg text-sm md:text-base"
+                                            >
+                                                Order Now
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}

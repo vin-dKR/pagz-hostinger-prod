@@ -95,11 +95,9 @@ async function refreshAuthToken(): Promise<string | null> {
         try {
             // Try Supabase refresh first if configured
             if (supabase) {
-                console.log('[API Client] Attempting Supabase token refresh');
                 const { data, error } = await supabase.auth.refreshSession();
 
                 if (!error && data.session) {
-                    console.log('[API Client] Supabase token refreshed successfully');
                     setAuthToken(data.session.access_token);
                     return data.session.access_token;
                 }
@@ -115,7 +113,6 @@ async function refreshAuthToken(): Promise<string | null> {
                 return null;
             }
 
-            console.log('[API Client] Attempting API token refresh');
             const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
                 method: 'POST',
                 headers: {
@@ -130,7 +127,6 @@ async function refreshAuthToken(): Promise<string | null> {
 
             const data = await response.json();
             if (data.success && data.data?.token) {
-                console.log('[API Client] API token refreshed successfully');
                 setAuthToken(data.data.token);
                 return data.data.token;
             }
@@ -212,7 +208,7 @@ async function fetchAPI<T>(
                     setAuthToken(undefined);
                     // Only redirect if we're on a protected route (not public pages)
                     if (typeof window !== 'undefined') {
-                        const publicRoutes = ['/home', '/', '/coupons', '/products', '/services', '/about', '/privacy', '/terms', '/shipping', '/return', '/refund'];
+                        const publicRoutes = ['/', '/coupons', '/products', '/services', '/about', '/privacy', '/terms', '/shipping', '/return', '/refund'];
                         const isPublicRoute = publicRoutes.some(route => window.location.pathname === route || window.location.pathname.startsWith(route + '/'));
                         if (!isPublicRoute && !window.location.pathname.includes('/auth/login')) {
                             window.location.href = '/auth/login';
@@ -231,7 +227,7 @@ async function fetchAPI<T>(
                     setAuthToken(undefined);
                     // Only redirect if we're on a protected route (not public pages)
                     if (typeof window !== 'undefined') {
-                        const publicRoutes = ['/home', '/', '/coupons', '/products', '/services', '/about', '/privacy', '/terms', '/shipping', '/return', '/refund'];
+                        const publicRoutes = ['/', '/coupons', '/products', '/services', '/about', '/privacy', '/terms', '/shipping', '/return', '/refund'];
                         const isPublicRoute = publicRoutes.some(route => window.location.pathname === route || window.location.pathname.startsWith(route + '/'));
                         if (!isPublicRoute && !window.location.pathname.includes('/auth/login')) {
                             window.location.href = '/auth/login';

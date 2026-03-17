@@ -13,6 +13,7 @@ interface TemplateFormProps {
     initialData?: Record<string, any>;
     initialImages?: string[];
     onSubmit: (data: Record<string, any>, images: string[]) => void;
+    onDraftChange?: (data: Record<string, any>, images: string[]) => void;
     onBack: () => void;
     onChangeTemplate: () => void;
 }
@@ -22,6 +23,7 @@ export function TemplateForm({
     initialData = {},
     initialImages = [],
     onSubmit,
+    onDraftChange,
     onBack,
     onChangeTemplate,
 }: TemplateFormProps) {
@@ -37,6 +39,13 @@ export function TemplateForm({
         setFormData(initialData);
         setFormImages(initialImages);
     }, [initialData, initialImages]);
+
+    // Persist draft while typing (so navigation/login redirect won’t wipe it)
+    useEffect(() => {
+        if (!onDraftChange) return;
+        onDraftChange(formData, formImages);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [formData, formImages]);
 
     const handleFieldChange = (fieldId: string, value: any) => {
         setFormData((prev) => ({ ...prev, [fieldId]: value }));

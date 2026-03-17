@@ -107,7 +107,6 @@ export function useCheckout(): UseCheckoutReturn {
         // If URL has items param, user is coming from cart - clear buyNow and use cart
         if (itemsParam) {
             if (buyNowData) {
-                console.log('[useCheckout] Coming from cart, clearing buyNow data');
                 sessionStorage.removeItem('buyNow');
                 setBuyNowData(null);
             }

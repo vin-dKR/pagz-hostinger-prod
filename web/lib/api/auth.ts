@@ -97,3 +97,24 @@ export async function updateNotificationPreferences(preferences: NotificationPre
 export async function deleteAccount(): Promise<ApiResponse<void>> {
   return del<void>('/auth/user/account');
 }
+
+/**
+ * Request password reset (forgot password)
+ */
+export async function forgotPassword(email: string): Promise<ApiResponse<{ message: string; requiresSignup?: boolean }>> {
+  return post<{ message: string; requiresSignup?: boolean }>('/auth/forgot-password', { email });
+}
+
+/**
+ * Verify OTP
+ */
+export async function verifyOTP(email: string, otp: string): Promise<ApiResponse<{ message: string }>> {
+  return post<{ message: string }>('/auth/verify-otp', { email, otp });
+}
+
+/**
+ * Reset password with OTP
+ */
+export async function resetPassword(email: string, otp: string, password: string): Promise<ApiResponse<{ message: string }>> {
+  return post<{ message: string }>('/auth/reset-password', { email, otp, password });
+}

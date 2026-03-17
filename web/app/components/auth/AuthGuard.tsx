@@ -24,13 +24,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             const timer = setTimeout(() => {
                 const redirectPath = getRedirectPath();
                 if (redirectPath) {
-                    console.log('[AuthGuard] Redirecting to saved path:', redirectPath);
                     clearRedirectPath();
                     // Use window.location for full page reload to ensure proper navigation
                     window.location.href = redirectPath;
                 } else {
-                    console.log('[AuthGuard] No redirect path found, redirecting to /home');
-                    router.replace("/home");
+                    router.replace("/");
                 }
             }, 100);
 

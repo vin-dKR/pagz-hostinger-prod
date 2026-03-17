@@ -19,14 +19,6 @@ export default function LoginPage() {
             </p>
           </div>
           <LoginForm />
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{' '}
-              <Link href="/signup" className="font-medium text-primary hover:underline">
-                Sign up
-              </Link>
-            </p>
-          </div>
         </div>
       </div>
     </AuthGuard>

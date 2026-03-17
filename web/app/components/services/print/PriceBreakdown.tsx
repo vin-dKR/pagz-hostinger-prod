@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { Receipt } from 'lucide-react';
+import { Receipt, Loader2 } from 'lucide-react';
 
 interface PriceBreakdownItem {
     label: string;
@@ -18,6 +18,7 @@ interface PriceBreakdownProps {
     originalPageCount?: number; // Original page count before half-page adjustment
     copies?: number; // Number of copies
     hasHalfPageAdjustment?: boolean; // Whether half-page adjustment was applied
+    calculatingPrice?: boolean; // Whether price is being calculated
     className?: string;
 }
 
@@ -31,6 +32,7 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
     originalPageCount,
     copies,
     hasHalfPageAdjustment = false,
+    calculatingPrice = false,
     className,
 }) => {
     const showDetailedCalculation = basePrice !== undefined && basePrice > 0;
@@ -46,9 +48,12 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
             <h3 className="font-semibold text-lg text-gray-900 flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-gray-600" />
                 Price Breakdown
+                {calculatingPrice && (
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500 ml-2" />
+                )}
             </h3>
 
-            <div className="space-y-3">
+            <div className={cn('space-y-3', calculatingPrice && 'opacity-60 pointer-events-none')}>
                 {/* Informational items (value = 0, like half-page adjustments) - Show first 
                 // WIP: Half-page adjustment items are not being shown in the price breakdown
                 {items.filter((item) => item.value === 0 && !item.label.toLowerCase().startsWith('addon')).length > 0 && (
@@ -156,13 +161,22 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
                     <div className="flex justify-between items-center">
                         <div className="font-semibold text-gray-900 text-lg">Total Price</div>
                         <div className="text-right">
-                            <div className="font-semibold text-blue-500 text-2xl">
-                                {currency}{Number(total || 0).toFixed(2)}
-                            </div>
-                            {showDetailedCalculation && calculatedQuantity > 1 && (
-                                <div className="text-gray-500 text-xs mt-1">
-                                    {currency}{basePrice.toFixed(2)} per page × {calculatedQuantity} {calculatedQuantity === 1 ? 'page' : 'pages'}
+                            {calculatingPrice ? (
+                                <div className="flex items-center gap-2 text-gray-500">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span className="text-sm font-medium">Calculating...</span>
                                 </div>
+                            ) : (
+                                <>
+                                    <div className="font-semibold text-blue-500 text-2xl">
+                                        {currency}{Number(total || 0).toFixed(2)}
+                                    </div>
+                                    {showDetailedCalculation && calculatedQuantity > 1 && (
+                                        <div className="text-gray-500 text-xs mt-1">
+                                            {currency}{basePrice.toFixed(2)} per page × {calculatedQuantity} {calculatedQuantity === 1 ? 'page' : 'pages'}
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>

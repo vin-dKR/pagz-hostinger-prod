@@ -17,7 +17,6 @@ import {
     updateCarouselApi,
     uploadCarouselImageApi,
     getCarouselApi,
-    type Carousel,
     type CreateCarouselData,
     type UpdateCarouselData,
 } from '@/lib/api/carousel.service';
@@ -72,21 +71,40 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
             const loadCarousel = async () => {
                 try {
                     setIsLoadingCarousel(true);
+                    setError(null);
                     const carousel = await getCarouselApi(carouselId);
+                    // Update form data with loaded carousel data
                     setFormData({
-                        imageUrl: carousel.imageUrl,
-                        alt: carousel.alt || '',
-                        categoryId: carousel.categoryId || '',
-                        displayOrder: carousel.displayOrder,
-                        isActive: carousel.isActive,
+                        imageUrl: carousel?.imageUrl || '',
+                        alt: carousel?.alt || '',
+                        categoryId: carousel?.categoryId || '',
+                        displayOrder: carousel?.displayOrder ?? 0,
+                        isActive: carousel?.isActive ?? true,
                     });
                 } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Failed to load carousel');
+                    const errorMessage = err instanceof Error ? err.message : 'Failed to load carousel';
+                    setError(errorMessage);
+                    // Reset form on error
+                    setFormData({
+                        imageUrl: '',
+                        alt: '',
+                        categoryId: '',
+                        displayOrder: 0,
+                        isActive: true,
+                    });
                 } finally {
                     setIsLoadingCarousel(false);
                 }
             };
             loadCarousel();
+        } else {
+            setFormData({
+                imageUrl: '',
+                alt: '',
+                categoryId: '',
+                displayOrder: 0,
+                isActive: true,
+            });
         }
     }, [carouselId]);
 
@@ -144,17 +162,16 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                 return;
             }
 
-            const payload: CreateCarouselData | UpdateCarouselData = {
-                imageUrl: formData.imageUrl,
-                alt: formData.alt.trim() || undefined,
-                categoryId: formData.categoryId || null,
-                displayOrder: formData.displayOrder,
-                isActive: formData.isActive,
-            };
-
             if (carouselId) {
+                const updatePayload: UpdateCarouselData = {
+                    imageUrl: formData.imageUrl,
+                    alt: formData.alt.trim() || null,
+                    categoryId: formData.categoryId && formData.categoryId.trim() ? formData.categoryId : null,
+                    displayOrder: formData.displayOrder,
+                    isActive: formData.isActive,
+                };
                 await toastPromise(
-                    updateCarouselApi(carouselId, payload),
+                    updateCarouselApi(carouselId, updatePayload),
                     {
                         loading: 'Updating carousel item...',
                         success: 'Carousel item updated successfully',
@@ -162,8 +179,15 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                     }
                 );
             } else {
+                const createPayload: CreateCarouselData = {
+                    imageUrl: formData.imageUrl,
+                    alt: formData.alt.trim() || undefined,
+                    categoryId: formData.categoryId && formData.categoryId.trim() ? formData.categoryId : null,
+                    displayOrder: formData.displayOrder,
+                    isActive: formData.isActive,
+                };
                 await toastPromise(
-                    createCarouselApi(payload),
+                    createCarouselApi(createPayload),
                     {
                         loading: 'Creating carousel item...',
                         success: 'Carousel item created successfully',
@@ -192,7 +216,7 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
             <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-6">
                     {error && (
-                        <Alert variant="destructive">
+                        <Alert variant="error">
                             {error}
                         </Alert>
                     )}

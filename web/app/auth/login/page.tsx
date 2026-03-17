@@ -8,7 +8,6 @@ import AuthFormButton from "../../components/auth/AuthFormButton";
 import AuthGuard from "../../components/auth/AuthGuard";
 import { EmailIcon, PasswordIcon } from "../../components/icons"
 import { useAuth } from "../../../contexts/AuthContext";
-import { signInWithGoogle, signInWithFacebook } from "../../../lib/supabase";
 
 export default function LoginPage() {
     const { login } = useAuth();
@@ -37,31 +36,12 @@ export default function LoginPage() {
         }
     };
 
-    const handleGoogleLogin = async () => {
-        try {
-            setError(null);
-            await signInWithGoogle();
-        } catch (err: any) {
-            setError(err.message || "Google sign in failed. Please try again.");
-        }
-    };
-
-    const handleFacebookLogin = async () => {
-        try {
-            setError(null);
-            await signInWithFacebook();
-        } catch (err: any) {
-            setError(err.message || "Facebook sign in failed. Please try again.");
-        }
-    };
-
     return (
         <AuthGuard>
             <AuthLayout
                 title="Welcome to"
                 subtitle={"PAGZ"}
-                onGoogleAuth={handleGoogleLogin}
-                onFacebookAuth={handleFacebookLogin}
+                socialLogin={false}
                 error={error}
             >
                 <form onSubmit={handleSubmit} className="space-y-2 sm:space-y-2.5">

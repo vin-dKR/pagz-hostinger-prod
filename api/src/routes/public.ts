@@ -13,7 +13,6 @@ import {
     getCategoryAddonsPublic,
 } from "../controllers/categoryController.js";
 import { getCategoryTemplatesBySlug } from "../controllers/categoryTemplateController.js";
-import { getCategoryPageControllerRulesBySlug } from "../controllers/categoryPageControllerController.js";
 import {
     getOffers,
     getOfferById,
@@ -34,7 +33,6 @@ router.get("/categories/:slug/products", getProductsBySpecifications);
 router.post("/categories/:slug/calculate-price", calculateCategoryPricePublic);
 router.get("/categories/:slug/addons", getCategoryAddonsPublic);
 router.get("/categories/:slug/templates", getCategoryTemplatesBySlug);
-router.get("/categories/:slug/page-controller", getCategoryPageControllerRulesBySlug);
 router.get("/products", getProducts);
 router.get("/products/:id", getProduct);
 router.get("/products/:id/addons", getProductAddons);

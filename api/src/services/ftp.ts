@@ -35,9 +35,6 @@ export async function uploadToFTP(
             client.ftp.verbose = true;
         }
         
-        // Connect to FTP server with extended timeout configuration
-        console.log(`[FTP] Connecting to ${FTP_CONFIG.host}:${FTP_CONFIG.port} as ${FTP_CONFIG.user}`);
-        
         // Configure FTP access options with timeout
         const accessOptions: AccessOptions = {
             ...FTP_CONFIG,
@@ -45,14 +42,9 @@ export async function uploadToFTP(
         };
         
         await client.access(accessOptions);
-        console.log("[FTP] Connection successful");
-        
-        // Set socket timeout after connection (for long uploads)
-        // Note: basic-ftp handles timeouts internally, but we can track progress
         
         // Get current working directory
         const pwd = await client.pwd();
-        console.log(`[FTP] Current directory: ${pwd}`);
         
         // If we're already in /public_html, don't try to cd into it again
         // This prevents going into /public_html/public_html
@@ -60,31 +52,25 @@ export async function uploadToFTP(
         
         if (pwd === '/public_html' || pwd.endsWith('/public_html')) {
             // We're already in public_html, no need to change
-            console.log(`[FTP] Already in ${FTP_REMOTE_DIR}, no need to change directory`);
             actualDirectory = pwd;
         } else {
             // Try to change to public_html
             try {
                 await client.cd(FTP_REMOTE_DIR);
                 actualDirectory = await client.pwd();
-                console.log(`[FTP] Changed to directory: ${actualDirectory}`);
             } catch (cdError) {
                 // Try absolute path from current directory
                 try {
                     const absolutePath = pwd.endsWith('/') ? `${pwd}${FTP_REMOTE_DIR}` : `${pwd}/${FTP_REMOTE_DIR}`;
                     await client.cd(absolutePath);
                     actualDirectory = await client.pwd();
-                    console.log(`[FTP] Changed to directory: ${actualDirectory}`);
                 } catch (absError) {
                     // Try to create it
-                    console.log(`[FTP] Directory ${FTP_REMOTE_DIR} not found, attempting to create it...`);
                     try {
                         await client.ensureDir(FTP_REMOTE_DIR);
                         await client.cd(FTP_REMOTE_DIR);
                         actualDirectory = await client.pwd();
-                        console.log(`[FTP] Successfully created and changed to directory: ${actualDirectory}`);
                     } catch (createError) {
-                        console.warn(`[FTP] Could not access or create directory ${FTP_REMOTE_DIR}. Using current directory: ${pwd}`);
                         actualDirectory = pwd;
                     }
                 }
@@ -105,18 +91,14 @@ export async function uploadToFTP(
             }
         }
         
-        // Upload the file with progress tracking
-        const fileSize = fs.statSync(localFilePath).size;
-        const fileSizeKB = (fileSize / 1024).toFixed(2);
-        const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
-        console.log(`[FTP] Starting upload of ${remoteFileName} (${fileSizeKB} KB / ${fileSizeMB} MB)`);
-        
         // Upload the file
         // Note: basic-ftp uses passive mode by default which is required for most servers
         // The timeout might be due to large files or slow connection
+        const fileSize = fs.statSync(localFilePath).size;
+        const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
+        
         try {
             await client.uploadFrom(localFilePath, remoteFileName);
-            console.log(`[FTP] Upload completed successfully`);
         } catch (uploadError) {
             const errorMsg = uploadError instanceof Error ? uploadError.message : String(uploadError);
             console.error(`[FTP] Upload error: ${errorMsg}`);
@@ -134,7 +116,6 @@ export async function uploadToFTP(
             ? (baseDir ? `${baseDir}/${remoteSubDir}/${remoteFileName}` : `${remoteSubDir}/${remoteFileName}`)
             : (baseDir ? `${baseDir}/${remoteFileName}` : remoteFileName);
         
-        console.log(`[FTP] File uploaded successfully: ${remotePath}`);
         return remotePath;
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -169,21 +150,10 @@ export async function testFTPConnection(): Promise<boolean> {
             client.ftp.verbose = true;
         }
         
-        console.log(`[FTP Test] Attempting to connect to ${FTP_CONFIG.host}:${FTP_CONFIG.port} as ${FTP_CONFIG.user}`);
         await client.access(FTP_CONFIG);
-        console.log("[FTP Test] Connection successful");
         
         // Get current working directory
         const pwd = await client.pwd();
-        console.log(`[FTP Test] Current directory: ${pwd}`);
-        
-        // List available files/directories in current directory
-        try {
-            const list = await client.list();
-            console.log(`[FTP Test] Available items in current directory:`, list.map(item => item.name));
-        } catch (listError) {
-            console.log(`[FTP Test] Could not list directory contents`);
-        }
         
         // Try to change to public_html - try multiple approaches
         let actualDirectory = pwd;
@@ -194,7 +164,6 @@ export async function testFTPConnection(): Promise<boolean> {
             await client.cd(FTP_REMOTE_DIR);
             actualDirectory = await client.pwd(); // Get actual path
             foundDirectory = true;
-            console.log(`[FTP Test] ✓ Successfully changed to directory: ${actualDirectory}`);
         } catch (cdError) {
             // Strategy 2: Try absolute path from current directory
             try {
@@ -202,26 +171,19 @@ export async function testFTPConnection(): Promise<boolean> {
                 await client.cd(absolutePath);
                 actualDirectory = await client.pwd();
                 foundDirectory = true;
-                console.log(`[FTP Test] ✓ Successfully changed to directory: ${actualDirectory}`);
             } catch (absError) {
                 // Strategy 3: Try to create it
-                console.log(`[FTP Test] Directory ${FTP_REMOTE_DIR} not found, attempting to create it...`);
                 try {
                     await client.ensureDir(FTP_REMOTE_DIR);
                     await client.cd(FTP_REMOTE_DIR);
                     actualDirectory = await client.pwd();
                     foundDirectory = true;
-                    console.log(`[FTP Test] ✓ Successfully created and changed to directory: ${actualDirectory}`);
                 } catch (createError) {
-                    console.warn(`[FTP Test] ⚠ Could not access or create directory ${FTP_REMOTE_DIR}`);
-                    console.warn(`[FTP Test] Will use current directory: ${pwd}`);
                     // Continue with current directory - this is fine for testing
                     actualDirectory = pwd;
                 }
             }
         }
-        
-        console.log(`[FTP Test] Working directory: ${actualDirectory}`);
         
         return true;
     } catch (error) {

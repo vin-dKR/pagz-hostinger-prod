@@ -294,8 +294,6 @@ function OrderDetailsPageContent({
     const [error, setError] = useState<string | null>(null);
     const [downloadingInvoice, setDownloadingInvoice] = useState(false);
 
-    console.log('Order Details Page:', order);
-
     useEffect(() => {
         async function fetchOrder() {
             try {

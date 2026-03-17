@@ -915,6 +915,7 @@ export const calculateCategoryPrice = async (
         let totalPrice = 0;
         const breakdown: Array<{ label: string; value: number }> = [];
         let baseApplied = false;
+        let baseQuantityMultiplierApplied = false;
 
         // Add half-page adjustment breakdown entry if applicable
         if (halfPageResult.hasHalfPageOption) {
@@ -950,6 +951,7 @@ export const calculateCategoryPrice = async (
                 const finalPrice = rule.quantityMultiplier ? basePrice * quantity : basePrice;
                 totalPrice += finalPrice;
                 baseApplied = true;
+                baseQuantityMultiplierApplied = Boolean(rule.quantityMultiplier);
                 breakdown.push({
                     label: "Base Price",
                     value: finalPrice,
@@ -1011,6 +1013,7 @@ export const calculateCategoryPrice = async (
             totalPrice: Number(totalPrice.toFixed(2)),
             breakdown,
             quantity,
+            baseQuantityMultiplierApplied,
         });
     } catch (error) {
         next(error);
@@ -1104,10 +1107,67 @@ export const upsertCategoryConfiguration = async (
     }
 };
 
+// ==================== Admin API Endpoints ====================
+
+/**
+ * Search categories by name for admin panel (e.g., parent category selector)
+ * Returns matching categories with basic info, excluding specified category ID
+ */
+export const searchCategories = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const query = (req.query.q as string) || "";
+        const excludeId = (req.query.excludeId as string) || "";
+        const limit = parseInt((req.query.limit as string) || "10", 10);
+
+        if (!query || query.trim().length === 0) {
+            return sendSuccess(res, []);
+        }
+
+        const where: Prisma.CategoryWhereInput = {
+            name: {
+                contains: query.trim(),
+            },
+        };
+
+        // Exclude specified category ID (to prevent selecting self as parent)
+        if (excludeId) {
+            where.id = {
+                not: excludeId,
+            };
+        }
+
+        const categories = await prisma.category.findMany({
+            where,
+            select: {
+                id: true,
+                name: true,
+                slug: true,
+                parentId: true,
+            },
+            take: limit,
+            orderBy: [
+                { name: "asc" },
+            ],
+        });
+
+        return sendSuccess(res, categories);
+    } catch (error) {
+        next(error);
+    }
+};
+
 // ==================== Public API Endpoints ====================
 
 /**
  * Get category by slug with all specifications, options, pricing rules, and configuration
+ * Handles parent-child hierarchy:
+ * - If category has children: Returns category with children array (for subcategory grid)
+ * - If category has no children: Returns category with full specifications, pricing rules, etc.
+ * - Includes parent info if category is a child
  */
 export const getCategoryBySlug = async (
     req: Request,
@@ -1116,13 +1176,109 @@ export const getCategoryBySlug = async (
 ) => {
     try {
         const slug = getParamAsString(req.params.slug, "Category slug");
+        const { DEFAULT_CATEGORY_ORDER_BY } = await import("../utils/category-ordering.js");
 
+        // First, get category with children count to determine if it's a parent
+        const categoryWithCount = await prisma.category.findUnique({
+            where: {
+                slug,
+                isActive: true,
+            },
+            include: {
+                parent: {
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        children: true,
+                    },
+                },
+            },
+        });
+
+        if (!categoryWithCount) {
+            throw new NotFoundError("Category not found");
+        }
+
+        const hasChildren = categoryWithCount._count.children > 0;
+
+        // If category has children, return parent category with children array
+        if (hasChildren) {
+            const parentCategory = await prisma.category.findUnique({
+                where: {
+                    slug,
+                    isActive: true,
+                },
+                include: {
+                    parent: {
+                        select: {
+                            id: true,
+                            name: true,
+                            slug: true,
+                        },
+                    },
+                    children: {
+                        where: { isActive: true },
+                        select: {
+                            id: true,
+                            name: true,
+                            slug: true,
+                            description: true,
+                            image: true,
+                            priority: true,
+                            images: {
+                                where: { isPrimary: true },
+                                take: 1,
+                                select: {
+                                    url: true,
+                                    alt: true,
+                                },
+                                orderBy: { displayOrder: "asc" },
+                            },
+                        },
+                        orderBy: DEFAULT_CATEGORY_ORDER_BY,
+                    },
+                    images: {
+                        orderBy: [
+                            { displayOrder: "asc" },
+                            { createdAt: "asc" },
+                        ],
+                    },
+                },
+            });
+
+            if (!parentCategory) {
+                throw new NotFoundError("Category not found");
+            }
+
+            // Transform response to include helper fields
+            const transformed = {
+                ...parentCategory,
+                childrenCount: parentCategory.children.length,
+                hasChildren: true,
+            };
+
+            return sendSuccess(res, transformed);
+        }
+
+        // If category has no children, return full category data with specifications, pricing, etc.
         const category = await prisma.category.findUnique({
             where: {
                 slug,
                 isActive: true,
             },
             include: {
+                parent: {
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                    },
+                },
                 specifications: {
                     where: {
                         options: {
@@ -1160,7 +1316,15 @@ export const getCategoryBySlug = async (
             throw new NotFoundError("Category not found");
         }
 
-        return sendSuccess(res, category);
+        // Transform response to include helper fields
+        const transformed = {
+            ...category,
+            childrenCount: 0,
+            hasChildren: false,
+            children: [], // Empty array for consistency
+        };
+
+        return sendSuccess(res, transformed);
     } catch (error) {
         next(error);
     }
@@ -1302,6 +1466,7 @@ export const calculateCategoryPricePublic = async (
         let totalPrice = 0;
         const breakdown: Array<{ label: string; value: number }> = [];
         let baseApplied = false;
+        let baseQuantityMultiplierApplied = false;
 
         // Add half-page adjustment breakdown entry if applicable
         if (halfPageResult.hasHalfPageOption) {
@@ -1337,6 +1502,7 @@ export const calculateCategoryPricePublic = async (
                 const finalPrice = rule.quantityMultiplier ? basePrice * effectiveQuantity : basePrice;
                 totalPrice += finalPrice;
                 baseApplied = true;
+                baseQuantityMultiplierApplied = Boolean(rule.quantityMultiplier);
                 breakdown.push({
                     label: `Base Price${effectivePageCount > 0 ? ` (${effectivePageCount} pages × ${copies || 1} copies)` : ""}`,
                     value: finalPrice,
@@ -1402,6 +1568,7 @@ export const calculateCategoryPricePublic = async (
             effectivePageCount: effectivePageCount > 0 ? effectivePageCount : undefined,
             originalPageCount: pageCount || undefined,
             hasHalfPageAdjustment: halfPageResult.hasHalfPageOption,
+            baseQuantityMultiplierApplied,
         });
     } catch (error) {
         next(error);

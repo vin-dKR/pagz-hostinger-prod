@@ -9,7 +9,14 @@ import type { DashboardOverviewResponse } from '../api/dashboard.service';
  */
 export async function getDashboardOverview(): Promise<DashboardOverviewResponse | null> {
     try {
-        const cookieStore = await cookies();
+        let cookieStore;
+        try {
+            cookieStore = await cookies();
+        } catch (cookieError) {
+            console.error('[DASHBOARD] Error accessing cookies:', cookieError);
+            return null;
+        }
+
         const token = cookieStore.get('admin_token')?.value;
 
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
@@ -25,37 +32,83 @@ export async function getDashboardOverview(): Promise<DashboardOverviewResponse 
 
         // Create abort controller for timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        let timeoutId: NodeJS.Timeout | null = null;
 
-        const res = await fetch(`${baseUrl}/admin/dashboard/overview`, {
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            cache: 'no-store',
-            signal: controller.signal,
-        });
+        try {
+            timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-        clearTimeout(timeoutId);
+            const res = await fetch(`${baseUrl}/admin/dashboard/overview`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                cache: 'no-store',
+                signal: controller.signal,
+            });
 
-        if (!res.ok) {
-            const errorText = await res.text().catch(() => 'Unknown error');
-            console.error(`[DASHBOARD] API returned ${res.status}:`, errorText);
-            throw new Error(`Failed to load dashboard overview (${res.status}): ${errorText.substring(0, 100)}`);
-        }
-
-        const body = await res.json();
-
-        if (body && typeof body === 'object') {
-            // Our API typically wraps data in { success, data }
-            if (body.data) {
-                return body.data as DashboardOverviewResponse;
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
             }
-        }
 
-        return body as DashboardOverviewResponse;
+            if (!res.ok) {
+                // Handle 401 Unauthorized (session expired/invalid)
+                if (res.status === 401) {
+                    console.error('[DASHBOARD] Session expired or invalid (401). User needs to login again.');
+                    // Return null instead of throwing - let client handle redirect
+                    return null;
+                }
+
+                let errorText = 'Unknown error';
+                try {
+                    errorText = await res.text();
+                } catch (textError) {
+                    console.error('[DASHBOARD] Error reading error response:', textError);
+                }
+
+                console.error(`[DASHBOARD] API returned ${res.status}:`, errorText.substring(0, 200));
+                
+                // For other errors, return null to allow graceful degradation
+                return null;
+            }
+
+            let body;
+            try {
+                body = await res.json();
+            } catch (jsonError) {
+                console.error('[DASHBOARD] Error parsing JSON response:', jsonError);
+                return null;
+            }
+
+            if (body && typeof body === 'object') {
+                // Our API typically wraps data in { success, data }
+                if (body.data) {
+                    return body.data as DashboardOverviewResponse;
+                }
+            }
+
+            return body as DashboardOverviewResponse;
+        } catch (fetchError) {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+
+            // Handle abort errors (timeout)
+            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+                console.error('[DASHBOARD] Request timeout');
+                return null;
+            }
+
+            // Handle network errors
+            if (fetchError instanceof TypeError) {
+                console.error('[DASHBOARD] Network error:', fetchError.message);
+                return null;
+            }
+
+            throw fetchError;
+        }
     } catch (error) {
-        console.error('[DASHBOARD] Error fetching dashboard overview:', error);
+        console.error('[DASHBOARD] Unexpected error fetching dashboard overview:', error);
         // Return null instead of throwing to allow the page to render with loading states
         // The components will handle null data gracefully
         return null;

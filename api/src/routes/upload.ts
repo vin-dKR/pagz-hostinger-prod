@@ -15,7 +15,8 @@ const router: IRouter = Router();
 // Order file upload routes (customer)
 // NOTE: These upload to temp location - files should ideally only be uploaded after order confirmation
 router.post("/order-file", customerAuth, uploadOrderFile.single("file"), uploadDesign);
-router.post("/order-files", customerAuth, uploadOrderFile.array("files", 10), uploadOrderFiles);
+// Allow unauthenticated uploads for guest users (session-based storage)
+router.post("/order-files", uploadOrderFile.array("files", 10), uploadOrderFiles);
 
 // Review image upload routes (customer)
 router.post("/review-images", customerAuth, uploadImage.array("files", 5), uploadReviewImages);

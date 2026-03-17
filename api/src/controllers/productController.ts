@@ -6,12 +6,17 @@ import { prisma } from "../services/prisma.js";
 import { getParamAsString } from "../utils/db-utils.js";
 
 // Get all categories (public) - Optimized with select to reduce data transfer
+// Only returns parent categories (with children) and standalone categories (no parent, no children)
+// Child categories are excluded from this endpoint
 export const getCategories = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { DEFAULT_CATEGORY_ORDER_BY } = await import("../utils/category-ordering.js");
         
         const categories = await prisma.category.findMany({
-            where: { isActive: true },
+            where: { 
+                isActive: true,
+                parentId: null, // Only show categories without a parent
+            },
             select: {
                 id: true,
                 name: true,
@@ -31,11 +36,46 @@ export const getCategories = async (req: Request, res: Response, next: NextFunct
                     },
                     orderBy: { displayOrder: "asc" },
                 },
+                // Include children count and basic children info
+                _count: {
+                    select: {
+                        children: true,
+                    },
+                },
+                // Include children array with basic info for parent categories
+                children: {
+                    where: { isActive: true },
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        description: true,
+                        image: true,
+                        priority: true,
+                        images: {
+                            where: { isPrimary: true },
+                            take: 1,
+                            select: {
+                                url: true,
+                                alt: true,
+                            },
+                            orderBy: { displayOrder: "asc" },
+                        },
+                    },
+                    orderBy: DEFAULT_CATEGORY_ORDER_BY,
+                },
             },
             orderBy: DEFAULT_CATEGORY_ORDER_BY,
         });
 
-        return sendSuccess(res, categories);
+        // Transform response to include helper fields
+        const transformedCategories = categories.map(category => ({
+            ...category,
+            childrenCount: category._count.children,
+            hasChildren: category._count.children > 0,
+        }));
+
+        return sendSuccess(res, transformedCategories);
     } catch (error) {
         next(error);
     }

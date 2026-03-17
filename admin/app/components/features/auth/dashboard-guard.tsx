@@ -13,16 +13,42 @@ import { PageLoading } from '@/app/components/ui/loading';
 export function DashboardGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [isChecking, setIsChecking] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    const token = getAuthToken();
+    let isMounted = true;
 
-    if (!token) {
-      // User is not logged in, redirect to login
-      router.replace('/login');
-    } else {
-      setIsChecking(false);
-    }
+    const checkAuth = async () => {
+      try {
+        const token = getAuthToken();
+
+        if (!token) {
+          // User is not logged in, redirect to login
+          if (isMounted) {
+            router.replace('/login');
+          }
+        } else {
+          if (isMounted) {
+            setIsChecking(false);
+            setHasError(false);
+          }
+        }
+      } catch (error) {
+        console.error('[DashboardGuard] Error checking authentication:', error);
+        if (isMounted) {
+          setHasError(true);
+          setIsChecking(false);
+          // On error, redirect to login for safety
+          router.replace('/login');
+        }
+      }
+    };
+
+    checkAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
   // Show loading while checking authentication
@@ -30,10 +56,20 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
     return <PageLoading />;
   }
 
+  // If there was an error, don't render children
+  if (hasError) {
+    return null;
+  }
+
   // Check again in case token was removed
-  const token = getAuthToken();
-  if (!token) {
-    return null; // Will redirect
+  try {
+    const token = getAuthToken();
+    if (!token) {
+      return null; // Will redirect
+    }
+  } catch (error) {
+    console.error('[DashboardGuard] Error getting token in render:', error);
+    return null;
   }
 
   return <>{children}</>;

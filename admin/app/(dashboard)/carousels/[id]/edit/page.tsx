@@ -4,7 +4,9 @@
 
 import { CarouselForm } from '@/app/components/features/carousel/carousel-form';
 
-export default function EditCarouselPage({ params }: { params: { id: string } }) {
+export default async function EditCarouselPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params;
+    
     return (
         <div className="space-y-8 max-w-[1200px]">
             <div>
@@ -14,7 +16,7 @@ export default function EditCarouselPage({ params }: { params: { id: string } })
                 </p>
             </div>
 
-            <CarouselForm carouselId={params.id} />
+            <CarouselForm carouselId={id} />
         </div>
     );
 }

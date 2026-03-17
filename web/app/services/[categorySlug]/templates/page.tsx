@@ -27,6 +27,8 @@ export default function TemplatePage({ params }: TemplatePageProps) {
     const [formImages, setFormImages] = useState<string[]>([]);
     const [showUploadDialog, setShowUploadDialog] = useState(false);
     const [uploadedFilesS3, setUploadedFilesS3] = useState<FileDetail[]>([]);
+    const [pendingUploadPageCount, setPendingUploadPageCount] = useState<number>(0);
+    const [canContinueFromUpload, setCanContinueFromUpload] = useState(false);
 
     // Use TanStack Query for data fetching with caching
     const { 
@@ -36,6 +38,27 @@ export default function TemplatePage({ params }: TemplatePageProps) {
     } = useCategoryTemplates(categorySlug, true);
 
     const error = queryError ? (queryError instanceof Error ? queryError.message : 'Failed to load templates') : null;
+
+    // Restore draft/template selection if user navigates away (e.g., login redirect) and comes back
+    useEffect(() => {
+        try {
+            const draft = sessionStorage.getItem(`templateDraftData:${categorySlug}`);
+            if (!draft) return;
+            const data = JSON.parse(draft);
+            if (data?.templateId && Array.isArray(templates) && templates.length > 0) {
+                const tpl = templates.find(t => t.id === data.templateId) || null;
+                if (tpl) {
+                    setSelectedTemplate(tpl);
+                    setFormData(data.formData || {});
+                    setFormImages(data.formImages || []);
+                    setDialogOpen(true);
+                }
+            }
+        } catch (e) {
+            // ignore draft parsing errors
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [categorySlug, templates.length]);
 
     const handleTemplateClick = (template: CategoryTemplate) => {
         setSelectedTemplate(template);
@@ -55,6 +78,7 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                 formImages: images,
             };
             sessionStorage.setItem('selectedTemplateData', JSON.stringify(templateData));
+            sessionStorage.removeItem(`templateDraftData:${categorySlug}`);
             
             // Close dialog and navigate back to the service page
             setDialogOpen(false);
@@ -90,37 +114,44 @@ export default function TemplatePage({ params }: TemplatePageProps) {
 
     const handleFileSelect = (files: File[], pageCount: number, fileDetails?: FileDetail[]) => {
         if (fileDetails && fileDetails.length > 0) {
+            setUploadedFilesS3(fileDetails);
+            setPendingUploadPageCount(pageCount || 0);
             // Check if all files have been uploaded (have s3Key)
             const allFilesUploaded = fileDetails.every(fd => fd.uploadStatus === 'uploaded' && fd.s3Key);
             
             if (allFilesUploaded) {
-                // Store upload data in sessionStorage to pass back to service page
-                const uploadData = {
-                    uploadedFiles: fileDetails.map(fd => ({
-                        name: fd.file.name,
-                        s3Key: fd.s3Key,
-                        type: fd.type,
-                        pageCount: fd.pageCount,
-                        id: fd.id,
-                        size: fd.file.size, // Store file size
-                    })),
-                    pageCount,
-                };
-                sessionStorage.setItem('uploadedFileData', JSON.stringify(uploadData));
-                
-                // Navigate back to service page
-                setShowUploadDialog(false);
-                router.push(`/services/${categorySlug}`);
+                setCanContinueFromUpload(true);
             } else {
                 // Files are still uploading, wait for them to complete
                 // The callback will be called again when uploads complete
-                console.log('Files are still uploading, waiting for completion...');
+                setCanContinueFromUpload(false);
             }
         }
     };
 
+    const handleContinueFromUpload = () => {
+        const completed = uploadedFilesS3.filter(fd => fd.uploadStatus === 'uploaded' && fd.s3Key);
+        if (completed.length === 0) return;
+
+        const uploadData = {
+            uploadedFiles: completed.map(fd => ({
+                name: fd.file.name,
+                s3Key: fd.s3Key,
+                type: fd.type,
+                pageCount: fd.pageCount,
+                id: fd.id,
+                size: fd.file.size,
+            })),
+            pageCount: pendingUploadPageCount,
+        };
+        sessionStorage.setItem('uploadedFileData', JSON.stringify(uploadData));
+        setShowUploadDialog(false);
+        router.push(`/services/${categorySlug}`);
+    };
+
     const handleCloseUploadDialog = () => {
         setShowUploadDialog(false);
+        setCanContinueFromUpload(false);
     };
 
     return (
@@ -228,6 +259,20 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                         initialData={formData}
                                         initialImages={formImages}
                                         onSubmit={handleFormSubmit}
+                                        onDraftChange={(data, images) => {
+                                            try {
+                                                sessionStorage.setItem(
+                                                    `templateDraftData:${categorySlug}`,
+                                                    JSON.stringify({
+                                                        templateId: selectedTemplate.id,
+                                                        formData: data,
+                                                        formImages: images,
+                                                    })
+                                                );
+                                            } catch (e) {
+                                                // ignore quota errors
+                                            }
+                                        }}
                                         onBack={handleBackToGallery}
                                         onChangeTemplate={handleChangeTemplate}
                                     />
@@ -252,6 +297,17 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                 uploadedFilesS3={uploadedFilesS3}
                                 setUploadedFilesS3={setUploadedFilesS3}
                             />
+                            <div className="flex justify-end gap-2 pt-2">
+                                <Button variant="outline" onClick={handleCloseUploadDialog}>
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={handleContinueFromUpload}
+                                    disabled={!canContinueFromUpload}
+                                >
+                                    Continue
+                                </Button>
+                            </div>
                         </div>
                     </DialogContent>
                 </Dialog>

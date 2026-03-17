@@ -110,6 +110,7 @@ import {
     publishPricingRuleAsProduct,
     updateProductFromPricingRule,
     syncProductFromCategory,
+    searchCategories,
 } from "../controllers/categoryController.js";
 
 // Upload Management (admin only)
@@ -141,13 +142,6 @@ import {
     upsertTemplateForm,
     deleteTemplateForm,
 } from "../controllers/categoryTemplateController.js";
-import {
-    getCategoryPageControllerRules,
-    getCategoryPageControllerRule,
-    createCategoryPageControllerRule,
-    updateCategoryPageControllerRule,
-    deleteCategoryPageControllerRule,
-} from "../controllers/categoryPageControllerController.js";
 
 const router: IRouter = Router();
 
@@ -164,6 +158,7 @@ router.get("/dashboard/overview", getDashboardOverview);
 
 // Product & Category Management (admin only)
 router.get("/categories", getAdminCategories);
+router.get("/categories/search", searchCategories);
 router.post("/categories", createCategoties);
 router.put("/categories/:id", updateCategory);
 router.delete("/categories/:id", deleteCategory);
@@ -298,13 +293,6 @@ router.delete("/categories/:categoryId/templates/:templateId", deleteCategoryTem
 router.get("/categories/:categoryId/templates/:templateId/form", getTemplateForm);
 router.put("/categories/:categoryId/templates/:templateId/form", upsertTemplateForm);
 router.delete("/categories/:categoryId/templates/:templateId/form", deleteTemplateForm);
-
-// Category Page Controller Management (admin only)
-router.get("/categories/:categoryId/page-controller", getCategoryPageControllerRules);
-router.post("/categories/:categoryId/page-controller", createCategoryPageControllerRule);
-router.get("/categories/:categoryId/page-controller/:ruleId", getCategoryPageControllerRule);
-router.put("/categories/:categoryId/page-controller/:ruleId", updateCategoryPageControllerRule);
-router.delete("/categories/:categoryId/page-controller/:ruleId", deleteCategoryPageControllerRule);
 
 // Publish Pricing Rule as Product (admin only)
 router.get("/categories/:categoryId/pricing-rules/:ruleId/preview-product", previewProductFromPricingRule);

@@ -12,6 +12,7 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Alert } from '@/app/components/ui/alert';
 import { createCategory, getCategories, type CreateCategoryData, type Category } from '@/lib/api/categories.service';
+import { ParentCategorySelector } from './parent-category-selector';
 
 
 export function CreateCategoryForm() {
@@ -52,6 +53,8 @@ export function CreateCategoryForm() {
     parentId: undefined,
     priority: autoDisplayOrder,
   });
+  
+  const [parentId, setParentId] = useState<string | null>(null);
 
   // Update priority when autoDisplayOrder changes
   useEffect(() => {
@@ -72,7 +75,7 @@ export function CreateCategoryForm() {
       const payload: CreateCategoryData = {
         name: formData.name.trim(),
         description: formData.description?.trim() || undefined,
-        parentId: formData.parentId || undefined,
+        parentId: parentId || undefined,
         priority: formData.priority || autoDisplayOrder,
       };
 
@@ -130,22 +133,14 @@ export function CreateCategoryForm() {
             />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="parentId">Parent Category ID (optional)</Label>
-              <Input
-                id="parentId"
-                value={formData.parentId || ''}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    parentId: e.target.value || undefined,
-                  }))
-                }
-                placeholder="Parent category ID (for subcategories)"
-              />
-            </div>
+          <ParentCategorySelector
+            value={parentId}
+            onChange={setParentId}
+            label="Parent Category (optional)"
+            placeholder="Search for a parent category..."
+          />
 
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="priority">Display Order</Label>
               <Input
@@ -162,7 +157,7 @@ export function CreateCategoryForm() {
                 min="0"
               />
               <p className="text-xs text-gray-500">
-                Higher values appear first. Auto-set to {autoDisplayOrder} (max + 1), but you can customize it.
+                Lower values appear first. Auto-set to {autoDisplayOrder} (max + 1), but you can customize it.
               </p>
             </div>
           </div>

@@ -4,6 +4,9 @@ import { supabase, supabaseAdmin } from "../services/supabase.js";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { ValidationError, UnauthorizedError, NotFoundError } from "../utils/errors.js";
+import { sendPasswordResetOTP } from "../services/email.js";
+import { generateOTP, storeOTP, checkOTP } from "../services/otp.js";
+
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
@@ -514,6 +517,158 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
                 token,
             },
             "Token refreshed successfully"
+        );
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Forgot Password - Request password reset
+export const forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            throw new ValidationError("Email is required");
+        }
+
+        // Check if user exists in our database
+        const user = await prisma.user.findUnique({
+            where: { email },
+        });
+
+        // Only send OTP if user exists in database
+        if (!user) {
+            return sendSuccess(
+                res,
+                { 
+                    message: "No account found with this email. Please create an account first.",
+                    requiresSignup: true 
+                },
+                "Account not found"
+            );
+        }
+
+        // User exists - generate and send OTP
+        try {
+            // Generate OTP
+            const otp = generateOTP();
+
+            // Store OTP in database
+            await storeOTP(email, otp);
+
+            // Send OTP email
+            await sendPasswordResetOTP(email, otp);
+
+            return sendSuccess(
+                res,
+                { 
+                    message: "Password reset OTP has been sent to your email. Please check your inbox.",
+                    requiresSignup: false 
+                },
+                "Password reset OTP sent"
+            );
+        } catch (err) {
+            console.error('[FORGOT_PASSWORD] Error in OTP process:', err);
+            console.error('[FORGOT_PASSWORD] Error details:', {
+                message: err instanceof Error ? err.message : 'Unknown error',
+                stack: err instanceof Error ? err.stack : undefined,
+            });
+            
+            // Return error so user knows something went wrong
+            return sendError(
+                res,
+                "Failed to send password reset OTP. Please try again later.",
+                500
+            );
+        }
+    } catch (error) {
+        console.error('[FORGOT_PASSWORD] Unexpected error:', error);
+        next(error);
+    }
+};
+
+// Verify OTP (without resetting password)
+export const verifyOTPController = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            throw new ValidationError("Email and OTP are required");
+        }
+
+        const isValidOTP = await checkOTP(email, otp);
+
+        if (!isValidOTP) {
+            return sendError(res, "Invalid or expired OTP", 400);
+        }
+        return sendSuccess(
+            res,
+            { message: "OTP verified successfully" },
+            "OTP verified"
+        );
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Reset Password - Set new password with OTP
+export const resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { email, otp, password } = req.body;
+
+        if (!email || !otp || !password) {
+            throw new ValidationError("Email, OTP, and password are required");
+        }
+
+        if (password.length < 6) {
+            throw new ValidationError("Password must be at least 6 characters long");
+        }
+
+        // Verify OTP
+        const { verifyOTP } = await import("../services/otp.js");
+        const isValidOTP = await verifyOTP(email, otp);
+
+        if (!isValidOTP) {
+            return sendError(res, "Invalid or expired OTP", 400);
+        }
+
+        // Find user in our database
+        const user = await prisma.user.findUnique({
+            where: { email },
+        });
+
+        if (!user) {
+            return sendError(res, "User not found", 404);
+        }
+
+        // Update password in Supabase if user has Supabase ID
+        if (user.supabaseId && supabaseAdmin) {
+            try {
+                const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+                    user.supabaseId,
+                    { password }
+                );
+
+                if (updateError) {
+                    console.error('Supabase password update error:', updateError);
+                    return sendError(res, updateError.message || "Failed to reset password. Please try again.", 400);
+                }
+            } catch (err) {
+                console.error('Error updating password in Supabase:', err);
+                return sendError(res, "Failed to reset password. Please try again.", 400);
+            }
+        } else {
+            // If no Supabase ID, this is a local user
+            // For local users, we would need to hash and store the password
+            // For now, we'll return an error if Supabase is required
+            return sendError(res, "Password reset requires Supabase authentication", 400);
+        }
+
+        return sendSuccess(
+            res,
+            { message: "Password has been reset successfully" },
+            "Password reset successful"
         );
     } catch (error) {
         next(error);

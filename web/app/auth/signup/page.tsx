@@ -8,7 +8,6 @@ import AuthFormButton from "../../components/auth/AuthFormButton";
 import AuthGuard from "../../components/auth/AuthGuard";
 import { UserIcon, EmailIcon, PhoneIcon, PasswordIcon } from "../../components/icons"
 import { useAuth } from "../../../contexts/AuthContext";
-import { signInWithGoogle, signInWithFacebook } from "../../../lib/supabase";
 
 export default function SignupPage() {
     const { register } = useAuth();
@@ -68,31 +67,12 @@ export default function SignupPage() {
         }
     };
 
-    const handleGoogleSignup = async () => {
-        try {
-            setError(null);
-            await signInWithGoogle();
-        } catch (err: any) {
-            setError(err.message || "Google sign up failed. Please try again.");
-        }
-    };
-
-    const handleFacebookSignup = async () => {
-        try {
-            setError(null);
-            await signInWithFacebook();
-        } catch (err: any) {
-            setError(err.message || "Facebook sign up failed. Please try again.");
-        }
-    };
-
     return (
         <AuthGuard>
             <AuthLayout
                 title="Create Account"
                 subtitle="Join PAGZ today"
-                onGoogleAuth={handleGoogleSignup}
-                onFacebookAuth={handleFacebookSignup}
+                socialLogin={false}
                 error={error}
             >
                 <form onSubmit={handleSubmit} className="space-y-2 sm:space-y-2.5">

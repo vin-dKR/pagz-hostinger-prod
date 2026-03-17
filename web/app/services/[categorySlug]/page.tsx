@@ -1,14 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductPageTemplate } from '@/app/components/services/ProductPageTemplate';
 import { TemplateSelector } from '@/app/components/services/TemplateSelector';
 import { Select, type SelectOption } from '@/app/components/ui/select';
 import { useCategoryTemplates } from '@/lib/hooks/use-category-templates';
-import { usePageController } from '@/lib/hooks/use-page-controller';
-import { ChevronDown } from 'lucide-react';
 import { QuantitySelector } from '@/app/components/services/QuantitySelector';
 import { CopiesSelector } from '@/app/components/services/CopiesSelector';
 import { QuantityWithCopiesSelector } from '@/app/components/services/QuantityWithCopiesSelector';
@@ -22,6 +20,7 @@ import {
     type CategorySpecification,
     type CategoryAddon,
 } from '@/lib/api/categories';
+import { SubcategoryGrid } from '@/app/components/services/SubcategoryGrid';
 import {
     getAvailableOptions as getAvailableOptionsUtil,
     isSpecificationVisible as isSpecificationVisibleUtil,
@@ -88,19 +87,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     // Check if templates exist for this category
     const { data: categoryTemplates = [] } = useCategoryTemplates(categorySlug, !!category);
     const hasTemplates = categoryTemplates.length > 0;
-
-    // Page controller validation
-    const {
-        hasRules: hasPageControllerRules,
-        maxPages,
-        currentPageCount: pageControllerPageCount,
-        validate: pageControllerValidation,
-    } = usePageController({
-        categorySlug,
-        selectedSpecifications,
-        files: uploadedFiles,
-        enabled: !!category,
-    });
 
     // Template selection state
     const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -208,11 +194,13 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
                 // Initialize default selections for required specifications
                 const defaults: Record<string, any> = {};
-                data.specifications
-                    .filter(spec => spec.isRequired && spec.type === 'SELECT' && spec.options.length > 0)
-                    .forEach(spec => {
-                        defaults[spec.slug] = spec.options[0]?.value || '';
-                    });
+                if (data.specifications && Array.isArray(data.specifications)) {
+                    data.specifications
+                        .filter(spec => spec.isRequired && spec.type === 'SELECT' && spec.options.length > 0)
+                        .forEach(spec => {
+                            defaults[spec.slug] = spec.options[0]?.value || '';
+                        });
+                }
                 setSelectedSpecifications(defaults);
 
                 // Fetch ADDON rules for this category (used to display page range variations)
@@ -251,12 +239,15 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             const fileData = pendingData.files[i];
                             const file = restoredFiles[i];
                             if (file && fileData) {
+                                // If file already has s3Key (uploaded before login), preserve it
+                                const hasS3Key = !!fileData.s3Key;
                                 restoredFileDetails.push({
                                     file,
                                     type: fileData.type,
                                     pageCount: fileData.pageCount,
                                     id: fileData.id,
-                                    uploadStatus: 'pending' as const,
+                                    s3Key: fileData.s3Key,
+                                    uploadStatus: hasS3Key ? ('uploaded' as const) : ('pending' as const),
                                 });
                             }
                         }
@@ -267,38 +258,41 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             setUploadedFilesS3(restoredFileDetails);
                             setPageCount(pendingData.pageCount || 0);
 
-                            // Upload files to S3 now that user is authenticated
-                            restoredFileDetails.forEach(async (fileDetail) => {
-                                try {
-                                    const response = await uploadOrderFilesToS3([fileDetail.file]);
-                                    if (response.success && response.data?.files?.[0]?.key) {
-                                        const key = response.data.files[0].key;
+                            // Only upload files to S3 if they don't already have s3Key
+                            const filesToUpload = restoredFileDetails.filter(fd => !fd.s3Key);
+                            if (filesToUpload.length > 0) {
+                                filesToUpload.forEach(async (fileDetail) => {
+                                    try {
+                                        const response = await uploadOrderFilesToS3([fileDetail.file]);
+                                        if (response.success && response.data?.files?.[0]?.key) {
+                                            const key = response.data.files[0].key;
+                                            setUploadedFileDetails(prev =>
+                                                prev.map(fd =>
+                                                    fd.id === fileDetail.id
+                                                        ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                        : fd
+                                                )
+                                            );
+                                            setUploadedFilesS3(prev =>
+                                                prev.map(fd =>
+                                                    fd.id === fileDetail.id
+                                                        ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                        : fd
+                                                )
+                                            );
+                                        }
+                                    } catch (error) {
+                                        console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
                                         setUploadedFileDetails(prev =>
                                             prev.map(fd =>
                                                 fd.id === fileDetail.id
-                                                    ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
-                                                    : fd
-                                            )
-                                        );
-                                        setUploadedFilesS3(prev =>
-                                            prev.map(fd =>
-                                                fd.id === fileDetail.id
-                                                    ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
+                                                    ? { ...fd, uploadStatus: 'error' as const }
                                                     : fd
                                             )
                                         );
                                     }
-                                } catch (error) {
-                                    console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
-                                    setUploadedFileDetails(prev =>
-                                        prev.map(fd =>
-                                            fd.id === fileDetail.id
-                                                ? { ...fd, uploadStatus: 'error' as const }
-                                                : fd
-                                        )
-                                    );
-                                }
-                            });
+                                });
+                            }
                         }
                     } catch (fileError) {
                         console.error('Failed to restore files:', fileError);
@@ -353,7 +347,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             // Log the combination being used for price calculation
             const combinationLog: Record<string, string> = {};
             Object.entries(selectedSpecifications).forEach(([slug, value]) => {
-                const spec = category.specifications.find(s => s.slug === slug);
+                const spec = category.specifications?.find(s => s.slug === slug);
                 if (spec) {
                     const option = spec.options.find(o => o.value === value);
                     combinationLog[spec.name] = option?.label || value || 'Not selected';
@@ -382,7 +376,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             const baseLine = result.breakdown.find((item) =>
                 item.label.toLowerCase().startsWith('base')
             );
-            if (baseLine && effectiveQuantity > 0) {
+            // Only compute per-unit base price if the pricing rule actually multiplied by quantity
+            if (baseLine && effectiveQuantity > 0 && result.baseQuantityMultiplierApplied) {
                 setBasePricePerUnit(baseLine.value / effectiveQuantity);
             } else {
                 setBasePricePerUnit(0);
@@ -540,7 +535,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             }
 
             // Clear dependent specifications when parent changes
-            if (category) {
+            if (category && category.specifications) {
                 updated = clearDependentSpecifications(
                     category.specifications,
                     updated,
@@ -695,7 +690,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
     // Check which required specifications are missing
     const getMissingRequiredSpecs = (): CategorySpecification[] => {
-        if (!category) return [];
+        if (!category || !category.specifications) return [];
 
         return category.specifications.filter(spec => {
             // Only check visible and required specifications
@@ -721,7 +716,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
     // Check if all required fields are filled (for button disabling)
     const areAllRequiredFieldsFilled = useMemo(() => {
-        if (!category) return false;
+        if (!category || !category.specifications) return false;
 
         // Check required specifications
         const requiredSpecs = category.specifications.filter(spec => {
@@ -752,12 +747,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
 
     const handleAddToCart = async () => {
-        // Validate page controller rules if they exist
-        if (hasPageControllerRules && !pageControllerValidation.isValid) {
-            toastError(pageControllerValidation.errorMessage || 'Page limit exceeded. Please reduce the number of pages.');
-            return;
-        }
-
         // Check authentication - if not authenticated, save data and redirect
         if (!isAuthenticated) {
             try {
@@ -782,11 +771,17 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     quantity: totalQuantity,
                     copies,
                     pageCount,
+                    templateId: selectedTemplateId || undefined,
+                    templateFormData: selectedTemplateId ? templateFormData : undefined,
+                    templateFormImages: selectedTemplateId ? templateFormImages : undefined,
                     metadata: {
                         pageCount: pageCount > 0 ? pageCount : undefined,
                         copies: pageCount > 0 ? copies : undefined,
                         selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
                         priceBreakdown,
+                        templateId: selectedTemplateId || undefined,
+                        templateFormData: selectedTemplateId ? templateFormData : undefined,
+                        templateFormImages: selectedTemplateId ? templateFormImages : undefined,
                     },
                     currentPrice: totalPrice,
                     totalPrice,
@@ -831,7 +826,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
         // Check if product exists
         if (!matchingProduct?.id) {
-            console.log(matchingProduct)
             toastWarning('Product does not exist. Please contact us');
             return;
         }
@@ -961,13 +955,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
             // Add to cart with S3 URLs
             // Always use totalQuantity which already includes copies multiplication
-            console.log('Adding to cart with metadata:', {
-                metadata,
-                hasTemplateFormData,
-                templateFormData,
-                selectedTemplateId,
-                metadataKeys: Object.keys(metadata)
-            });
 
             const response = await toastPromise(
                 addToCart({
@@ -1012,12 +999,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     };
 
     const handleBuyNow = async () => {
-        // Validate page controller rules if they exist
-        if (hasPageControllerRules && !pageControllerValidation.isValid) {
-            toastError(pageControllerValidation.errorMessage || 'Page limit exceeded. Please reduce the number of pages.');
-            return;
-        }
-
         // Check authentication - if not authenticated, save data and redirect
         if (!isAuthenticated) {
             try {
@@ -1042,11 +1023,17 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     quantity: totalQuantity,
                     copies,
                     pageCount,
+                    templateId: selectedTemplateId || undefined,
+                    templateFormData: selectedTemplateId ? templateFormData : undefined,
+                    templateFormImages: selectedTemplateId ? templateFormImages : undefined,
                     metadata: {
                         pageCount: pageCount > 0 ? pageCount : undefined,
                         copies: pageCount > 0 ? copies : undefined,
                         selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
                         priceBreakdown,
+                        templateId: selectedTemplateId || undefined,
+                        templateFormData: selectedTemplateId ? templateFormData : undefined,
+                        templateFormImages: selectedTemplateId ? templateFormImages : undefined,
                     },
                     currentPrice: totalPrice,
                     totalPrice,
@@ -1355,7 +1342,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 Browse Other Services
                             </button>
                             <button
-                                onClick={() => router.push('/home')}
+                                onClick={() => router.push('/')}
                                 className="px-8 py-3 bg-white text-[#008ECC] border-2 border-[#008ECC] rounded-lg font-semibold hover:bg-blue-50 transition-colors"
                             >
                                 Back to Home
@@ -1367,15 +1354,29 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         );
     }
 
+    // Check if category is a parent category (has children)
+    const isParentCategory = useMemo(() => {
+        if (!category) return false;
+        return (category.hasChildren === true) || 
+               (category.childrenCount && category.childrenCount > 0) ||
+               (category.children && category.children.length > 0);
+    }, [category]);
+
     // Filter specifications by display order and visibility
     const visibleSpecifications = useMemo(() => {
-        if (!category) return [];
+        if (!category || !category.specifications) return [];
         return category.specifications
             .filter(isSpecificationVisible)
             .sort((a, b) => a.displayOrder - b.displayOrder);
     }, [category, selectedSpecifications]);
 
-    // Inline skeleton while category & pricing data load on client
+    // If category is loaded and is a parent, render subcategory grid
+    if (!loading && category && isParentCategory) {
+        const children = category.children || [];
+        return <SubcategoryGrid parentCategory={category} children={children} />;
+    }
+
+    // Inline skeleton while category & pricing data load on client (default product template skeleton)
     if (loading || !category) {
         return (
             <div className="min-h-screen bg-white py-8 pb-24">
@@ -1533,10 +1534,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 uploadedFilesS3={uploadedFilesS3}
                 setUploadedFilesS3={setUploadedFilesS3}
                 hideFileUpload={hasTemplates}
-                pageControllerMaxPages={maxPages}
-                pageControllerCurrentPageCount={pageControllerPageCount}
-                pageControllerError={pageControllerValidation.errorMessage}
-                hasPageControllerRules={hasPageControllerRules}
                 templateSelector={
                     hasTemplates ? (
                         <TemplateSelector

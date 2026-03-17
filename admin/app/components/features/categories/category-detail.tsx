@@ -25,14 +25,14 @@ import { CategorySpecifications } from './category-specifications';
 import { CategoryPricing } from './category-pricing';
 import { CategoryImages } from './category-images';
 import { CategoryTemplatesForms } from './category-templates-forms';
-import { CategoryPageController } from './category-page-controller';
+import { ParentCategorySelector } from './parent-category-selector';
 import { getProducts, type Product } from '@/lib/api/products.service';
 
 interface CategoryDetailProps {
     categoryId: string;
 }
 
-type TabType = 'overview' | 'specifications' | 'pricing' | 'products' | 'images' | 'templates' | 'page-controller';
+type TabType = 'overview' | 'specifications' | 'pricing' | 'products' | 'images' | 'templates';
 
 export function CategoryDetail({ categoryId }: CategoryDetailProps) {
     const router = useRouter();
@@ -40,6 +40,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
     const [loading, setLoading] = useState(true);
     const [savingBasic, setSavingBasic] = useState(false);
     const [savingConfig, setSavingConfig] = useState(false);
+    const [isEditingParent, setIsEditingParent] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [products, setProducts] = useState<Product[]>([]);
     const [loadingProducts, setLoadingProducts] = useState(false);
@@ -54,11 +55,13 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         slug: string;
         description: string;
         priority: number;
+        parentId: string | null;
     }>({
         name: '',
         slug: '',
         description: '',
         priority: 0,
+        parentId: null,
     });
 
     const [configForm, setConfigForm] = useState<{
@@ -92,7 +95,9 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                     slug: cat.slug,
                     description: cat.description || '',
                     priority: cat.priority ?? 0,
+                    parentId: cat.parentId || null,
                 });
+                setIsEditingParent(false);
 
                 setConfigForm({
                     pageTitle: cfg?.pageTitle || cat.name,
@@ -141,6 +146,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                 name: basicForm.name.trim(),
                 description: basicForm.description.trim() || undefined,
                 priority: basicForm.priority,
+                parentId: basicForm.parentId || null,
             });
 
             setCategory(updated);
@@ -203,7 +209,6 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         { id: 'products', label: 'Products' },
         { id: 'images', label: 'Images' },
         { id: 'templates', label: 'Templates & Forms' },
-        { id: 'page-controller', label: 'Page Controller' },
     ];
 
     return (
@@ -283,6 +288,51 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                                         }
                                     />
                                 </div>
+
+                                {/* Parent Category: read-only until Edit */}
+                                {!isEditingParent && (
+                                    <div className="space-y-2">
+                                        <Label>Parent Category</Label>
+                                        <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                                            <div className="text-sm text-gray-700">
+                                                {category?.parent ? (
+                                                    <span>
+                                                        {category.parent.name} <span className="text-gray-400">({category.parent.slug})</span>
+                                                    </span>
+                                                ) : basicForm.parentId ? (
+                                                    <span className="text-gray-700">Selected</span>
+                                                ) : (
+                                                    <span className="text-gray-500">No parent (Standalone)</span>
+                                                )}
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setIsEditingParent(true)}
+                                            >
+                                                Edit
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {isEditingParent && (
+                                    <ParentCategorySelector
+                                        value={basicForm.parentId}
+                                        onChange={(parentId) => {
+                                            setBasicForm((prev) => ({
+                                                ...prev,
+                                                parentId,
+                                            }));
+                                            // After a selection, keep it read-only again
+                                            setIsEditingParent(false);
+                                        }}
+                                        excludeCategoryId={categoryId}
+                                        label="Search parent category"
+                                        placeholder="Type to search..."
+                                    />
+                                )}
 
                                 <div className="space-y-2">
                                     <Label htmlFor="priority">Display Order</Label>
@@ -457,10 +507,6 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
             {activeTab === 'templates' && (
                 <CategoryTemplatesForms categoryId={categoryId} />
-            )}
-
-            {activeTab === 'page-controller' && (
-                <CategoryPageController categoryId={categoryId} />
             )}
         </div>
     );

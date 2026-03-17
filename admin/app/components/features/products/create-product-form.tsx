@@ -14,7 +14,7 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Alert } from '@/app/components/ui/alert';
 import { createProduct, type CreateProductData, uploadProductImageApi } from '@/lib/api/products.service';
-import { Upload, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import Image from 'next/image';
 
 type WizardStep =
@@ -38,7 +38,6 @@ export function CreateProductForm() {
     const [categoryImagesLoaded, setCategoryImagesLoaded] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [fileMetadata, setFileMetadata] = useState<Map<number, { alt: string; isPrimary: boolean }>>(new Map());
-    const [uploadingImages, setUploadingImages] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [formData, setFormData] = useState<CreateProductData>({
@@ -162,7 +161,6 @@ export function CreateProductForm() {
 
             // Upload selected files if any
             if (selectedFiles.length > 0 && createdProduct?.id) {
-                setUploadingImages(true);
                 try {
                     for (let i = 0; i < selectedFiles.length; i++) {
                         const file = selectedFiles[i];
@@ -177,8 +175,6 @@ export function CreateProductForm() {
                 } catch (uploadErr) {
                     console.error('Failed to upload some images:', uploadErr);
                     // Continue anyway - product is created, images can be added later
-                } finally {
-                    setUploadingImages(false);
                 }
             }
 
@@ -623,17 +619,6 @@ export function CreateProductForm() {
                     newMetadata.set(i, oldMeta);
                 });
                 setFileMetadata(newMetadata);
-            };
-
-            const handleUploadFiles = async () => {
-                if (selectedFiles.length === 0) {
-                    setError('Please select at least one file to upload');
-                    return;
-                }
-
-                // Note: We can't upload to S3 until product is created (no productId yet)
-                // Files and metadata will be stored in state and uploaded after product creation
-                // This is handled in handleSubmit
             };
 
             return (

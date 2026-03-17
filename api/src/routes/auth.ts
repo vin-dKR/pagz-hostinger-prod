@@ -8,6 +8,9 @@ import {
     updateNotificationPreferences,
     deleteAccount,
     refreshToken,
+    forgotPassword,
+    verifyOTPController,
+    resetPassword,
 } from "../controllers/authController.js";
 import { customerAuth } from "../middleware/auth.js";
 
@@ -168,6 +171,105 @@ router.post("/register", register);
  *                 error: Invalid email or password format or others
  */
 router.post("/login", login);
+
+/**
+ * @openapi
+ * /api/v1/auth/forgot-password:
+ *   post:
+ *     summary: Request password reset
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       '200':
+ *         description: Password reset email sent (if account exists).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required:
+ *                 - success
+ *                 - message
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       '400':
+ *         description: Validation error.
+ */
+router.post("/forgot-password", forgotPassword);
+
+/**
+ * @openapi
+ * /api/v1/auth/verify-otp:
+ *   post:
+ *     summary: Verify OTP for password reset
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               otp:
+ *                 type: string
+ *     responses:
+ *       '200':
+ *         description: OTP verified successfully.
+ *       '400':
+ *         description: Invalid or expired OTP.
+ */
+router.post("/verify-otp", verifyOTPController);
+
+/**
+ * @openapi
+ * /api/v1/auth/reset-password:
+ *   post:
+ *     summary: Reset password with token
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *             properties:
+ *               token:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 format: password
+ *     responses:
+ *       '200':
+ *         description: Password reset successful.
+ *       '400':
+ *         description: Invalid token or validation error.
+ */
+router.post("/reset-password", resetPassword);
 
 /**
  * @openapi

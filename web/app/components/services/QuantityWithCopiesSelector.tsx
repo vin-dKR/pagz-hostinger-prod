@@ -69,6 +69,40 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
         }
     };
 
+    const handleCopiesInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        
+        // Allow empty input while typing
+        if (value === '') {
+            return;
+        }
+        
+        // Only allow numbers
+        const numValue = parseInt(value, 10);
+        if (isNaN(numValue)) {
+            return;
+        }
+        
+        // Clamp to min/max range
+        if (numValue < min) {
+            onCopiesChange(min);
+        } else if (numValue > max) {
+            onCopiesChange(max);
+        } else {
+            onCopiesChange(numValue);
+        }
+    };
+
+    const handleCopiesInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        const numValue = parseInt(value, 10);
+        
+        // If empty or invalid, set to min
+        if (value === '' || isNaN(numValue) || numValue < min) {
+            onCopiesChange(min);
+        }
+    };
+
     const totalPages = quantity * copies;
 
     return (
@@ -76,14 +110,14 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
             {/* Header with Quantity Label */}
             <div className="mb-3">
                 <label className="block text-sm font-medium text-gray-700 font-hkgb">
-                    {label} (Pages)
+                    {label} (by Pages)
                 </label>
             </div>
 
             {/* Quantity Selector (Always Visible) */}
             <div className="space-y-2">
                 <label className="block text-xs font-medium text-gray-600">
-                    Number of Pages
+                    Number of Pages Uploaded
                 </label>
                 <div className="flex items-start">
                     <div className="">
@@ -110,7 +144,7 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
                     htmlFor="copies-checkbox"
                     className="text-sm font-medium text-gray-700 cursor-pointer"
                 >
-                    Do you need copies?
+                    Do you need in bulks?
                 </label>
             </div>
 
@@ -118,7 +152,7 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
             {isCopiesMode && (
                 <div className="space-y-2">
                     <label className="block text-xs font-medium text-gray-600">
-                        Number of Copies
+                        Number of Quantity
                     </label>
                     <div className="flex items-center gap-4 max-w-xs">
                         <button
@@ -132,11 +166,17 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
                         </button>
 
                         <div className="flex-1 text-center">
-                            <div className="text-2xl sm:text-3xl font-hkgb text-gray-900">
-                                {copies}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                                {copies === 1 ? 'copy' : 'copies'}
+                            <input
+                                type="number"
+                                value={copies}
+                                onChange={handleCopiesInputChange}
+                                onBlur={handleCopiesInputBlur}
+                                min={min}
+                                max={max}
+                                className="w-full text-2xl sm:text-3xl font-hkgb text-gray-900 text-center bg-white border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none cursor-text"
+                            />
+                            <div className="text-sm text-gray-600 mt-1">
+                                {copies === 1 ? 'copy/quantity' : 'copies/quantities'}
                             </div>
                         </div>
 
@@ -157,7 +197,7 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
                             <span className="font-semibold">Total Pages to Print:</span> {totalPages} {totalPages === 1 ? 'page' : 'pages'}
                             <br />
                             <span className="text-xs text-blue-700">
-                                ({quantity} {quantity === 1 ? 'page' : 'pages'} × {copies} {copies === 1 ? 'copy' : 'copies'})
+                                ({quantity} {quantity === 1 ? 'page' : 'pages'} × {copies} {copies === 1 ? 'copy/quantity' : 'copies/quantities'})
                             </span>
                         </p>
                     </div>

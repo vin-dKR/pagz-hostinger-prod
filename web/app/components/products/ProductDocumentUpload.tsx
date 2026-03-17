@@ -27,10 +27,6 @@ interface ProductDocumentUploadProps {
     uploadedFilesS3?: FileDetail[]
     setUploadedFilesS3: React.Dispatch<React.SetStateAction<FileDetail[]>>
     // Page controller props
-    maxPages?: number | null; // Max pages allowed (from page controller rules)
-    currentPageCount?: number; // Current total page count
-    pageControllerError?: string | null; // Error message from page controller validation
-    hasPageControllerRules?: boolean; // Whether page controller rules exist for this category
 }
 
 export default function ProductDocumentUpload({
@@ -42,10 +38,6 @@ export default function ProductDocumentUpload({
     className = "",
     uploadedFilesS3,
     setUploadedFilesS3,
-    maxPages = null,
-    currentPageCount = 0,
-    pageControllerError = null,
-    hasPageControllerRules = false,
 }: ProductDocumentUploadProps) {
     const { isAuthenticated } = useAuth();
     const [totalQuantity, setTotalQuantity] = useState<number>(0);
@@ -112,7 +104,6 @@ export default function ProductDocumentUpload({
                         }).promise;
 
                         const pageCount = pdf.numPages;
-                        console.log(`PDF ${file.name} has ${pageCount} pages`);
                         resolve(pageCount);
                     } catch (pdfError) {
                         console.warn('PDF.js worker error, falling back to regex method:', pdfError);
@@ -125,7 +116,6 @@ export default function ProductDocumentUpload({
                             const countMatch = text.match(/\/Count\s+(\d+)/);
                             if (countMatch && countMatch[1]) {
                                 const count = parseInt(countMatch[1], 10);
-                                console.log(`PDF ${file.name} page count (regex): ${count}`);
                                 resolve(count);
                                 return;
                             }
@@ -134,7 +124,6 @@ export default function ProductDocumentUpload({
                             const pageMatches = text.match(/\/Type\s*\/Page[^s]/g);
                             if (pageMatches && pageMatches.length > 0) {
                                 const count = pageMatches.length;
-                                console.log(`PDF ${file.name} page count (object count): ${count}`);
                                 resolve(count);
                                 return;
                             }
@@ -258,17 +247,11 @@ export default function ProductDocumentUpload({
                 onQuantityChange(finalPageCount);
             }
 
-            // Upload files to S3 only if user is authenticated
-            // Otherwise, files will be uploaded when user signs in and proceeds with purchase
-            if (isAuthenticated) {
-                newFileDetails.forEach((fileDetail) => {
-                    uploadFileToS3(fileDetail);
-                });
-            } else {
-                // Store files temporarily - they'll be uploaded after sign-in
-                // Files are already in memory via FileDetail objects
-                console.log('[ProductDocumentUpload] Files stored temporarily. Will upload after sign-in.');
-            }
+            // Upload files to S3 for both authenticated and unauthenticated users
+            // Unauthenticated uploads go to guest/{sessionId} folder
+            newFileDetails.forEach((fileDetail) => {
+                uploadFileToS3(fileDetail);
+            });
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to process files';
             setError(errorMessage);
@@ -451,12 +434,6 @@ export default function ProductDocumentUpload({
                         Supported formats: Images (JPG, PNG - Max 10MB) and PDFs (Max 50MB)
                         {maxFiles && ` • Max ${maxFiles} files`}
                     </p>
-                    {hasPageControllerRules && maxPages !== null && (
-                        <p className="mt-1 text-xs text-blue-600 flex items-center gap-1">
-                            <Info size={12} />
-                            Maximum {maxPages} page{maxPages !== 1 ? 's' : ''} allowed based on your selections
-                        </p>
-                    )}
                 </div>
 
                 {/* Error Display */}
@@ -464,28 +441,6 @@ export default function ProductDocumentUpload({
                     <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                         <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
                         <p className="text-sm text-red-700">{error}</p>
-                    </div>
-                )}
-
-                {/* Page Controller Error Display */}
-                {pageControllerError && (
-                    <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                            <p className="text-sm font-medium text-red-700">Page Limit Exceeded</p>
-                            <p className="text-sm text-red-600 mt-1">{pageControllerError}</p>
-                        </div>
-                    </div>
-                )}
-
-                {/* Page Count Info */}
-                {hasPageControllerRules && currentPageCount > 0 && maxPages !== null && (
-                    <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <Info size={16} className="text-blue-600 shrink-0" />
-                        <p className="text-sm text-blue-700">
-                            Current: <span className="font-semibold">{currentPageCount}</span> page{currentPageCount !== 1 ? 's' : ''} • 
-                            Maximum: <span className="font-semibold">{maxPages}</span> page{maxPages !== 1 ? 's' : ''}
-                        </p>
                     </div>
                 )}
 

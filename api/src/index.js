@@ -145,9 +145,6 @@ app.use("/api/v1/ftp", ftpRoutes);
 app.use(errorHandler);
 
 const server = app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📚 API Docs: http://localhost:${PORT}/api/docs`);
-    console.log(`🎮 API Playground: http://localhost:${PORT}/api/playground`);
 });
 
 server.on('error', (error) => {
