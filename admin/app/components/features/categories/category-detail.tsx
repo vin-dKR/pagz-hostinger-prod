@@ -15,6 +15,7 @@ import Link from 'next/link';
 import {
     getCategoryById,
     updateCategory,
+    getCategories,
     getCategoryConfigurationApi,
     upsertCategoryConfigurationApi,
     type Category,
@@ -26,6 +27,7 @@ import { CategoryPricing } from './category-pricing';
 import { CategoryImages } from './category-images';
 import { CategoryTemplatesForms } from './category-templates-forms';
 import { ParentCategorySelector } from './parent-category-selector';
+import { ChildCategoriesSelector } from './child-categories-selector';
 import { getProducts, type Product } from '@/lib/api/products.service';
 
 interface CategoryDetailProps {
@@ -47,6 +49,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
     const [category, setCategory] = useState<Category | null>(null);
     const [config, setConfig] = useState<CategoryConfiguration | null>(null);
+    const [allCategories, setAllCategories] = useState<Category[]>([]);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _config = config; // Keep for potential future use
 
@@ -76,19 +79,40 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         fileUploadRequired: false,
     });
 
+    const [childCategoryIds, setChildCategoryIds] = useState<string[]>([]);
+    const [savedChildCategoryIds, setSavedChildCategoryIds] = useState<string[]>([]);
+
+    const fetchAllCategories = async () => {
+        const pageLimit = 100;
+        let page = 1;
+        const items: Category[] = [];
+
+        while (true) {
+            const res = await getCategories({ page, limit: pageLimit });
+            items.push(...res.items);
+
+            if (page >= res.pagination.totalPages) break;
+            page += 1;
+        }
+
+        return items;
+    };
+
     useEffect(() => {
         async function load() {
             try {
                 setLoading(true);
                 setError(null);
 
-                const [cat, cfg] = await Promise.all([
+                const [cat, cfg, categories] = await Promise.all([
                     getCategoryById(categoryId),
                     getCategoryConfigurationApi(categoryId),
+                    fetchAllCategories(),
                 ]);
 
                 setCategory(cat);
                 setConfig(cfg);
+                setAllCategories(categories);
 
                 setBasicForm({
                     name: cat.name,
@@ -105,6 +129,11 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                     featuresText: (cfg?.features || []).join('\n'),
                     fileUploadRequired: cfg?.fileUploadRequired ?? false,
                 });
+
+                const children = categories.filter((c) => c.parentId === categoryId);
+                const childIds = children.map((c) => c.id);
+                setChildCategoryIds(childIds);
+                setSavedChildCategoryIds(childIds);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load category');
             } finally {
@@ -142,14 +171,54 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
             setSavingBasic(true);
             setError(null);
 
-            const updated = await updateCategory(category.id, {
+            const currentCategoryId = category.id;
+            await updateCategory(currentCategoryId, {
                 name: basicForm.name.trim(),
                 description: basicForm.description.trim() || undefined,
                 priority: basicForm.priority,
                 parentId: basicForm.parentId || null,
             });
 
-            setCategory(updated);
+            // Persist child categories relationship as the "final" step with Basic Info.
+            const toAdd = childCategoryIds.filter((id) => !savedChildCategoryIds.includes(id));
+            const toRemove = savedChildCategoryIds.filter((id) => !childCategoryIds.includes(id));
+
+            await Promise.all([
+                ...toAdd.map((id) => updateCategory(id, { parentId: currentCategoryId })),
+                ...toRemove.map((id) => updateCategory(id, { parentId: null })),
+            ]);
+
+            // Reload so labels and relationships are consistent with the saved state.
+            const [cat, cfg, categories] = await Promise.all([
+                getCategoryById(currentCategoryId),
+                getCategoryConfigurationApi(currentCategoryId),
+                fetchAllCategories(),
+            ]);
+
+            const children = categories.filter((c) => c.parentId === currentCategoryId);
+            const childIds = children.map((c) => c.id);
+
+            setCategory(cat);
+            setConfig(cfg);
+            setAllCategories(categories);
+
+            setBasicForm({
+                name: cat.name,
+                slug: cat.slug,
+                description: cat.description || '',
+                priority: cat.priority ?? 0,
+                parentId: cat.parentId || null,
+            });
+
+            setConfigForm({
+                pageTitle: cfg?.pageTitle || cat.name,
+                pageDescription: cfg?.pageDescription || cat.description || '',
+                featuresText: (cfg?.features || []).join('\n'),
+                fileUploadRequired: cfg?.fileUploadRequired ?? false,
+            });
+
+            setChildCategoryIds(childIds);
+            setSavedChildCategoryIds(childIds);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to save category');
         } finally {
@@ -182,6 +251,22 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
             setSavingConfig(false);
         }
     };
+
+    const excludedChildCategoryIds = (() => {
+        // Prevent obvious cycles: do not allow selecting the category itself or its ancestors as a child.
+        const exclude = new Set<string>();
+        exclude.add(categoryId);
+
+        const byId = new Map(allCategories.map((c) => [c.id, c]));
+        let cursorId: string | undefined | null = category?.parentId ?? null;
+
+        while (cursorId) {
+            exclude.add(cursorId);
+            cursorId = byId.get(cursorId)?.parentId ?? null;
+        }
+
+        return [...exclude];
+    })();
 
     if (loading) {
         return (
@@ -352,6 +437,18 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                                     <p className="text-xs text-gray-500">
                                         Higher values appear first in the services page. Default: 0
                                     </p>
+                                </div>
+
+                                {/* Child Categories */}
+                                <div className="space-y-3 pt-4 border-t border-gray-200">
+                                    <ChildCategoriesSelector
+                                        value={childCategoryIds}
+                                        onChange={(next) => setChildCategoryIds(next)}
+                                        excludeCategoryIds={excludedChildCategoryIds}
+                                        allCategories={allCategories}
+                                        label="Child Categories"
+                                        placeholder="Type to search and add children..."
+                                    />
                                 </div>
 
                                 <div className="flex justify-end gap-2">

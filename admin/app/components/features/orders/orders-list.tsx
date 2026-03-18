@@ -20,7 +20,9 @@ import { Alert } from '@/app/components/ui/alert';
 import {
     getOrders,
     exportOrders,
+    updateOrderStatus,
     type Order,
+    type OrderStatus,
     type PaginatedResponse,
     type OrderQueryParams,
 } from '@/lib/api/orders.service';
@@ -36,6 +38,16 @@ import { OrderFilters } from './order-filters';
 import { OrderStatusBadge, PaymentStatusBadge } from './status-badge';
 import { BulkActions } from './bulk-actions';
 
+const ORDER_STATUSES: OrderStatus[] = [
+    'PENDING_REVIEW',
+    'ACCEPTED',
+    'REJECTED',
+    'PROCESSING',
+    'SHIPPED',
+    'DELIVERED',
+    'CANCELLED',
+];
+
 export function OrdersList() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [page, setPage] = useState(1);
@@ -48,6 +60,7 @@ export function OrdersList() {
     const [error, setError] = useState<string | null>(null);
     const [filters, setFilters] = useState<OrderQueryParams>({});
     const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+    const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
     useEffect(() => {
         loadOrders(page, debouncedSearch, filters);
@@ -161,8 +174,8 @@ export function OrdersList() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-2 flex-nowrap flex-shrink-0">
-                                <div className="text-sm text-[var(--color-foreground-secondary)] whitespace-nowrap">
+                            <div className="flex items-center gap-2 flex-nowrap shrink-0">
+                                <div className="text-sm text-foreground-secondary whitespace-nowrap">
                                     {total > 0 ? (
                                         <>
                                             <span className="font-medium">{total}</span> result{total !== 1 ? 's' : ''} • Page{' '}
@@ -173,7 +186,7 @@ export function OrdersList() {
                                         'No results'
                                     )}
                                 </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="flex items-center gap-2 shrink-0">
                                     <Button
                                         variant="outline"
                                         size="sm"
@@ -336,12 +349,57 @@ export function OrdersList() {
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
-                                                    <OrderStatusBadge status={order.status} />
+                                                    <div
+                                                        className={`
+                                                            relative inline-flex items-center rounded-full cursor-pointer
+                                                            transition-shadow hover:shadow-sm hover:ring-1 hover:ring-gray-300
+                                                            ${updatingOrderId === order.id ? 'opacity-60 cursor-not-allowed hover:shadow-none hover:ring-0' : ''}
+                                                        `}
+                                                        title="Click to change order status"
+                                                    >
+                                                        <OrderStatusBadge status={order.status} showCaret />
+                                                        <select
+                                                            value={order.status}
+                                                            disabled={updatingOrderId === order.id}
+                                                            onChange={async (e) => {
+                                                                const nextStatus = e.target.value as OrderStatus;
+                                                                if (nextStatus === order.status) return;
+
+                                                                setUpdatingOrderId(order.id);
+                                                                try {
+                                                                    const updated = await updateOrderStatus(order.id, { status: nextStatus });
+                                                                    setOrders((prev) =>
+                                                                        prev.map((o) =>
+                                                                            o.id === order.id
+                                                                                ? {
+                                                                                      ...o,
+                                                                                      status: updated.status,
+                                                                                  }
+                                                                                : o
+                                                                        )
+                                                                    );
+                                                                    toastSuccess('Order status updated successfully');
+                                                                } catch (err) {
+                                                                    toastError(err instanceof Error ? err.message : 'Failed to update order status');
+                                                                } finally {
+                                                                    setUpdatingOrderId(null);
+                                                                }
+                                                            }}
+                                                            aria-label={`Update status for order ${order.id}`}
+                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer rounded-full"
+                                                        >
+                                                            {ORDER_STATUSES.map((status) => (
+                                                                <option key={status} value={status}>
+                                                                    {status.replace(/_/g, ' ')}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <div className="space-y-1">
+                                                    <div className="flex flex-col items-center gap-0.5">
                                                         <PaymentStatusBadge status={order.paymentStatus} />
-                                                        <div className="text-xs text-gray-500">
+                                                        <div className="text-xs text-gray-500 text-center leading-tight">
                                                             {order.paymentMethod}
                                                         </div>
                                                     </div>

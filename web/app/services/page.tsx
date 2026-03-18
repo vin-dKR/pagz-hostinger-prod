@@ -68,7 +68,7 @@ export default function ServicesPage() {
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 lg:gap-5 xl:gap-6 w-full">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                            <div key={i} className="relative aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-3xl lg:rounded-4xl overflow-hidden bg-gray-200 animate-pulse" />
+                            <div key={i} className="relative aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-2xl overflow-hidden bg-gray-200 animate-pulse" />
                         ))}
                     </div>
                 </div>
@@ -105,7 +105,7 @@ export default function ServicesPage() {
                             <div key={category.id} className="flex flex-col">
                                 <Link
                                     href={`/services/${category.slug}`}
-                                    className="relative group aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-3xl lg:rounded-4xl overflow-hidden cursor-pointer"
+                                    className="relative group aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-2xl overflow-hidden cursor-pointer"
                                     onMouseEnter={() => setHoveredCard(category.id)}
                                     onMouseLeave={() => setHoveredCard(null)}
                                 >

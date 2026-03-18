@@ -6,12 +6,23 @@
 import { Badge } from '@/app/components/ui/badge';
 import { type OrderStatus, type PaymentStatus } from '@/lib/api/orders.service';
 
-export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+export function OrderStatusBadge({ status, showCaret }: { status: OrderStatus; showCaret?: boolean }) {
     const variant = getStatusVariant(status);
 
     return (
-        <Badge variant={variant} className="capitalize">
-            {status.replace(/_/g, ' ').toLowerCase()}
+        <Badge variant={variant} className={`capitalize ${showCaret ? 'gap-1' : ''}`}>
+            <span>{status.replace(/_/g, ' ').toLowerCase()}</span>
+            {showCaret && (
+                <svg
+                    className="w-3 h-3 opacity-90 pointer-events-none"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                >
+                    {/* Inverted dropdown triangle (pointing down) */}
+                    <path d="M5 7l5 6 5-6H5z" />
+                </svg>
+            )}
         </Badge>
     );
 }

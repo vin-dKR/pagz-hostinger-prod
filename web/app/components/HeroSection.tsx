@@ -298,14 +298,14 @@ export default function HeroSection() {
     };
 
     return (
-        <section className="h-[450px] md:h-[500px] bg-white w-full py-3 md:py-6 flex items-center justify-center overflow-hidden">
-            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 h-full">
+        <section className="bg-white w-full py-3 md:py-6 flex items-center justify-center">
+            <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
                 {carouselLoading ? (
-                    <div className="relative w-full h-full rounded-xl md:rounded-2xl bg-gray-200 animate-pulse flex items-center justify-center">
+                    <div className="relative w-full aspect-1680/520 rounded-xl md:rounded-2xl bg-gray-200 animate-pulse flex items-center justify-center">
                         <div className="text-gray-400">Loading carousel...</div>
                     </div>
                 ) : carousels.length === 0 ? (
-                    <div className="relative w-full h-full rounded-xl md:rounded-2xl bg-gray-100 flex items-center justify-center">
+                    <div className="relative w-full aspect-1680/520 rounded-xl md:rounded-2xl bg-gray-100 flex items-center justify-center">
                         <div className="text-gray-500 text-center">
                             <p className="text-lg font-medium mb-2">No carousel items available</p>
                             <p className="text-sm">Please add carousel items from the admin dashboard</p>
@@ -314,7 +314,7 @@ export default function HeroSection() {
                 ) : (
                     <div 
                         ref={carouselRef}
-                        className="relative w-full h-full rounded-xl md:rounded-2xl overflow-hidden select-none cursor-grab active:cursor-grabbing"
+                        className="relative w-full aspect-1680/520 rounded-xl md:rounded-2xl overflow-hidden select-none cursor-grab active:cursor-grabbing"
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
@@ -351,43 +351,30 @@ export default function HeroSection() {
                                             src={carousel.imageUrl}
                                             alt={carousel.alt || 'Carousel image'}
                                             fill
-                                            className="object-cover"
+                                            /* Keep the original 1680x520 format without cropping. */
+                                            className="object-contain"
                                             priority={index === 1} // Prioritize first real slide
                                             draggable={false}
                                         />
-                                        <div className="absolute inset-0 bg-gradient-to-b from-black/50 to-black/40"></div>
                                     </div>
                                 );
                             })}
                         </div>
 
-                        {/* Content Overlay - Button and Alt Text in Bottom Right */}
+                        {/* Content Overlay - Alt Text Bottom Right, CTA Centered Horizontally */}
                         {currentCarousel && (
                             <div className="absolute inset-0 z-10 pointer-events-none">
-                                {/* Black faded shadow overlay for bottom right area */}
-                                <div className="absolute bottom-0 right-0 w-full h-24 md:h-36 bg-gradient-to-t from-black/80 via-black/60 to-transparent pointer-events-none"></div>
-                                
-                                {/* Content container */}
-                                <div className="absolute bottom-0 right-0 p-4 md:p-6 pointer-events-auto z-20">
-                                    <div className="flex flex-col items-end gap-3 md:gap-4">
-                                        {/* Alt Text */}
-                                        {currentCarousel.alt && (
-                                            <h2 className="text-lg md:text-2xl lg:text-3xl font-bold text-white text-right max-w-md drop-shadow-lg">
-                                                {currentCarousel.alt}
-                                            </h2>
-                                        )}
-                                        
-                                        {/* Order Now Button */}
-                                        {currentCarousel.category?.slug && (
-                                            <button
-                                                onClick={handleBuyNowClick}
-                                                className="px-6 py-3 md:px-8 md:py-4 bg-white text-black font-semibold rounded-lg md:rounded-xl hover:bg-gray-100 transition-colors shadow-lg text-sm md:text-base"
-                                            >
-                                                Order Now
-                                            </button>
-                                        )}
+                                {/* Order Now Button (centered horizontally) */}
+                                {currentCarousel.category?.slug && (
+                                    <div className="absolute bottom-2 md:bottom-8 left-1/2 -translate-x-1/2 px-4 pointer-events-auto z-20">
+                                        <button
+                                            onClick={handleBuyNowClick}
+                                    className="w-full sm:w-auto px-4 py-2 md:px-8 md:py-4 lg:px-10 lg:py-5 bg-[#008ECC] text-white font-semibold rounded-lg md:rounded-xl hover:bg-[#0077B5] transition-colors shadow-lg text-xs sm:text-sm md:text-base lg:text-lg"
+                                        >
+                                            Order Now
+                                        </button>
                                     </div>
-                                </div>
+                                )}
                             </div>
                         )}
 
@@ -433,23 +420,6 @@ export default function HeroSection() {
                             </>
                         )}
 
-                        {/* Dots Indicator */}
-                        {carousels.length > 1 && (
-                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-2">
-                                {carousels.map((_, index) => (
-                                    <button
-                                        key={index}
-                                        onClick={(e) => goToSlide(index, e)}
-                                        className={`h-2 rounded-full transition-all ${
-                                            index === currentCarouselIndex
-                                                ? 'w-8 bg-white'
-                                                : 'w-2 bg-white/50 hover:bg-white/75'
-                                        }`}
-                                        aria-label={`Go to slide ${index + 1}`}
-                                    />
-                                ))}
-                            </div>
-                        )}
                     </div>
                 )}
             </div>

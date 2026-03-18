@@ -100,7 +100,7 @@ export function SubcategoryGrid({ parentCategory, children }: SubcategoryGridPro
                             <div key={category.id} className="flex flex-col">
                                 <Link
                                     href={categoryUrl}
-                                    className="relative group aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-3xl lg:rounded-4xl overflow-hidden cursor-pointer"
+                                    className="relative group aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-2xl overflow-hidden cursor-pointer"
                                     onMouseEnter={() => setHoveredCard(category.id)}
                                     onMouseLeave={() => setHoveredCard(null)}
                                 >
