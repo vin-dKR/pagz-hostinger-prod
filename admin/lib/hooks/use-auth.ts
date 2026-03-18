@@ -19,17 +19,17 @@ export function useAuth() {
 
         const checkAuth = async () => {
             try {
-                // Check if user is authenticated
-                const token = getAuthToken();
+        // Check if user is authenticated
+        const token = getAuthToken();
 
-                if (token) {
-                    // TODO: Verify token and fetch user data
-                    // For now, just check if token exists
+        if (token) {
+            // TODO: Verify token and fetch user data
+            // For now, just check if token exists
                     if (isMounted) {
-                        setIsLoading(false);
+            setIsLoading(false);
                         setError(null);
                     }
-                } else {
+        } else {
                     if (isMounted) {
                         setIsLoading(false);
                         setError(null);
@@ -39,8 +39,8 @@ export function useAuth() {
                 console.error('[useAuth] Error checking authentication:', err);
                 if (isMounted) {
                     setError(err instanceof Error ? err : new Error('Failed to check authentication'));
-                    setIsLoading(false);
-                }
+            setIsLoading(false);
+        }
             }
         };
 
@@ -53,8 +53,8 @@ export function useAuth() {
 
     const login = (userData: AdminUser, token: string) => {
         try {
-            setAuthToken(token);
-            setUser(userData);
+        setAuthToken(token);
+        setUser(userData);
             setError(null);
         } catch (err) {
             console.error('[useAuth] Error during login:', err);
@@ -64,8 +64,8 @@ export function useAuth() {
 
     const logout = () => {
         try {
-            setAuthToken(undefined);
-            setUser(null);
+        setAuthToken(undefined);
+        setUser(null);
             setError(null);
         } catch (err) {
             console.error('[useAuth] Error during logout:', err);

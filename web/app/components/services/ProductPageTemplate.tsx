@@ -5,7 +5,7 @@ import { ProductGallery } from './ProductGallery';
 import { ProductFeatures } from './ProductFeatures';
 import { PriceBreakdown } from './print/PriceBreakdown';
 import { Button } from './print/Button';
-import { ShoppingCart } from 'lucide-react';
+import { AlertCircle, Info, ShoppingCart } from 'lucide-react';
 import { ProductData, BreadcrumbItem } from '@/types';
 import Breadcrumbs from '../Breadcrumbs';
 import { useRouter } from 'next/navigation';
@@ -48,6 +48,12 @@ interface ProductPageTemplateProps {
     setUploadedFilesS3: React.Dispatch<React.SetStateAction<FileDetail[]>>
     hideFileUpload?: boolean;
     templateSelector?: React.ReactNode; // Template selector component to show when templates exist
+    fileHasPassword?: boolean;
+    filePassword?: string;
+    isPasswordSubmitted?: boolean;
+    onFileHasPasswordChange?: (value: boolean) => void;
+    onFilePasswordChange?: (value: string) => void;
+    onPasswordSubmittedChange?: (value: boolean) => void;
 }
 
 export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
@@ -86,6 +92,12 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
     setUploadedFilesS3,
     hideFileUpload = false,
     templateSelector,
+    fileHasPassword = false,
+    filePassword = '',
+    isPasswordSubmitted = false,
+    onFileHasPasswordChange,
+    onFilePasswordChange,
+    onPasswordSubmittedChange,
 }) => {
     const router = useRouter();
     const outOfStock = isOutOfStock || (stock !== null && stock !== undefined && stock <= 0);
@@ -104,18 +116,46 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
         prevOutOfStockRef.current = outOfStock;
     }, [outOfStock, productId]);
 
-    // Determine button disabled state and message
-    const isButtonDisabled = outOfStock || !hasUploadedFiles || !areRequiredFieldsFilled || calculatingPrice;
-    const getButtonText = (isAddToCart: boolean) => {
-        if (outOfStock) return 'Out of Stock';
-        if (isInCart && isAddToCart) return 'Go to Cart';
-        if (!hasUploadedFiles) {
-            return hasTemplates ? 'Upload files or select Template first' : 'Upload the files first';
+    // Determine validation message (show once below buttons)
+    const actionMessageInfo = (() => {
+        if (outOfStock) {
+            return {
+                type: 'error' as const,
+                title: 'Out of stock',
+                message: 'This product is currently unavailable. Please change the options or contact us.',
+            };
         }
-        if (!areRequiredFieldsFilled) return 'Please select the mandatory field';
-        if (isAddToCart) return `Add to Cart to Buy - ₹${totalPrice.toFixed(2)}`;
-        return 'Buy Now';
-    };
+        if (!hasUploadedFiles) {
+            return {
+                type: 'info' as const,
+                title: 'Upload required',
+                message: hasTemplates
+                    ? 'Upload your file(s) or select a template to continue.'
+                    : 'Upload your file(s) to continue.',
+            };
+        }
+        if (!areRequiredFieldsFilled) {
+            return {
+                type: 'warning' as const,
+                title: 'Missing required selection',
+                message: 'Please select all mandatory fields in “Customize Your Order”.',
+            };
+        }
+        return null;
+    })();
+
+    // Disable actions when a message is shown (and during async work)
+    const disableBecauseMessage = !!actionMessageInfo;
+    const disableAddToCart =
+        isUploadingFiles ||
+        addToCartLoading ||
+        calculatingPrice ||
+        (disableBecauseMessage && !isInCart); // allow "Go to Cart" even if message is present
+    const disableBuyNow =
+        isUploadingFiles || buyNowLoading || calculatingPrice || disableBecauseMessage;
+
+    const addToCartLabel = isInCart ? 'Go to Cart' : `Add to Cart - ₹${totalPrice.toFixed(2)}`;
+    const buyNowLabel = 'Buy Now';
 
     // Transform breadcrumb items to match Breadcrumbs component format
     const breadcrumbsFormatted = breadcrumbItems.map(item => ({
@@ -123,6 +163,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
         href: item.href,
         isActive: item.isActive
     }));
+    
     return (
         <div className="min-h-screen bg-white py-8 pb-24">
             <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
@@ -185,29 +226,116 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                             {/* File Upload Section */}
                             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100">
                                 {!hideFileUpload ? (
-                                    <ProductDocumentUpload
-                                        onFileSelect={(files: File[], pageCount: number, fileDetails?: FileDetail[]) => {
-                                            // Use the new callback if provided, otherwise use legacy callback
-                                            if (onFileSelectWithQuantity) {
-                                                onFileSelectWithQuantity(files, pageCount, fileDetails);
-                                            } else {
-                                                // Legacy: pass first file to onFileSelect
-                                                const firstFile: File | null = files.length > 0 && files[0] ? files[0] : null;
-                                                onFileSelect(firstFile);
-                                            }
-                                        }}
-                                        onQuantityChange={(calculatedQuantity: number) => {
-                                            // Call the quantity change callback if provided
-                                            if (onQuantityChange && calculatedQuantity > 0) {
-                                                onQuantityChange(calculatedQuantity);
-                                            }
-                                        }}
-                                        maxSizeMB={50}
-                                        uploadedFilesS3={uploadedFilesS3}
-                                        setUploadedFilesS3={setUploadedFilesS3}
-                                    />
+                                    <div className="space-y-4">
+                                        <ProductDocumentUpload
+                                            onFileSelect={(files: File[], pageCount: number, fileDetails?: FileDetail[]) => {
+                                                // Use the new callback if provided, otherwise use legacy callback
+                                                if (onFileSelectWithQuantity) {
+                                                    onFileSelectWithQuantity(files, pageCount, fileDetails);
+                                                } else {
+                                                    // Legacy: pass first file to onFileSelect
+                                                    const firstFile: File | null = files.length > 0 && files[0] ? files[0] : null;
+                                                    onFileSelect(firstFile);
+                                                }
+                                            }}
+                                            onQuantityChange={(calculatedQuantity: number) => {
+                                                // Call the quantity change callback if provided
+                                                if (onQuantityChange && calculatedQuantity > 0) {
+                                                    onQuantityChange(calculatedQuantity);
+                                                }
+                                            }}
+                                            maxSizeMB={50}
+                                            uploadedFilesS3={uploadedFilesS3}
+                                            setUploadedFilesS3={setUploadedFilesS3}
+                                        />
+                                    </div>
                                 ) : (
                                     templateSelector
+                                )}
+
+                                {/* Password-protected file info - Show always if password is set or files are uploaded */}
+                                {(fileHasPassword || (uploadedFilesS3 && uploadedFilesS3.length > 0)) && (
+                                    <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                id="file-has-password"
+                                                checked={fileHasPassword}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    onFileHasPasswordChange?.(checked);
+                                                    if (!checked) {
+                                                        onFilePasswordChange?.('');
+                                                        onPasswordSubmittedChange?.(false);
+                                                    }
+                                                }}
+                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            />
+                                            <label htmlFor="file-has-password" className="text-sm font-medium text-gray-700 cursor-pointer">
+                                                File has password?
+                                            </label>
+                                        </div>
+
+                                        {fileHasPassword && (
+                                            <div className="mt-3">
+                                                {!isPasswordSubmitted ? (
+                                                    <>
+                                                        <label htmlFor="file-password" className="block text-xs font-medium text-gray-600 mb-1">
+                                                            Enter password (shared with admin)
+                                                        </label>
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                id="file-password"
+                                                                type="text"
+                                                                value={filePassword}
+                                                                onChange={(e) => onFilePasswordChange?.(e.target.value)}
+                                                                placeholder="e.g. 1234"
+                                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                                            />
+                                                            <Button
+                                                                onClick={() => {
+                                                                    if (filePassword.trim()) {
+                                                                        onPasswordSubmittedChange?.(true);
+                                                                    }
+                                                                }}
+                                                                disabled={!filePassword.trim()}
+                                                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            >
+                                                                Submit
+                                                            </Button>
+                                                        </div>
+                                                        <p className="mt-1 text-xs text-gray-500">
+                                                            Only enter this if your PDF/document is password protected.
+                                                        </p>
+                                                    </>
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                            Password (shared with admin)
+                                                        </label>
+                                                        <div className="flex gap-2 items-center">
+                                                            <input
+                                                                type="password"
+                                                                value={filePassword}
+                                                                readOnly
+                                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-900 text-sm font-mono"
+                                                            />
+                                                            <Button
+                                                                onClick={() => onPasswordSubmittedChange?.(false)}
+                                                                variant="outline"
+                                                                className="px-4 py-2"
+                                                            >
+                                                                Edit
+                                                            </Button>
+                                                        </div>
+                                                        <p className="text-xs text-gray-500">
+                                                            Password is saved. Click Edit to change it.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
 
@@ -262,14 +390,15 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="flex gap-3">
+                            <div className="flex flex-col gap-2">
+                                <div className="flex gap-3">
                                 <Button
                                     variant="primary"
                                     size="lg"
                                     icon={ShoppingCart}
                                     fullWidth
                                     isLoading={isUploadingFiles || addToCartLoading || calculatingPrice}
-                                    disabled={isButtonDisabled || isUploadingFiles || addToCartLoading || calculatingPrice}
+                                    disabled={disableAddToCart}
                                     onClick={isInCart ? () => router.push('/cart') : onAddToCart}
                                     className="text-base font-medium"
                                     useCircularLoader={isUploadingFiles}
@@ -278,7 +407,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                         ? 'Loading files...'
                                         : calculatingPrice
                                             ? 'Calculating...'
-                                            : getButtonText(true)}
+                                            : addToCartLabel}
                                 </Button>
 
                                 <Button
@@ -286,7 +415,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                     size="lg"
                                     fullWidth
                                     isLoading={isUploadingFiles || buyNowLoading || calculatingPrice}
-                                    disabled={isButtonDisabled || isUploadingFiles || buyNowLoading || calculatingPrice}
+                                    disabled={disableBuyNow}
                                     onClick={onBuyNow}
                                     className="text-base font-medium bg-orange-600 hover:bg-orange-700"
                                     useCircularLoader={isUploadingFiles}
@@ -295,8 +424,34 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                         ? 'Loading files...'
                                         : calculatingPrice
                                             ? 'Calculating...'
-                                            : getButtonText(false)}
+                                            : buyNowLabel}
                                 </Button>
+                                </div>
+
+                                {/* One shared message below buttons (no duplication) */}
+                                {actionMessageInfo && (
+                                    <div
+                                        className={
+                                            actionMessageInfo.type === 'error'
+                                                ? 'rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-800'
+                                                : actionMessageInfo.type === 'warning'
+                                                    ? 'rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900'
+                                                    : 'rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-blue-900'
+                                        }
+                                    >
+                                        <div className="flex items-start gap-2">
+                                            {actionMessageInfo.type === 'error' ? (
+                                                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                                            ) : (
+                                                <Info className="w-4 h-4 mt-0.5 shrink-0" />
+                                            )}
+                                            <div className="min-w-0">
+                                                <p className="text-xs sm:text-sm font-semibold">{actionMessageInfo.title}</p>
+                                                <p className="text-xs sm:text-sm opacity-90">{actionMessageInfo.message}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

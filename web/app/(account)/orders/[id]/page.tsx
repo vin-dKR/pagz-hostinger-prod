@@ -850,15 +850,13 @@ function OrderDetailsPageContent({
                                         )}
                                     </button>
                                 {/* Tertiary Actions */}
-                                <a 
-                                    href="https://wa.me/1234567890" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
+                                <Link
+                                    href="/contact"
                                     className="bg-white w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-medium"
                                 >
                                     <HelpCircle className="w-4 h-4" />
                                     Need Help?
-                                </a>
+                                </Link>
                                 </div>
                             </div>
                         </div>

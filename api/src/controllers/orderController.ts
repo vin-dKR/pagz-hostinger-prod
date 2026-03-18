@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
-import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
+import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { copyFile, generatePresignedUrl } from "../services/s3.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
@@ -2271,7 +2271,21 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
         };
 
         // Generate PDF
-        const pdfBuffer = await generateInvoicePDF(invoiceData);
+        let pdfBuffer: Buffer;
+        try {
+            pdfBuffer = await generateInvoicePDF(invoiceData);
+        } catch (pdfError) {
+            console.error("[INVOICE_PDF] Failed to generate PDF:", {
+                orderId: id,
+                isAdmin,
+                error: pdfError instanceof Error ? pdfError.message : pdfError,
+            });
+            // Return actionable error to client (still 500)
+            throw new AppError(
+                pdfError instanceof Error ? pdfError.message : "Failed to generate invoice PDF",
+                500
+            );
+        }
 
         // Set response headers
         const filename = `Invoice-${invoiceNumber}.pdf`;

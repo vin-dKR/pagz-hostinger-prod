@@ -62,10 +62,13 @@ export default function CategoryProducts() {
     if (loading) {
         return (
             <section className="py-4 md:py-8 bg-white">
-                <div className="w-full mx-auto px-3 sm:px-6 lg:px-8">
-                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 lg:gap-5 xl:gap-6 w-full">
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                            <div key={i} className="relative aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-3xl lg:rounded-4xl overflow-hidden bg-gray-200 animate-pulse" />
+                <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 md:gap-4 w-full place-items-center justify-center">
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <div
+                                key={i}
+                                className="relative aspect-square w-[167px] md:w-[253px] rounded-lg md:rounded-2xl overflow-hidden bg-gray-200 animate-pulse"
+                            />
                         ))}
                     </div>
                 </div>
@@ -87,7 +90,7 @@ export default function CategoryProducts() {
 
     return (
         <section className="py-4 md:py-8 bg-white">
-            <div className="w-full mx-auto px-3 sm:px-6 lg:px-8">
+            <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between mb-3 md:mb-5">
                     <h2 className="text-lg md:text-2xl font-bold text-gray-900">Our Services</h2>
                     <Link
@@ -99,17 +102,17 @@ export default function CategoryProducts() {
                     </Link>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 lg:gap-5 xl:gap-6 w-full">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 md:gap-4 w-full place-items-center justify-center">
                     {categories.map((category, index) => {
                         const imageUrl = getCategoryImage(category);
                         const color = getCategoryColor(index);
                         const action = getCategoryAction(category.name);
 
                         return (
-                            <div key={category.id} className="flex flex-col">
+                            <div key={category.id} className="flex flex-col w-[167px] md:w-[253px]">
                                 <Link
                                     href={`/services/${category.slug}`}
-                                    className="relative group aspect-square md:aspect-4/3 lg:aspect-square w-full min-w-0 rounded-lg md:rounded-3xl lg:rounded-4xl overflow-hidden cursor-pointer"
+                                    className="relative group aspect-square w-full rounded-2xl md:rounded-2xl overflow-hidden cursor-pointer"
                                     onMouseEnter={() => setHoveredCard(category.id)}
                                     onMouseLeave={() => setHoveredCard(null)}
                                 >

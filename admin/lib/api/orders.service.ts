@@ -59,6 +59,8 @@ export interface OrderItem {
         templateId?: string;
         templateFormData?: Record<string, any>;
         templateFormImages?: string[];
+        fileHasPassword?: boolean;
+        filePassword?: string;
     } | null;
 }
 

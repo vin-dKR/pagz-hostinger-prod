@@ -989,8 +989,14 @@ export const calculateCategoryPrice = async (
                             ? ")"
                             : "";
 
+                const addonSpecLabel = Object.keys(ruleSpecs).length
+                    ? `: ${Object.entries(ruleSpecs)
+                        .map(([k, v]) => `${k}=${String(v)}`)
+                        .join(", ")}`
+                    : "";
+
                 breakdown.push({
-                    label: `Addon${rangeLabel}${copiesLabel}`,
+                    label: `Addon${addonSpecLabel}${rangeLabel}${copiesLabel}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "QUANTITY_TIER") {
@@ -1540,8 +1546,14 @@ export const calculateCategoryPricePublic = async (
                             ? ")"
                             : "";
 
+                const addonSpecLabel = Object.keys(ruleSpecs).length
+                    ? `: ${Object.entries(ruleSpecs)
+                        .map(([k, v]) => `${k}=${String(v)}`)
+                        .join(", ")}`
+                    : "";
+
                 breakdown.push({
-                    label: `Addon${rangeLabel}${copiesLabel}`,
+                    label: `Addon${addonSpecLabel}${rangeLabel}${copiesLabel}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "QUANTITY_TIER") {

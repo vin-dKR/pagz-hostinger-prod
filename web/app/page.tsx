@@ -1,7 +1,6 @@
 import HeroSection from "./components/HeroSection";
 import CategoryProducts from "./components/CategoryProducts";
 import Testimonials from "./components/Testimonials";
-import BottomNavigation from "./components/shared/BottomNavigation";
 
 export default function Home() {
     return (
@@ -9,7 +8,6 @@ export default function Home() {
             <HeroSection />
             <CategoryProducts />
             <Testimonials />
-            <BottomNavigation />
         </div>
     );
 }

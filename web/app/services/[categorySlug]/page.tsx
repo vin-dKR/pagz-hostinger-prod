@@ -7,8 +7,6 @@ import { ProductPageTemplate } from '@/app/components/services/ProductPageTempla
 import { TemplateSelector } from '@/app/components/services/TemplateSelector';
 import { Select, type SelectOption } from '@/app/components/ui/select';
 import { useCategoryTemplates } from '@/lib/hooks/use-category-templates';
-import { QuantitySelector } from '@/app/components/services/QuantitySelector';
-import { CopiesSelector } from '@/app/components/services/CopiesSelector';
 import { QuantityWithCopiesSelector } from '@/app/components/services/QuantityWithCopiesSelector';
 import { FileDetail } from '@/app/components/products/ProductDocumentUpload';
 import {
@@ -66,6 +64,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [minQuantityFromFiles, setMinQuantityFromFiles] = useState<number>(1);
 
     const [selectedSpecifications, setSelectedSpecifications] = useState<Record<string, any>>({});
+    const [specWarnings, setSpecWarnings] = useState<Record<string, string>>({});
     const [pageCount, setPageCount] = useState(0); // Fixed, calculated from files
     const [copies, setCopies] = useState(1); // Editable, default 1
     const [quantity, setQuantity] = useState<number>(1); // Keep for backward compatibility with NUMBER spec type
@@ -83,6 +82,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [buyNowLoading, setBuyNowLoading] = useState(false);
     const [availableAddons, setAvailableAddons] = useState<CategoryAddon[]>([]);
     const [uploadedFilesS3, setUploadedFilesS3] = useState<FileDetail[]>([]);
+    const [fileHasPassword, setFileHasPassword] = useState(false);
+    const [filePassword, setFilePassword] = useState('');
+    const [isPasswordSubmitted, setIsPasswordSubmitted] = useState(false);
 
     // Check if templates exist for this category
     const { data: categoryTemplates = [] } = useCategoryTemplates(categorySlug, !!category);
@@ -141,6 +143,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     if (data.pageCount > 0) {
                         setPageCount(data.pageCount);
                         setMinQuantityFromFiles(data.pageCount);
+                    }
+                    // Restore password state if present
+                    if (data.fileHasPassword !== undefined) {
+                        setFileHasPassword(!!data.fileHasPassword);
+                    }
+                    if (data.filePassword !== undefined && data.filePassword) {
+                        setFilePassword(String(data.filePassword));
+                        // If password exists from template page, always show it as submitted
+                        // (user clicked Continue, which means they're done with password entry)
+                        setIsPasswordSubmitted(true);
                     }
                 }
                 // Clear the stored data after using it
@@ -322,6 +334,14 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 if (pendingData.quantity) setQuantity(pendingData.quantity);
                 if (pendingData.copies) setCopies(pendingData.copies);
                 if (pendingData.pageCount) setPageCount(pendingData.pageCount);
+                if (pendingData.fileHasPassword !== undefined) setFileHasPassword(!!pendingData.fileHasPassword);
+                if (pendingData.filePassword !== undefined) setFilePassword(String(pendingData.filePassword || ''));
+                if (pendingData.metadata?.fileHasPassword !== undefined) setFileHasPassword(!!pendingData.metadata.fileHasPassword);
+                if (pendingData.metadata?.filePassword !== undefined) setFilePassword(String(pendingData.metadata.filePassword || ''));
+                // Restore password submitted state - if password exists, assume it was submitted
+                if (pendingData.filePassword || pendingData.metadata?.filePassword) {
+                    setIsPasswordSubmitted(true);
+                }
 
                 // Clear pending data
                 clearPendingPurchaseData();
@@ -547,6 +567,19 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         });
     };
 
+    const clearSpecWarning = (specSlug: string) => {
+        setSpecWarnings((prev) => {
+            if (!prev[specSlug]) return prev;
+            const next = { ...prev };
+            delete next[specSlug];
+            return next;
+        });
+    };
+
+    const setSpecWarning = (specSlug: string, message: string) => {
+        setSpecWarnings((prev) => ({ ...prev, [specSlug]: message }));
+    };
+
 
     // Prepare product data for ProductPageTemplate
     const productData: Partial<ProductData> = useMemo(() => {
@@ -668,7 +701,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 formData: templateFormData,
                 formImages: templateFormImages,
             };
-            sessionStorage.setItem('selectedTemplateData', JSON.stringify(templateData));
+            sessionStorage.setItem(`templateDraftData:${categorySlug}`, JSON.stringify(templateData));
+            sessionStorage.setItem('templateEditAction', 'true'); // Flag to indicate edit action
             router.push(`/services/${categorySlug}/templates`);
         }
     };
@@ -932,6 +966,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 copies: pageCount > 0 ? copies : undefined,
                 priceBreakdown,
                 selectedAddons: selectedAddonIds,
+                fileHasPassword: fileHasPassword ? true : undefined,
+                filePassword: fileHasPassword ? (filePassword || undefined) : undefined,
             };
 
             // Include template data if template is selected
@@ -981,6 +1017,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 setPageCount(0);
                 setMinQuantityFromFiles(1);
                 setCopies(1);
+                setFileHasPassword(false);
+                setFilePassword('');
+                setIsPasswordSubmitted(false);
                 // Clear pending purchase data after successful add to cart
                 clearPendingPurchaseData();
                 // Refresh cart to update count
@@ -1023,6 +1062,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     quantity: totalQuantity,
                     copies,
                     pageCount,
+                    fileHasPassword,
+                    filePassword: fileHasPassword ? filePassword : undefined,
                     templateId: selectedTemplateId || undefined,
                     templateFormData: selectedTemplateId ? templateFormData : undefined,
                     templateFormImages: selectedTemplateId ? templateFormImages : undefined,
@@ -1034,6 +1075,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         templateId: selectedTemplateId || undefined,
                         templateFormData: selectedTemplateId ? templateFormData : undefined,
                         templateFormImages: selectedTemplateId ? templateFormImages : undefined,
+                        fileHasPassword: fileHasPassword ? true : undefined,
+                        filePassword: fileHasPassword ? (filePassword || undefined) : undefined,
                     },
                     currentPrice: totalPrice,
                     totalPrice,
@@ -1200,6 +1243,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 copies: pageCount > 0 ? copies : undefined,
                 priceBreakdown,
                 selectedAddons: selectedAddonIds,
+                fileHasPassword: fileHasPassword ? true : undefined,
+                filePassword: fileHasPassword ? (filePassword || undefined) : undefined,
             };
 
             // Include template data if template is selected
@@ -1251,6 +1296,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             setPageCount(0);
             setMinQuantityFromFiles(1);
             setCopies(1);
+            setFileHasPassword(false);
+            setFilePassword('');
 
             // Clear pending purchase data after successful buy now
             clearPendingPurchaseData();
@@ -1293,7 +1340,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
                         {/* Decorative Icon/Image */}
                         <div className="mb-12 flex justify-center">
-                            <div className="relative w-64 h-64 md:w-80 md:h-80 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-3xl flex items-center justify-center shadow-lg">
+                            <div className="relative w-64 h-64 md:w-80 md:h-80 bg-linear-to-br from-blue-50 to-indigo-100 rounded-3xl flex items-center justify-center shadow-lg">
                                 <svg className="w-32 h-32 md:w-40 md:h-40 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
@@ -1507,6 +1554,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     setPageCount(0);
                     setMinQuantityFromFiles(1);
                     setCopies(1);
+                    setFileHasPassword(false);
+                    setFilePassword('');
                 }}
                 priceItems={priceBreakdown}
                 totalPrice={totalPrice}
@@ -1560,6 +1609,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         />
                     ) : undefined
                 }
+                fileHasPassword={fileHasPassword}
+                filePassword={filePassword}
+                isPasswordSubmitted={isPasswordSubmitted}
+                onFileHasPasswordChange={setFileHasPassword}
+                onFilePasswordChange={setFilePassword}
+                onPasswordSubmittedChange={setIsPasswordSubmitted}
             >
 
                 {/* Dynamic Configuration Options */}
@@ -1571,13 +1626,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         // Handle different specification types
                         if (spec.type === 'SELECT' || spec.type === 'MULTI_SELECT') {
                             const selectedValue = selectedSpecifications[spec.slug];
-                            const matchingAddons =
-                                availableAddons.length > 0 && selectedValue
-                                    ? availableAddons.filter((addon) => {
-                                        const specValues = addon.specificationValues || {};
-                                        return specValues[spec.slug] === selectedValue;
-                                    })
-                                    : [];
+                            const warningMessage = specWarnings[spec.slug];
 
                             // Get the selected option label for display
                             const selectedOption = selectedValue
@@ -1593,7 +1642,53 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                     </label>
                                     <Select
                                         value={selectedValue || ''}
-                                        onChange={(value) => handleSpecificationChange(spec.slug, value)}
+                                        onChange={(value) => {
+                                            // Clear any previous warning as the user is changing selection
+                                            clearSpecWarning(spec.slug);
+
+                                            // If this is an OPTIONAL dropdown and selection has no matching ADDON pricing rule,
+                                            // show a message and reset to default.
+                                            const isOptional = !spec.isRequired;
+                                            const isClearing = value === '' || value === 'none';
+
+                                            if (isOptional && !isClearing && availableAddons.length > 0) {
+                                                const nextSpecs: Record<string, any> = {
+                                                    ...selectedSpecifications,
+                                                    [spec.slug]: value,
+                                                };
+
+                                                // Determine if any addon rule matches this selection with current specs
+                                                const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
+                                                const matchingAddonRules = availableAddons.filter((rule) => {
+                                                    const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
+                                                    for (const [slug, val] of Object.entries(ruleSpecs)) {
+                                                        if (nextSpecs[slug] !== val) return false;
+                                                    }
+
+                                                    const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
+                                                    if (hasPageRange) {
+                                                        if (effectivePages == null) return false;
+                                                        if (rule.minQuantity != null && effectivePages < rule.minQuantity) return false;
+                                                        if (rule.maxQuantity != null && effectivePages > rule.maxQuantity) return false;
+                                                    }
+                                                    return true;
+                                                });
+
+                                                if (matchingAddonRules.length === 0) {
+                                                    const optionLabel =
+                                                        availableOptions.find((opt) => opt.value === value)?.label || value;
+                                                    setSpecWarning(
+                                                        spec.slug,
+                                                        `Pricing for “${optionLabel}” is not configured yet. Please choose another option or contact support.`
+                                                    );
+                                                    // Reset dropdown back to default
+                                                    handleSpecificationChange(spec.slug, '');
+                                                    return;
+                                                }
+                                            }
+
+                                            handleSpecificationChange(spec.slug, value);
+                                        }}
                                         options={[
                                             ...(!spec.isRequired
                                                 ? [{ value: '', label: 'None (Clear selection)', disabled: false }]
@@ -1609,22 +1704,28 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                         required={spec.isRequired}
                                     />
 
+                                    {warningMessage && (
+                                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                            {warningMessage}
+                                        </p>
+                                    )}
+
 
                                 </div>
                             );
                         } else if (spec.type === 'NUMBER') {
-                            // For NUMBER type, we can use QuantitySelector or a custom input
                             if (spec.slug === 'quantity') {
                                 return (
-                                    <QuantitySelector
+                                    <QuantityWithCopiesSelector
                                         key={spec.id}
-                                        value={quantity}
-                                        onChange={(value) => {
+                                        quantity={quantity}
+                                        copies={copies}
+                                        onQuantityChange={(value) => {
                                             setQuantity(value);
                                             handleSpecificationChange(spec.slug, value.toString());
                                         }}
+                                        onCopiesChange={setCopies}
                                         label={spec.name}
-                                        unit=""
                                         min={1}
                                         max={1000}
                                     />
@@ -1689,23 +1790,19 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 imageCount={imageCount}
                             /> */}
 
-                            <CopiesSelector
-                                value={copies}
-                                onChange={setCopies}
+                            <QuantityWithCopiesSelector
+                                quantity={pageCount}
+                                copies={copies}
+                                onQuantityChange={() => {
+                                    // quantity is derived from uploaded pages; keep read-only here
+                                }}
+                                onCopiesChange={setCopies}
                                 min={1}
                                 max={999}
+                                label="Quantity"
+                                quantityReadOnly
                             />
 
-                            {/* Total Quantity Display */}
-                            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                <p className="text-sm text-blue-900">
-                                    <span className="font-semibold">Total Quantity:</span> {totalQuantity} pages
-                                    <br />
-                                    <span className="text-xs text-blue-700">
-                                        ({pageCount} pages × {copies} {copies === 1 ? 'copy' : 'copies'})
-                                    </span>
-                                </p>
-                            </div>
                         </>
                     )}
 

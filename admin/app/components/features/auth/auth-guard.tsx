@@ -17,12 +17,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
     const checkAuth = async () => {
       try {
-        const token = getAuthToken();
+    const token = getAuthToken();
 
         if (token && isMounted) {
-          // User is already logged in, redirect to dashboard
-          router.replace('/dashboard');
-        }
+      // User is already logged in, redirect to dashboard
+      router.replace('/dashboard');
+    }
       } catch (error) {
         console.error('[AuthGuard] Error checking authentication:', error);
         // On error, allow the login page to render
@@ -38,10 +38,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Don't render children if user is logged in (will redirect)
   try {
-    const token = typeof window !== 'undefined' ? getAuthToken() : null;
+  const token = typeof window !== 'undefined' ? getAuthToken() : null;
 
-    if (token) {
-      return null; // Will redirect, so don't render
+  if (token) {
+    return null; // Will redirect, so don't render
     }
   } catch (error) {
     console.error('[AuthGuard] Error getting token in render:', error);

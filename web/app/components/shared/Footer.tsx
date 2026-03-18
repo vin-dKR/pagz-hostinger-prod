@@ -3,10 +3,23 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { useCategories } from "@/lib/hooks/use-categories";
 
 export default function Footer() {
     const [email, setEmail] = useState("");
     const currentYear = new Date().getFullYear();
+    const { data: categories = [] } = useCategories();
+
+    // Top 9 real categories (no hardcoding). If API returns priority/isActive, respect it.
+    const topCategories = categories
+        .filter((c: any) => c && (c.isActive === undefined || c.isActive))
+        .sort((a: any, b: any) => {
+            const pa = typeof a?.priority === "number" ? a.priority : Number.POSITIVE_INFINITY;
+            const pb = typeof b?.priority === "number" ? b.priority : Number.POSITIVE_INFINITY;
+            if (pa !== pb) return pa - pb;
+            return String(a?.name ?? "").localeCompare(String(b?.name ?? ""));
+        })
+        .slice(0, 9);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -92,7 +105,9 @@ export default function Footer() {
                                 </p>
                                 <div className="flex items-center gap-1.5 md:gap-2">
                                     <a
-                                        href="#"
+                                        href="https://www.facebook.com/profile.php?id=61565966005738"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                         className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
                                         aria-label="Facebook"
                                     >
@@ -111,9 +126,11 @@ export default function Footer() {
                                     </a>
 
                                     <a
-                                        href="#"
+                                        href="https://x.com/printiphyindia"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                         className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
-                                        aria-label="Twitter"
+                                        aria-label="X"
                                     >
                                         <div className="absolute inset-0 bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                                         <svg
@@ -130,7 +147,9 @@ export default function Footer() {
                                     </a>
 
                                     <a
-                                        href="#"
+                                        href="https://www.instagram.com/printiphyindia"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                         className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
                                         aria-label="Instagram"
                                     >
@@ -151,7 +170,9 @@ export default function Footer() {
                                     </a>
 
                                     <a
-                                        href="#"
+                                        href="https://www.linkedin.com/company/printiphy/"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                         className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
                                         aria-label="LinkedIn"
                                     >
@@ -170,6 +191,28 @@ export default function Footer() {
                                             <circle cx="4" cy="4" r="2"></circle>
                                         </svg>
                                     </a>
+
+                                    <a
+                                        href="https://www.youtube.com/@printiphyIndia"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
+                                        aria-label="YouTube"
+                                    >
+                                        <div className="absolute inset-0 bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                                        <svg
+                                            width="12"
+                                            height="12"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            className="relative z-10 text-gray-600 group-hover:text-gray-900 group-hover:scale-110 transition-all duration-200 md:w-3.5 md:h-3.5"
+                                        >
+                                            <path d="M10 15l5-3-5-3v6z"></path>
+                                            <path d="M21.8 8s-.2-1.4-.8-2c-.8-.8-1.7-.8-2.1-.9C15.9 5 12 5 12 5h0s-3.9 0-6.9.1c-.4.1-1.3.1-2.1.9-.6.6-.8 2-.8 2S2 9.6 2 11.2v1.5C2 14.4 2.2 16 2.2 16s.2 1.4.8 2c.8.8 1.8.8 2.3.9 1.7.2 6.7.2 6.7.2s3.9 0 6.9-.1c.4-.1 1.3-.1 2.1-.9.6-.6.8-2 .8-2s.2-1.6.2-3.2v-1.5C22 9.6 21.8 8 21.8 8z"></path>
+                                        </svg>
+                                    </a>
                                 </div>
                             </div>
 
@@ -181,6 +224,7 @@ export default function Footer() {
                                         <h4 className="text-sm sm:text-base font-hkgb font-normal text-gray-900 mb-2 sm:mb-3 md:mb-4">INFORMATION</h4>
                                         <ul className="space-y-1.5 sm:space-y-2 lg:space-y-3">
                                             <li><Link href="/about" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">About Us</Link></li>
+                                            <li><Link href="/contact" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Contact Us</Link></li>
                                             <li><Link href="/privacy" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Privacy Policy</Link></li>
                                             <li><Link href="/refund" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Refund and Cancellation policy</Link></li>
                                             <li><Link href="/return" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Return Policy</Link></li>
@@ -205,15 +249,16 @@ export default function Footer() {
                                     <div>
                                         <h4 className="text-sm sm:text-base font-hkgb font-normal text-gray-900 mb-2 sm:mb-3 md:mb-4">CATEGORIES</h4>
                                         <ul className="space-y-1.5 sm:space-y-2 lg:space-y-3">
-                                            <li><Link href="/services/print" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Printing</Link></li>
-                                            <li><Link href="/services/lamination" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Lamination</Link></li>
-                                            <li><Link href="/services/bill-book" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Bill Book</Link></li>
-                                            <li><Link href="/services/book" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Book</Link></li>
-                                            <li><Link href="/services/photo" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Photo</Link></li>
-                                            <li><Link href="/services/map" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Map</Link></li>
-                                            <li><Link href="/services/business-card" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Business Card</Link></li>
-                                            <li><Link href="/services/brochure" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Brochure</Link></li>
-                                            <li><Link href="/services/letterhead" className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm">Letterhead</Link></li>
+                                            {topCategories.map((cat: any) => (
+                                                <li key={cat.id ?? cat.slug ?? cat.name}>
+                                                    <Link
+                                                        href={`/services/${cat.slug}`}
+                                                        className="text-gray-600 hover:text-[#008ECC] transition-colors text-xs sm:text-sm"
+                                                    >
+                                                        {cat.name}
+                                                    </Link>
+                                                </li>
+                                            ))}
                                         </ul>
                                     </div>
 
@@ -225,6 +270,17 @@ export default function Footer() {
                                             <p>Amber Chowk, Kahchari</p>
                                             <p>Road, Bihar Sharif</p>
                                             <p>(Nalanda), pin-803101</p>
+                                            <p className="pt-2 font-medium text-gray-900">Contact</p>
+                                            <p>
+                                                <a href="tel:7500905010" className="hover:text-[#008ECC] transition-colors">
+                                                    7500905010
+                                                </a>
+                                            </p>
+                                            <p>
+                                                <a href="mailto:admin@pagz.in" className="hover:text-[#008ECC] transition-colors">
+                                                    admin@pagz.in
+                                                </a>
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
@@ -238,7 +294,7 @@ export default function Footer() {
                     <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-6">
                         <div className="flex flex-col md:flex-row justify-between items-center gap-3 md:gap-4">
                             <p className="text-xs sm:text-sm text-gray-600 text-center md:text-left">
-                                Pagz © 2000-{currentYear}, All Rights Reserved
+                                Pagz © {currentYear}, All rights reserved
                             </p>
                             <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 flex-wrap justify-center">
                                 <div className="w-8 sm:w-10 md:w-12 h-5 sm:h-6 md:h-8 bg-white rounded border border-gray-200 flex items-center justify-center">
@@ -249,11 +305,6 @@ export default function Footer() {
                                         <div className="w-2 sm:w-2.5 md:w-3 h-2 sm:h-2.5 md:h-3 rounded-full bg-red-500"></div>
                                         <div className="w-2 sm:w-2.5 md:w-3 h-2 sm:h-2.5 md:h-3 rounded-full bg-yellow-500 -ml-1"></div>
                                     </div>
-                                </div>
-                                <div className="w-8 sm:w-10 md:w-12 h-5 sm:h-6 md:h-8 bg-white rounded border border-gray-200 flex items-center justify-center">
-                                    <span className="text-[9px] sm:text-[10px] md:text-xs font-bold text-blue-700">PP</span>
-                                </div>
-                                <div className="w-8 sm:w-10 md:w-12 h-5 sm:h-6 md:h-8 bg-white rounded border border-gray-200 flex items-center justify-center">
                                 </div>
                             </div>
                         </div>

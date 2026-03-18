@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer';
+import fs from 'fs';
 
 export interface InvoiceData {
     invoiceNumber: string;
@@ -50,10 +51,57 @@ export interface InvoiceData {
     };
 }
 
+function resolvePuppeteerExecutablePath(): string | undefined {
+    // Highest priority: explicit env var override (recommended for production hosts)
+    const envPath =
+        process.env.PUPPETEER_EXECUTABLE_PATH ||
+        process.env.CHROME_EXECUTABLE_PATH ||
+        process.env.CHROMIUM_PATH;
+    if (envPath && fs.existsSync(envPath)) {
+        return envPath;
+    }
+
+    // Next: Puppeteer's bundled Chromium (if it was downloaded during install)
+    try {
+        const bundled = puppeteer.executablePath();
+        if (bundled && fs.existsSync(bundled)) {
+            return bundled;
+        }
+    } catch {
+        // ignore
+    }
+
+    // Finally: common system paths (varies by distro/hosting)
+    const candidates = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/snap/bin/chromium',
+    ];
+
+    for (const p of candidates) {
+        if (fs.existsSync(p)) return p;
+    }
+
+    return undefined;
+}
+
 export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buffer> {
+    const executablePath = resolvePuppeteerExecutablePath();
+
     const browser = await puppeteer.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'], // For production
+        ...(executablePath ? { executablePath } : {}),
+        // Flags for constrained Linux hosts (containers/shared hosting)
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-zygote',
+            '--single-process',
+        ],
     });
 
     try {
@@ -75,6 +123,13 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
         });
 
         return Buffer.from(pdf);
+    } catch (err) {
+        const hint =
+            executablePath
+                ? `Using Chromium at: ${executablePath}`
+                : 'No Chromium executablePath resolved. Set PUPPETEER_EXECUTABLE_PATH (or CHROME_EXECUTABLE_PATH) in production.';
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`[PDF_GENERATION_FAILED] ${message}. ${hint}`);
     } finally {
         await browser.close();
     }

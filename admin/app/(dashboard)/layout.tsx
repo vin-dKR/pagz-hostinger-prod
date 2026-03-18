@@ -22,16 +22,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         const checkAuth = async () => {
             try {
-                const token = getAuthToken();
+        const token = getAuthToken();
 
-                if (!token) {
+        if (!token) {
                     if (isMounted) {
-                        router.replace('/login');
+            router.replace('/login');
                     }
-                } else {
+        } else {
                     if (isMounted) {
-                        setIsAuthenticated(true);
-                        setIsChecking(false);
+            setIsAuthenticated(true);
+            setIsChecking(false);
                         setHasError(false);
                     }
                 }

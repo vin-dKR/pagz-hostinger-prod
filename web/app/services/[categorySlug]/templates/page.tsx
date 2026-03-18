@@ -29,6 +29,9 @@ export default function TemplatePage({ params }: TemplatePageProps) {
     const [uploadedFilesS3, setUploadedFilesS3] = useState<FileDetail[]>([]);
     const [pendingUploadPageCount, setPendingUploadPageCount] = useState<number>(0);
     const [canContinueFromUpload, setCanContinueFromUpload] = useState(false);
+    const [fileHasPassword, setFileHasPassword] = useState(false);
+    const [filePassword, setFilePassword] = useState('');
+    const [isPasswordSubmitted, setIsPasswordSubmitted] = useState(false);
 
     // Use TanStack Query for data fetching with caching
     const { 
@@ -40,10 +43,22 @@ export default function TemplatePage({ params }: TemplatePageProps) {
     const error = queryError ? (queryError instanceof Error ? queryError.message : 'Failed to load templates') : null;
 
     // Restore draft/template selection if user navigates away (e.g., login redirect) and comes back
+    // Only restore if coming from edit action, not from initial navigation
     useEffect(() => {
         try {
+            // Check if we're coming from an edit action (has selectedTemplateData flag)
+            const isEditAction = sessionStorage.getItem('templateEditAction');
+            if (!isEditAction) {
+                // Clear any draft data if not from edit action to prevent auto-opening dialog
+                sessionStorage.removeItem(`templateDraftData:${categorySlug}`);
+                return;
+            }
+            
             const draft = sessionStorage.getItem(`templateDraftData:${categorySlug}`);
-            if (!draft) return;
+            if (!draft) {
+                sessionStorage.removeItem('templateEditAction');
+                return;
+            }
             const data = JSON.parse(draft);
             if (data?.templateId && Array.isArray(templates) && templates.length > 0) {
                 const tpl = templates.find(t => t.id === data.templateId) || null;
@@ -52,10 +67,12 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                     setFormData(data.formData || {});
                     setFormImages(data.formImages || []);
                     setDialogOpen(true);
+                    sessionStorage.removeItem('templateEditAction');
                 }
             }
         } catch (e) {
             // ignore draft parsing errors
+            sessionStorage.removeItem('templateEditAction');
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [categorySlug, templates.length]);
@@ -143,6 +160,9 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                 size: fd.file.size,
             })),
             pageCount: pendingUploadPageCount,
+            fileHasPassword: fileHasPassword ? true : undefined,
+            filePassword: fileHasPassword && filePassword ? filePassword : undefined,
+            isPasswordSubmitted: fileHasPassword && filePassword ? isPasswordSubmitted : undefined,
         };
         sessionStorage.setItem('uploadedFileData', JSON.stringify(uploadData));
         setShowUploadDialog(false);
@@ -297,6 +317,90 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                 uploadedFilesS3={uploadedFilesS3}
                                 setUploadedFilesS3={setUploadedFilesS3}
                             />
+                            
+                            {/* Password-protected file info */}
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="file-has-password-template"
+                                        checked={fileHasPassword}
+                                        onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            setFileHasPassword(checked);
+                                            if (!checked) {
+                                                setFilePassword('');
+                                                setIsPasswordSubmitted(false);
+                                            }
+                                        }}
+                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                    <label htmlFor="file-has-password-template" className="text-sm font-medium text-gray-700 cursor-pointer">
+                                        File has password?
+                                    </label>
+                                </div>
+
+                                {fileHasPassword && (
+                                    <div className="mt-3">
+                                        {!isPasswordSubmitted ? (
+                                            <>
+                                                <label htmlFor="file-password-template" className="block text-xs font-medium text-gray-600 mb-1">
+                                                    Enter password (shared with admin)
+                                                </label>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        id="file-password-template"
+                                                        type="text"
+                                                        value={filePassword}
+                                                        onChange={(e) => setFilePassword(e.target.value)}
+                                                        placeholder="e.g. 1234"
+                                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                                    />
+                                                    <Button
+                                                        onClick={() => {
+                                                            if (filePassword.trim()) {
+                                                                setIsPasswordSubmitted(true);
+                                                            }
+                                                        }}
+                                                        disabled={!filePassword.trim()}
+                                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        Submit
+                                                    </Button>
+                                                </div>
+                                                <p className="mt-1 text-xs text-gray-500">
+                                                    Only enter this if your PDF/document is password protected.
+                                                </p>
+                                            </>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                    Password (shared with admin)
+                                                </label>
+                                                <div className="flex gap-2 items-center">
+                                                    <input
+                                                        type="password"
+                                                        value={filePassword}
+                                                        readOnly
+                                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-900 text-sm font-mono"
+                                                    />
+                                                    <Button
+                                                        onClick={() => setIsPasswordSubmitted(false)}
+                                                        variant="outline"
+                                                        className="px-4 py-2"
+                                                    >
+                                                        Edit
+                                                    </Button>
+                                                </div>
+                                                <p className="text-xs text-gray-500">
+                                                    Password is saved. Click Edit to change it.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="flex justify-end gap-2 pt-2">
                                 <Button variant="outline" onClick={handleCloseUploadDialog}>
                                     Cancel

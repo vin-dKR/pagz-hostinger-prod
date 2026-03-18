@@ -65,38 +65,38 @@ function isTokenExpired(token: string): boolean {
  */
 export function getAuthToken(): string | null {
     try {
-        if (typeof window === 'undefined') {
-            return null;
-        }
+    if (typeof window === 'undefined') {
+        return null;
+    }
 
-        const cookies = document.cookie.split(';');
-        const tokenCookie = cookies.find(cookie => cookie.trim().startsWith('admin_token='));
+    const cookies = document.cookie.split(';');
+    const tokenCookie = cookies.find(cookie => cookie.trim().startsWith('admin_token='));
 
-        if (!tokenCookie) {
-            return null;
-        }
+    if (!tokenCookie) {
+        return null;
+    }
 
-        const token = tokenCookie.split('=')[1]?.trim() || null;
+    const token = tokenCookie.split('=')[1]?.trim() || null;
 
         if (!token) {
             return null;
         }
 
-        // Check if token is expired
+    // Check if token is expired
         try {
             if (isTokenExpired(token)) {
-                console.warn('[AUTH] Token is expired, clearing it');
+        console.warn('[AUTH] Token is expired, clearing it');
                 setAuthToken(undefined);
                 return null;
             }
         } catch (error) {
             console.error('[AUTH] Error checking token expiration:', error);
             // If we can't check expiration, clear the token to be safe
-            setAuthToken(undefined);
-            return null;
-        }
+        setAuthToken(undefined);
+        return null;
+    }
 
-        return token;
+    return token;
     } catch (error) {
         console.error('[AUTH] Error getting auth token:', error);
         return null;
@@ -111,17 +111,17 @@ let isRedirecting = false;
  */
 export function setAuthToken(token: string | undefined): void {
     try {
-        if (typeof window === 'undefined') {
-            return;
-        }
+    if (typeof window === 'undefined') {
+        return;
+    }
 
-        if (token) {
-            // Store token in cookie with 7 day expiration
-            const expires = new Date();
-            expires.setTime(expires.getTime() + 7 * 24 * 60 * 60 * 1000);
-            document.cookie = `admin_token=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
-        } else {
-            document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    if (token) {
+        // Store token in cookie with 7 day expiration
+        const expires = new Date();
+        expires.setTime(expires.getTime() + 7 * 24 * 60 * 60 * 1000);
+        document.cookie = `admin_token=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+    } else {
+        document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
         }
     } catch (error) {
         console.error('[AUTH] Error setting auth token:', error);
@@ -156,11 +156,11 @@ async function fetchAPI<T>(
     // Log admin API calls with unique prefix for easy grepping
     if (endpoint.startsWith('/admin/')) {
         try {
-            const isExpired = token ? isTokenExpired(token) : true;
+        const isExpired = token ? isTokenExpired(token) : true;
 
-            // Warn if using expired token
-            if (token && isExpired) {
-                console.error('[AUTH_WARNING] Making API call with expired token! This will likely fail.');
+        // Warn if using expired token
+        if (token && isExpired) {
+            console.error('[AUTH_WARNING] Making API call with expired token! This will likely fail.');
             }
         } catch (error) {
             console.error('[AUTH] Error checking token expiration before API call:', error);
@@ -178,13 +178,13 @@ async function fetchAPI<T>(
         let data;
 
         try {
-            if (contentType && contentType.includes('application/json')) {
-                data = await response.json();
-            } else {
-                // Non-JSON response (might be HTML error page)
-                const text = await response.text();
-                data = {
-                    error: text || 'An error occurred',
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            // Non-JSON response (might be HTML error page)
+            const text = await response.text();
+            data = {
+                error: text || 'An error occurred',
                     message: `Server returned ${response.status}: ${response.statusText}`,
                 };
             }
@@ -231,7 +231,7 @@ async function fetchAPI<T>(
                     });
 
                     try {
-                        setAuthToken(undefined);
+                    setAuthToken(undefined);
                     } catch (tokenError) {
                         console.error('[AUTH] Error clearing token:', tokenError);
                     }
@@ -241,7 +241,7 @@ async function fetchAPI<T>(
                         isRedirecting = true;
                         
                         try {
-                            toastError('Session expired or invalid. Please login again.');
+                        toastError('Session expired or invalid. Please login again.');
                         } catch (toastError) {
                             console.error('[AUTH] Error showing toast:', toastError);
                         }
@@ -249,7 +249,7 @@ async function fetchAPI<T>(
                         // Use a single redirect without setTimeout to prevent race conditions
                         setTimeout(() => {
                             try {
-                                window.location.href = '/login';
+                            window.location.href = '/login';
                             } catch (redirectError) {
                                 console.error('[AUTH] Error redirecting:', redirectError);
                                 isRedirecting = false;
@@ -290,7 +290,7 @@ async function fetchAPI<T>(
 
         // Re-throw if it's already an ApiError
         if (error && typeof error === 'object' && 'statusCode' in error) {
-            throw error as ApiError;
+        throw error as ApiError;
         }
 
         // Wrap unknown errors
@@ -398,12 +398,12 @@ export async function uploadFile<T>(
         let data;
 
         try {
-            if (contentType && contentType.includes('application/json')) {
-                data = await response.json();
-            } else {
-                const text = await response.text();
-                data = {
-                    error: text || 'An error occurred',
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            data = {
+                error: text || 'An error occurred',
                     message: `Server returned ${response.status}: ${response.statusText}`,
                 };
             }
@@ -492,7 +492,7 @@ export async function uploadFile<T>(
         }
 
         if (error && typeof error === 'object' && 'statusCode' in error) {
-            throw error as ApiError;
+        throw error as ApiError;
         }
 
         throw {

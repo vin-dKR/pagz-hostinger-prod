@@ -589,6 +589,30 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                     </div>
                                                 )}
 
+                                                {/* File Password (if provided) */}
+                                                {(item.metadata?.fileHasPassword || item.metadata?.filePassword) && (
+                                                    <div className="bg-rose-50 rounded-lg p-4 border border-rose-200">
+                                                        <h4 className="font-semibold text-rose-900 mb-2 text-sm uppercase tracking-wide">
+                                                            File Password
+                                                        </h4>
+                                                        <div className="space-y-1 text-sm text-rose-900">
+                                                            <p>
+                                                                <span className="font-medium">Password Protected:</span>{' '}
+                                                                {item.metadata?.fileHasPassword ? 'Yes' : 'Not specified'}
+                                                            </p>
+                                                            {item.metadata?.filePassword && (
+                                                                <p>
+                                                                    <span className="font-medium">Password:</span>{' '}
+                                                                    <span className="font-mono">{item.metadata.filePassword}</span>
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <p className="mt-2 text-xs text-rose-700">
+                                                            Use this password to open the customer’s uploaded PDF/document.
+                                                        </p>
+                                                    </div>
+                                                )}
+
                                                 {/* Custom Text */}
                                                 {item.customText && (
                                                     <div className="bg-gray-50 rounded-lg p-4 border">

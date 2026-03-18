@@ -39,7 +39,7 @@ export const CopiesSelector: React.FC<CopiesSelectorProps> = ({
         <div className={cn('space-y-3', className)}>
             <label className="block text-sm font-medium text-gray-700 mb-3 font-hkgb flex items-center gap-2">
                 <Copy className="w-4 h-4" />
-                Copies
+                Copies/Quantities
             </label>
 
             <div className="flex items-center gap-4 max-w-xs">

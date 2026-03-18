@@ -14,6 +14,7 @@ interface QuantityWithCopiesSelectorProps {
     max?: number;
     label?: string;
     className?: string;
+    quantityReadOnly?: boolean;
 }
 
 export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProps> = ({
@@ -26,6 +27,7 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
     max = 999,
     label = 'Quantity',
     className,
+    quantityReadOnly = false,
 }) => {
     const [isCopiesMode, setIsCopiesMode] = useState(false);
 
@@ -35,21 +37,9 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
         if (onModeChange) {
             onModeChange(newMode);
         }
-    };
-
-    const handleQuantityIncrement = () => {
-        const newValue = quantity + 1;
-        if (newValue <= max) {
-            onQuantityChange(newValue);
-        }
-    };
-
-    const handleQuantityDecrement = () => {
-        const newValue = quantity - 1;
-        if (newValue >= min) {
-            onQuantityChange(newValue);
-        } else {
-            onQuantityChange(min);
+        // When turning bulk mode OFF, reset copies back to 1
+        if (!newMode) {
+            onCopiesChange(1);
         }
     };
 
@@ -71,18 +61,18 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
 
     const handleCopiesInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
-        
+
         // Allow empty input while typing
         if (value === '') {
             return;
         }
-        
+
         // Only allow numbers
         const numValue = parseInt(value, 10);
         if (isNaN(numValue)) {
             return;
         }
-        
+
         // Clamp to min/max range
         if (numValue < min) {
             onCopiesChange(min);
@@ -96,7 +86,7 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
     const handleCopiesInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
         const value = e.target.value;
         const numValue = parseInt(value, 10);
-        
+
         // If empty or invalid, set to min
         if (value === '' || isNaN(numValue) || numValue < min) {
             onCopiesChange(min);
@@ -114,24 +104,7 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
                 </label>
             </div>
 
-            {/* Quantity Selector (Always Visible) */}
-            <div className="space-y-2">
-                <label className="block text-xs font-medium text-gray-600">
-                    Number of Pages Uploaded
-                </label>
-                <div className="flex items-start">
-                    <div className="">
-                        <div className="text-2xl sm:text-3xl font-hkgb text-gray-900">
-                            0
-                        </div>
-                        <div className="text-sm text-gray-600">
-                            {quantity === 1 ? 'page' : 'pages'}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Copies Checkbox */}
+            {/* Copies Checkbox (optional bulk toggle) */}
             <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
                 <input
                     type="checkbox"

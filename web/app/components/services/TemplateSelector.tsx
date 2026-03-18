@@ -55,7 +55,11 @@ export function TemplateSelector({
         }
     }, [onTemplateSelect]);
 
-    const handleClick = () => {
+    const handleClick = (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         if (templates.length === 0) {
             // No templates, trigger file input click
             const fileInput = document.getElementById('template-upload-select') as HTMLInputElement;
@@ -63,7 +67,11 @@ export function TemplateSelector({
                 fileInput.click();
             }
         } else {
-            // Templates exist, go to template page
+            // Templates exist, always go to template page
+            // Clear any draft data and edit flags to show gallery instead of opening dialog
+            sessionStorage.removeItem('selectedTemplateData');
+            sessionStorage.removeItem(`templateDraftData:${categorySlug}`);
+            sessionStorage.removeItem('templateEditAction');
             router.push(`/services/${categorySlug}/templates`);
         }
     };
@@ -99,25 +107,24 @@ export function TemplateSelector({
                     onChange={handleFileChange}
                 />
                 <div>
-                    <label
-                        htmlFor={templates.length === 0 ? "template-upload-select" : undefined}
-                        onClick={templates.length > 0 ? handleClick : undefined}
-                        className={`inline-flex items-center gap-2 px-6 py-3 bg-[#CFCFCF] hover:bg-gray-400 text-gray-700 rounded-lg font-medium cursor-pointer transition-colors ${
-                            templates.length === 0 ? 'cursor-pointer' : ''
-                        }`}
-                    >
-                        {templates.length === 0 ? (
-                            <>
-                                <Upload size={18} />
-                                Upload Documents
-                            </>
-                        ) : (
-                            <>
-                                <FileText size={18} />
-                                {selectedTemplateId ? 'Change Template' : 'Upload Design or Choose Template'}
-                            </>
-                        )}
-                    </label>
+                    {templates.length === 0 ? (
+                        <label
+                            htmlFor="template-upload-select"
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-[#CFCFCF] hover:bg-gray-400 text-gray-700 rounded-lg font-medium cursor-pointer transition-colors"
+                        >
+                            <Upload size={18} />
+                            Upload Documents
+                        </label>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={handleClick}
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-[#CFCFCF] hover:bg-gray-400 text-gray-700 rounded-lg font-medium cursor-pointer transition-colors w-fit"
+                        >
+                            <FileText size={18} /> 
+                            {selectedTemplateId ? 'Change Template' : 'Upload Design or Choose Template'}
+                        </button>
+                    )}
                     <p className="mt-2 text-xs text-gray-500">
                         {templates.length === 0 
                             ? 'Supported formats: Images (JPG, PNG, WebP, GIF - Max 10MB) and PDFs (Max 50MB)'

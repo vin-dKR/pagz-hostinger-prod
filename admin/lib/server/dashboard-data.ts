@@ -37,21 +37,21 @@ export async function getDashboardOverview(): Promise<DashboardOverviewResponse 
         try {
             timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-            const res = await fetch(`${baseUrl}/admin/dashboard/overview`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                cache: 'no-store',
-                signal: controller.signal,
-            });
+        const res = await fetch(`${baseUrl}/admin/dashboard/overview`, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            cache: 'no-store',
+            signal: controller.signal,
+        });
 
             if (timeoutId) {
-                clearTimeout(timeoutId);
+        clearTimeout(timeoutId);
                 timeoutId = null;
             }
 
-            if (!res.ok) {
+        if (!res.ok) {
                 // Handle 401 Unauthorized (session expired/invalid)
                 if (res.status === 401) {
                     console.error('[DASHBOARD] Session expired or invalid (401). User needs to login again.');
@@ -70,7 +70,7 @@ export async function getDashboardOverview(): Promise<DashboardOverviewResponse 
                 
                 // For other errors, return null to allow graceful degradation
                 return null;
-            }
+        }
 
             let body;
             try {
@@ -80,14 +80,14 @@ export async function getDashboardOverview(): Promise<DashboardOverviewResponse 
                 return null;
             }
 
-            if (body && typeof body === 'object') {
-                // Our API typically wraps data in { success, data }
-                if (body.data) {
-                    return body.data as DashboardOverviewResponse;
-                }
+        if (body && typeof body === 'object') {
+            // Our API typically wraps data in { success, data }
+            if (body.data) {
+                return body.data as DashboardOverviewResponse;
             }
+        }
 
-            return body as DashboardOverviewResponse;
+        return body as DashboardOverviewResponse;
         } catch (fetchError) {
             if (timeoutId) {
                 clearTimeout(timeoutId);

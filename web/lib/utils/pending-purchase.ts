@@ -31,6 +31,8 @@ export interface PendingPurchaseData {
     quantity?: number;
     copies?: number;
     pageCount?: number;
+    fileHasPassword?: boolean;
+    filePassword?: string;
     customText?: string;
     templateId?: string;
     templateFormData?: Record<string, any>;
@@ -43,6 +45,8 @@ export interface PendingPurchaseData {
         templateId?: string;
         templateFormData?: Record<string, any>;
         templateFormImages?: string[];
+        fileHasPassword?: boolean;
+        filePassword?: string;
     };
     currentPrice?: number;
     totalPrice?: number;

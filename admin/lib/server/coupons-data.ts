@@ -18,18 +18,18 @@ export async function getCoupon(id: string): Promise<Coupon | null> {
             return null;
         }
 
-        const token = cookieStore.get('admin_token')?.value;
+    const token = cookieStore.get('admin_token')?.value;
 
-        try {
-            const res = await fetch(`${baseUrl}/admin/coupons/${id}`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                cache: 'no-store',
-            });
+    try {
+        const res = await fetch(`${baseUrl}/admin/coupons/${id}`, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            cache: 'no-store',
+        });
 
-            if (!res.ok) {
+        if (!res.ok) {
                 // Handle 401 Unauthorized (session expired/invalid)
                 if (res.status === 401) {
                     console.error('[Coupons] Session expired or invalid (401). User needs to login again.');
@@ -45,10 +45,10 @@ export async function getCoupon(id: string): Promise<Coupon | null> {
                 body = await res.json();
             } catch (jsonError) {
                 console.error('[Coupons] Error parsing JSON response:', jsonError);
-                return null;
-            }
+            return null;
+        }
 
-            return body.data || body;
+        return body.data || body;
         } catch (fetchError) {
             // Handle network errors
             if (fetchError instanceof TypeError) {
@@ -77,18 +77,18 @@ export async function getCouponAnalytics(id: string): Promise<CouponAnalytics | 
             return null;
         }
 
-        const token = cookieStore.get('admin_token')?.value;
+    const token = cookieStore.get('admin_token')?.value;
 
-        try {
-            const res = await fetch(`${baseUrl}/admin/coupons/${id}/analytics`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                cache: 'no-store',
-            });
+    try {
+        const res = await fetch(`${baseUrl}/admin/coupons/${id}/analytics`, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            cache: 'no-store',
+        });
 
-            if (!res.ok) {
+        if (!res.ok) {
                 // Handle 401 Unauthorized (session expired/invalid)
                 if (res.status === 401) {
                     console.error('[Coupons] Session expired or invalid (401). User needs to login again.');
@@ -104,10 +104,10 @@ export async function getCouponAnalytics(id: string): Promise<CouponAnalytics | 
                 body = await res.json();
             } catch (jsonError) {
                 console.error('[Coupons] Error parsing JSON response:', jsonError);
-                return null;
-            }
+            return null;
+        }
 
-            return body.data || body;
+        return body.data || body;
         } catch (fetchError) {
             // Handle network errors
             if (fetchError instanceof TypeError) {
@@ -140,18 +140,18 @@ export async function getCouponUsages(
             return null;
         }
 
-        const token = cookieStore.get('admin_token')?.value;
+    const token = cookieStore.get('admin_token')?.value;
 
-        try {
-            const res = await fetch(`${baseUrl}/admin/coupons/${id}/usages?page=${page}&limit=${limit}`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                cache: 'no-store',
-            });
+    try {
+        const res = await fetch(`${baseUrl}/admin/coupons/${id}/usages?page=${page}&limit=${limit}`, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            cache: 'no-store',
+        });
 
-            if (!res.ok) {
+        if (!res.ok) {
                 // Handle 401 Unauthorized (session expired/invalid)
                 if (res.status === 401) {
                     console.error('[Coupons] Session expired or invalid (401). User needs to login again.');
@@ -167,10 +167,10 @@ export async function getCouponUsages(
                 body = await res.json();
             } catch (jsonError) {
                 console.error('[Coupons] Error parsing JSON response:', jsonError);
-                return null;
-            }
+            return null;
+        }
 
-            return body.data || body;
+        return body.data || body;
         } catch (fetchError) {
             // Handle network errors
             if (fetchError instanceof TypeError) {

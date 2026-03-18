@@ -20,14 +20,14 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
 
     const checkAuth = async () => {
       try {
-        const token = getAuthToken();
+    const token = getAuthToken();
 
-        if (!token) {
-          // User is not logged in, redirect to login
+    if (!token) {
+      // User is not logged in, redirect to login
           if (isMounted) {
-            router.replace('/login');
+      router.replace('/login');
           }
-        } else {
+    } else {
           if (isMounted) {
             setIsChecking(false);
             setHasError(false);
@@ -37,7 +37,7 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
         console.error('[DashboardGuard] Error checking authentication:', error);
         if (isMounted) {
           setHasError(true);
-          setIsChecking(false);
+      setIsChecking(false);
           // On error, redirect to login for safety
           router.replace('/login');
         }
@@ -63,9 +63,9 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
 
   // Check again in case token was removed
   try {
-    const token = getAuthToken();
-    if (!token) {
-      return null; // Will redirect
+  const token = getAuthToken();
+  if (!token) {
+    return null; // Will redirect
     }
   } catch (error) {
     console.error('[DashboardGuard] Error getting token in render:', error);

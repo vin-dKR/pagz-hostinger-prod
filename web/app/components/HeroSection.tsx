@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCategories } from "@/lib/hooks/use-categories";
 import { type Category } from "@/lib/api/categories";
-import { type Carousel } from "@/lib/api/carousel";
 import { useCarousel } from "@/lib/hooks/use-carousel";
 import Image from "next/image";
 
@@ -16,13 +14,9 @@ export default function HeroSection() {
     const [searchSuggestions, setSearchSuggestions] = useState<Category[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
-    // Use TanStack Query for carousel data (cached to reduce bandwidth)
     const { data: carousels = [], isLoading: carouselLoading } = useCarousel();
-    // Use TanStack Query for categories (cached to reduce AWS bandwidth costs)
     const { data: allCategories = [], isLoading: categoriesLoading } = useCategories();
     
-    // For infinite circular carousel, we use a virtual index that can go beyond array bounds
-    // We'll duplicate slides at the beginning and end for seamless transitions
     const [virtualIndex, setVirtualIndex] = useState(1); // Start at 1 (first real slide after duplicate)
     const [isTransitioning, setIsTransitioning] = useState(true);
     const [isDragging, setIsDragging] = useState(false);

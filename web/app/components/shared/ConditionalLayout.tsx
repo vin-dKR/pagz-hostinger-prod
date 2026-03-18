@@ -6,6 +6,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useState, useEffect } from "react";
 import Header from "./Header";
 import Footer from "./Footer";
+import BottomNavigation from "./BottomNavigation";
 
 export default function ConditionalLayout({
     children,
@@ -35,6 +36,7 @@ export default function ConditionalLayout({
             <main className={`flex-1 bg-white ${!isAuthPage ? "pb-20 md:pb-24 lg:pb-32 xl:pb-40" : ""}`}>
                 {children}
             </main>
+            {!isAuthPage && <BottomNavigation />}
             {!isAuthPage && <Footer />}
         </>
     );

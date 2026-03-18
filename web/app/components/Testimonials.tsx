@@ -16,45 +16,59 @@ export default function Testimonials() {
     const [testimonials] = useState<Testimonial[]>([
         {
             id: "1",
-            customerName: "Sarah M.",
+            customerName: "Priya Sharma",
             isVerified: true,
             rating: 5,
-            review: "I'm blown away by the quality and style of the clothes I received from Shapco. From casual wear to elegant dresses, every piece I've bought has exceeded my expectations."
+            review: "Ordered 500 business cards for my startup and the quality is outstanding! The colors came out exactly as I designed them. Fast delivery and excellent customer support. Highly recommend for professional printing needs."
         },
         {
             id: "2",
-            customerName: "Alex K.",
+            customerName: "Rajesh Kumar",
             isVerified: true,
             rating: 5,
-            review: "Finding clothes that align with my personal style used to be a challenge until I discovered Shapco. The range of options they offer is truly remarkable, catering to a variety of tastes and occasions."
+            review: "Got my wedding photo album printed here. The photo quality is amazing and the binding is perfect. They even helped me choose the right paper quality. Worth every rupee!"
         },
         {
             id: "3",
-            customerName: "James L.",
+            customerName: "Anjali Patel",
             isVerified: true,
-            rating: 5,
-            review: "As someone who's always on the lookout for unique fashion gloves, I'm thrilled to have stumbled upon Shapco. The selection of clothes is not only diverse but also on-point with the latest trends."
+            rating: 4,
+            review: "Printed my college project documents - 200 pages with color covers. The printing is clear and professional. Delivery was on time. Only minor issue was one page had slight misalignment, but overall satisfied."
         },
         {
             id: "4",
-            customerName: "Michael T.",
+            customerName: "Vikram Singh",
             isVerified: true,
             rating: 5,
-            review: "The customer service at Shapco is exceptional! They helped me find the perfect outfit for my wedding anniversary. The attention to detail is remarkable."
+            review: "Best printing service in Bihar! Got my company letterheads and visiting cards printed. The quality is top-notch and pricing is very reasonable. They understand business requirements well."
         },
         {
             id: "5",
-            customerName: "Emma S.",
+            customerName: "Meera Reddy",
             isVerified: true,
             rating: 5,
-            review: "I've been a loyal customer for over a year now, and every purchase has been a delight. The quality is consistently excellent and the fit is always perfect."
+            review: "Ordered bulk printing for my school - 1000 copies of exam papers. They handled the large order efficiently and delivered on schedule. The print quality is consistent throughout. Great service!"
         },
         {
             id: "6",
-            customerName: "David R.",
+            customerName: "Amit Verma",
+            isVerified: true,
+            rating: 4,
+            review: "Printed large format maps for my office presentation. The colors are vibrant and the details are sharp. Good quality paper used. Would have given 5 stars if the delivery was a bit faster, but quality is excellent."
+        },
+        {
+            id: "7",
+            customerName: "Sneha Desai",
             isVerified: true,
             rating: 5,
-            review: "From business suits to casual wear, Shapco has everything I need. The fabrics are premium and the tailoring is impeccable."
+            review: "Got brochures printed for my business. The design came out exactly as I wanted. Professional finish and good customer service. They even suggested improvements to my design. Very helpful team!"
+        },
+        {
+            id: "8",
+            customerName: "Rohit Gupta",
+            isVerified: true,
+            rating: 5,
+            review: "Printed my book manuscript - 300 pages. The binding is sturdy and the pages are crisp. They offer various binding options and helped me choose the best one. Great value for money!"
         }
     ]);
 
