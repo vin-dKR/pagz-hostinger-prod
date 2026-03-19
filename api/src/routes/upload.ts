@@ -7,7 +7,7 @@ import {
     deleteOrderFile,
     // uploadOrderFilesAfterConfirmation - No longer needed, files uploaded immediately
 } from "../controllers/uploadController.js";
-import { uploadOrderFile, uploadImage } from "../middleware/upload-s3.js";
+import { uploadOrderFile, uploadImage } from "../middleware/upload-s3.js"; // multer config (name kept for compatibility)
 import { customerAuth } from "../middleware/auth.js";
 
 const router: IRouter = Router();

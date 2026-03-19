@@ -4,6 +4,7 @@ import {
     updateProduct,
     deleteProduct,
     addVariant,
+    addProductImage,
     createCategoties,
     updateCategory,
     deleteCategory,
@@ -170,6 +171,8 @@ router.post("/products", createProduct);
 router.put("/products/:id", updateProduct);
 router.delete("/products/:id", deleteProduct);
 router.post("/products/:id/variants", addVariant);
+// Product image management (URL-based, used after FTP upload)
+router.post("/products/:productId/images", addProductImage);
 router.get("/products/:id/addons", getAdminProductAddons);
 router.post("/products/:id/addons", addProductAddon);
 router.post("/products/:id/addons/remove", removeProductAddon);

@@ -2,14 +2,23 @@ import { Request, Response, NextFunction } from "express";
 import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError } from "../utils/errors.js";
 import {
-    uploadToS3,
-    deleteFromS3,
-    getPublicUrl,
-    generatePresignedUrl,
-    generateFilename,
-} from "../services/s3.js";
+    uploadBufferToFTP,
+    deleteFromFTP,
+    getPublicFtpUrl,
+    extractFtpPathFromUrl,
+} from "../services/ftp.js";
 import { prisma } from "../services/prisma.js";
 import { randomUUID } from "crypto";
+
+/** Generate a filename with timestamp + random suffix */
+function generateFilename(originalName: string, prefix?: string): string {
+    const ext = originalName.split(".").pop() || "";
+    const timestamp = Date.now();
+    const random = Math.round(Math.random() * 1e9);
+    return prefix
+        ? `${prefix}-${timestamp}-${random}.${ext}`
+        : `${timestamp}-${random}.${ext}`;
+}
 
 // Upload design/order file (customer)
 export const uploadDesign = async (req: Request, res: Response, next: NextFunction) => {
@@ -24,38 +33,23 @@ export const uploadDesign = async (req: Request, res: Response, next: NextFuncti
 
         const userId = req.user.id;
         const sessionId = req.body.sessionId || randomUUID();
-        const productId = req.body.productId || null;
 
         // Generate filename
         const filename = generateFilename(req.file.originalname, "design");
+        const remoteSubDir = `orders/${userId}`;
+        const remoteFileName = `${sessionId}-${filename}`;
 
-        // Upload to S3 orders-file folder (permanent storage)
-        const subfolder = `${userId}`;
-        const key = await uploadToS3(
-            req.file,
-            "orders-file",
-            subfolder,
-            `${sessionId}-${filename}`,
-            false // Private file
-        );
-
-        // Generate presigned URL for immediate access
-        const presignedUrl = await generatePresignedUrl(key, 3600); // 1 hour
-
-        // Extract page count if PDF (optional - would need pdf-lib or similar)
-        let pageCount = null;
-        if (req.file.mimetype === "application/pdf") {
-            // TODO: Extract PDF page count if needed
-            // pageCount = await extractPdfPageCount(req.file.buffer);
-        }
+        // Upload to FTP orders folder
+        const remotePath = await uploadBufferToFTP(req.file.buffer, remoteFileName, remoteSubDir);
+        const publicUrl = getPublicFtpUrl(remotePath);
 
         return sendSuccess(res, {
-            key,
-            url: presignedUrl,
-            filename: `${sessionId}-${filename}`,
+            key: remotePath,
+            url: publicUrl,
+            filename: remoteFileName,
             size: req.file.size,
             mimetype: req.file.mimetype,
-            pageCount,
+            pageCount: null,
         }, "File uploaded successfully", 201);
     } catch (error) {
         next(error);
@@ -69,8 +63,7 @@ export const uploadOrderFiles = async (req: Request, res: Response, next: NextFu
             throw new ValidationError("No files uploaded");
         }
 
-        // Allow unauthenticated uploads with session-based storage
-        const userId = req.user?.id || 'guest';
+        const userId = req.user?.id || "guest";
         const sessionId = (req.body.sessionId as string) || randomUUID();
 
         // Handle both single file array and multiple files
@@ -78,7 +71,6 @@ export const uploadOrderFiles = async (req: Request, res: Response, next: NextFu
         if (Array.isArray(req.files)) {
             files = req.files;
         } else if (typeof req.files === "object") {
-            // Handle fieldname-based file object
             files = Object.values(req.files).flat();
         }
 
@@ -87,25 +79,19 @@ export const uploadOrderFiles = async (req: Request, res: Response, next: NextFu
         }
 
         // Use session-based subfolder for unauthenticated users, userId for authenticated
-        const subfolder = req.user?.id ? `${userId}` : `guest/${sessionId}`;
+        const subfolder = req.user?.id ? `orders/${userId}` : `orders/guest/${sessionId}`;
 
         const uploadResults = await Promise.all(
             files.map(async (file) => {
                 const filename = generateFilename(file.originalname, "design");
-                const key = await uploadToS3(
-                    file,
-                    "orders-file",
-                    subfolder,
-                    `${sessionId}-${filename}`,
-                    false
-                );
-
-                const presignedUrl = await generatePresignedUrl(key, 3600);
+                const remoteFileName = `${sessionId}-${filename}`;
+                const remotePath = await uploadBufferToFTP(file.buffer, remoteFileName, subfolder);
+                const publicUrl = getPublicFtpUrl(remotePath);
 
                 return {
-                    key,
-                    url: presignedUrl,
-                    filename: `${sessionId}-${filename}`,
+                    key: remotePath,
+                    url: publicUrl,
+                    filename: remoteFileName,
                     size: file.size,
                     mimetype: file.mimetype,
                 };
@@ -137,9 +123,7 @@ export const uploadReviewImages = async (req: Request, res: Response, next: Next
 
         // Validate product exists if productId is provided
         if (productId) {
-            const product = await prisma.product.findUnique({
-                where: { id: productId },
-            });
+            const product = await prisma.product.findUnique({ where: { id: productId } });
             if (!product) {
                 throw new NotFoundError("Product not found");
             }
@@ -150,7 +134,6 @@ export const uploadReviewImages = async (req: Request, res: Response, next: Next
         if (Array.isArray(req.files)) {
             files = req.files;
         } else if (typeof req.files === "object") {
-            // Handle fieldname-based file object
             files = Object.values(req.files).flat();
         }
 
@@ -180,46 +163,39 @@ export const uploadReviewImages = async (req: Request, res: Response, next: Next
             }
         }
 
-        // Upload to S3 in reviews folder
-        const subfolder = productId ? `${userId}/${productId}` : `${userId}`;
+        // Upload to FTP in reviews folder
+        const subfolder = productId
+            ? `reviews/${userId}/${productId}`
+            : `reviews/${userId}`;
+
         const uploadResults = await Promise.all(
             files.map(async (file, index) => {
                 const filename = generateFilename(file.originalname, "review");
-                const timestamp = Date.now();
-                const key = await uploadToS3(
-                    file,
-                    "images", // Use images folder for review images (public access)
-                    `reviews/${subfolder}`,
-                    `${timestamp}-${index}-${filename}`,
-                    true // Public file so review images can be displayed directly
-                );
-
-                // Get public URL (since images are public)
-                const publicUrl = getPublicUrl(key);
+                const remoteFileName = `${Date.now()}-${index}-${filename}`;
+                const remotePath = await uploadBufferToFTP(file.buffer, remoteFileName, subfolder);
+                const publicUrl = getPublicFtpUrl(remotePath);
 
                 return {
-                    key,
+                    key: remotePath,
                     url: publicUrl,
-                    filename: `${timestamp}-${index}-${filename}`,
+                    filename: remoteFileName,
                     size: file.size,
                     mimetype: file.mimetype,
                 };
             })
         );
 
-        return sendSuccess(res, {
-            files: uploadResults,
-        }, "Review images uploaded successfully", 201);
+        return sendSuccess(res, { files: uploadResults }, "Review images uploaded successfully", 201);
     } catch (error) {
         next(error);
     }
 };
 
-// Get order file (presigned URL)
+// Get order file – FTP files are public, so return direct public URL
 export const getOrderFile = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const fileKey = Array.isArray(req.params.fileKey) 
-            ? req.params.fileKey[0] 
+        const fileKey = Array.isArray(req.params.fileKey)
+            ? req.params.fileKey[0]
             : req.params.fileKey;
 
         if (!fileKey) {
@@ -230,22 +206,20 @@ export const getOrderFile = async (req: Request, res: Response, next: NextFuncti
             throw new ValidationError("Customer authentication required");
         }
 
-        // Generate presigned URL (valid for 1 hour)
-        const presignedUrl = await generatePresignedUrl(fileKey, 3600);
+        // FTP files are served publicly; just return the public URL
+        const publicUrl = getPublicFtpUrl(extractFtpPathFromUrl(fileKey));
 
-        return sendSuccess(res, {
-            url: presignedUrl,
-        }, "File URL generated successfully");
+        return sendSuccess(res, { url: publicUrl }, "File URL generated successfully");
     } catch (error) {
         next(error);
     }
 };
 
-// Delete order file
+// Delete order file from FTP
 export const deleteOrderFile = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const fileKey = Array.isArray(req.params.fileKey) 
-            ? req.params.fileKey[0] 
+        const fileKey = Array.isArray(req.params.fileKey)
+            ? req.params.fileKey[0]
             : req.params.fileKey;
 
         if (!fileKey) {
@@ -256,8 +230,9 @@ export const deleteOrderFile = async (req: Request, res: Response, next: NextFun
             throw new ValidationError("Customer authentication required");
         }
 
-        // Delete from S3
-        await deleteFromS3(fileKey);
+        // Delete from FTP
+        const ftpPath = extractFtpPathFromUrl(fileKey);
+        await deleteFromFTP(ftpPath);
 
         return sendSuccess(res, null, "File deleted successfully");
     } catch (error) {
@@ -285,25 +260,15 @@ export const uploadProductImage = async (req: Request, res: Response, next: Next
             throw new ValidationError("Product ID is required");
         }
 
-        const product = await prisma.product.findUnique({
-            where: { id: productId },
-        });
-
+        const product = await prisma.product.findUnique({ where: { id: productId } });
         if (!product) {
             throw new NotFoundError("Product not found");
         }
 
-        // Upload to S3 in product images folder
+        // Upload to FTP in product images folder
         const filename = generateFilename(req.file.originalname, "product");
-        const key = await uploadToS3(
-            req.file,
-            "images",
-            `products/${productId}`,
-            filename,
-            true // public
-        );
-
-        const url = getPublicUrl(key);
+        const remotePath = await uploadBufferToFTP(req.file.buffer, filename, `images/products/${productId}`);
+        const url = getPublicFtpUrl(remotePath);
 
         // Determine display order (append to end)
         const maxOrder = await prisma.productImage.findFirst({
@@ -322,25 +287,12 @@ export const uploadProductImage = async (req: Request, res: Response, next: Next
         }
 
         const image = await prisma.productImage.create({
-            data: {
-                productId,
-                url,
-                alt,
-                isPrimary: isPrimaryFlag,
-                displayOrder,
-            },
+            data: { productId, url, alt, isPrimary: isPrimaryFlag, displayOrder },
         });
 
         return sendSuccess(
             res,
-            {
-                url,
-                key,
-                filename,
-                size: req.file.size,
-                mimetype: req.file.mimetype,
-                image,
-            },
+            { url, key: remotePath, filename, size: req.file.size, mimetype: req.file.mimetype, image },
             "Product image uploaded successfully",
             201
         );
@@ -360,15 +312,11 @@ export const uploadProductImages = async (req: Request, res: Response, next: Nex
         }
 
         const productId = req.body.productId as string | undefined;
-
         if (!productId) {
             throw new ValidationError("Product ID is required");
         }
 
-        const product = await prisma.product.findUnique({
-            where: { id: productId },
-        });
-
+        const product = await prisma.product.findUnique({ where: { id: productId } });
         if (!product) {
             throw new NotFoundError("Product not found");
         }
@@ -391,16 +339,7 @@ export const uploadProductImages = async (req: Request, res: Response, next: Nex
             orderBy: { displayOrder: "desc" },
             select: { displayOrder: true },
         });
-        let displayOrderBase = maxOrder ? maxOrder.displayOrder + 1 : 0;
-
-        const results: {
-            key: string;
-            url: string;
-            filename: string;
-            size: number;
-            mimetype: string;
-            image: any;
-        }[] = [];
+        const displayOrderBase = maxOrder ? maxOrder.displayOrder + 1 : 0;
 
         // Check if product already has a primary image
         const existingPrimary = await prisma.productImage.findFirst({
@@ -408,38 +347,34 @@ export const uploadProductImages = async (req: Request, res: Response, next: Nex
             select: { id: true },
         });
 
+        const results: Array<{
+            key: string;
+            url: string;
+            filename: string;
+            size: number;
+            mimetype: string;
+            image: any;
+        }> = [];
+
         for (let index = 0; index < files.length; index++) {
             const file = files[index];
             if (!file) continue;
 
             const filename = generateFilename(file.originalname, "product");
-            const key = await uploadToS3(
-                file,
-                "images",
-                `products/${productId}`,
-                filename,
-                true
-            );
-            const url = getPublicUrl(key);
+            const remotePath = await uploadBufferToFTP(file.buffer, filename, `images/products/${productId}`);
+            const url = getPublicFtpUrl(remotePath);
 
             const image = await prisma.productImage.create({
                 data: {
                     productId,
                     url,
                     alt: null,
-                    isPrimary: !existingPrimary && index === 0, // If no primary yet, make first uploaded primary
+                    isPrimary: !existingPrimary && index === 0,
                     displayOrder: displayOrderBase + index,
                 },
             });
 
-            results.push({
-                key,
-                url,
-                filename,
-                size: file.size,
-                mimetype: file.mimetype,
-                image,
-            });
+            results.push({ key: remotePath, url, filename, size: file.size, mimetype: file.mimetype, image });
         }
 
         return sendSuccess(
@@ -462,27 +397,29 @@ export const uploadProductImages = async (req: Request, res: Response, next: Nex
  */
 export const deleteProductImage = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const imageId = Array.isArray(req.params.imageId) 
-            ? req.params.imageId[0] 
+        const imageId = Array.isArray(req.params.imageId)
+            ? req.params.imageId[0]
             : req.params.imageId;
 
         if (!imageId) {
             throw new ValidationError("Image ID is required");
         }
 
-        const image = await prisma.productImage.findUnique({
-            where: { id: imageId },
-        });
-
+        const image = await prisma.productImage.findUnique({ where: { id: imageId } });
         if (!image) {
             throw new NotFoundError("Product image not found");
         }
 
-        // Optionally delete from S3 as well if you store keys separately.
-        // For now, we only delete the database record.
-        await prisma.productImage.delete({
-            where: { id: imageId },
-        });
+        // Delete from FTP
+        try {
+            const ftpPath = extractFtpPathFromUrl(image.url);
+            await deleteFromFTP(ftpPath);
+        } catch (ftpError) {
+            // Log but don't fail – remove DB record regardless
+            console.error(`[Upload] Failed to delete product image from FTP (${image.url}):`, ftpError);
+        }
+
+        await prisma.productImage.delete({ where: { id: imageId } });
 
         return sendSuccess(res, null, "Product image deleted successfully");
     } catch (error) {
@@ -500,7 +437,9 @@ export const uploadCategoryImage = async (req: Request, res: Response, next: Nex
             throw new ValidationError("No file uploaded");
         }
 
-        const categoryId = (req.params.categoryId as string | undefined) || (req.body.categoryId as string | undefined);
+        const categoryId =
+            (req.params.categoryId as string | undefined) ||
+            (req.body.categoryId as string | undefined);
         const alt = (req.body.alt as string | undefined) || null;
         const isPrimaryFlag = req.body.isPrimary !== undefined
             ? req.body.isPrimary === "true" || req.body.isPrimary === true
@@ -510,23 +449,14 @@ export const uploadCategoryImage = async (req: Request, res: Response, next: Nex
             throw new ValidationError("Category ID is required");
         }
 
-        const category = await prisma.category.findUnique({
-            where: { id: categoryId },
-        });
-
+        const category = await prisma.category.findUnique({ where: { id: categoryId } });
         if (!category) {
             throw new NotFoundError("Category not found");
         }
 
         const filename = generateFilename(req.file.originalname, "category");
-        const key = await uploadToS3(
-            req.file,
-            "images",
-            `categories/${categoryId}`,
-            filename,
-            true
-        );
-        const url = getPublicUrl(key);
+        const remotePath = await uploadBufferToFTP(req.file.buffer, filename, `images/categories/${categoryId}`);
+        const url = getPublicFtpUrl(remotePath);
 
         // Determine display order
         const maxOrder = await prisma.categoryImage.findFirst({
@@ -545,25 +475,12 @@ export const uploadCategoryImage = async (req: Request, res: Response, next: Nex
         }
 
         const image = await prisma.categoryImage.create({
-            data: {
-                categoryId,
-                url,
-                alt,
-                isPrimary: isPrimaryFlag,
-                displayOrder,
-            },
+            data: { categoryId, url, alt, isPrimary: isPrimaryFlag, displayOrder },
         });
 
         return sendSuccess(
             res,
-            {
-                url,
-                key,
-                filename,
-                size: req.file.size,
-                mimetype: req.file.mimetype,
-                image,
-            },
+            { url, key: remotePath, filename, size: req.file.size, mimetype: req.file.mimetype, image },
             "Category image uploaded successfully",
             201
         );
@@ -578,26 +495,28 @@ export const uploadCategoryImage = async (req: Request, res: Response, next: Nex
  */
 export const deleteCategoryImage = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const imageId = Array.isArray(req.params.imageId) 
-            ? req.params.imageId[0] 
+        const imageId = Array.isArray(req.params.imageId)
+            ? req.params.imageId[0]
             : req.params.imageId;
 
         if (!imageId) {
             throw new ValidationError("Image ID is required");
         }
 
-        const image = await prisma.categoryImage.findUnique({
-            where: { id: imageId },
-        });
-
+        const image = await prisma.categoryImage.findUnique({ where: { id: imageId } });
         if (!image) {
             throw new NotFoundError("Category image not found");
         }
 
-        // Optionally delete from S3 as well if you store keys separately.
-        await prisma.categoryImage.delete({
-            where: { id: imageId },
-        });
+        // Delete from FTP
+        try {
+            const ftpPath = extractFtpPathFromUrl(image.url);
+            await deleteFromFTP(ftpPath);
+        } catch (ftpError) {
+            console.error(`[Upload] Failed to delete category image from FTP (${image.url}):`, ftpError);
+        }
+
+        await prisma.categoryImage.delete({ where: { id: imageId } });
 
         return sendSuccess(res, null, "Category image deleted successfully");
     } catch (error) {
@@ -618,173 +537,29 @@ export const uploadCarouselImage = async (req: Request, res: Response, next: Nex
         const alt = (req.body.alt as string | undefined) || null;
 
         // Validate file type
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+        const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
         if (!allowedTypes.includes(req.file.mimetype)) {
-            throw new ValidationError("Invalid file type. Please upload JPG, PNG, WebP, or GIF images.");
+            throw new ValidationError(
+                "Invalid file type. Please upload JPG, PNG, WebP, or GIF images."
+            );
         }
 
         // Validate file size (max 10MB)
-        const maxSize = 10 * 1024 * 1024; // 10MB
+        const maxSize = 10 * 1024 * 1024;
         if (req.file.size > maxSize) {
             throw new ValidationError("File size must be less than 10MB.");
         }
 
         const filename = generateFilename(req.file.originalname, "carousel");
-        const key = await uploadToS3(
-            req.file,
-            "images",
-            "carousels",
-            filename,
-            true // public
-        );
-        const url = getPublicUrl(key);
+        const remotePath = await uploadBufferToFTP(req.file.buffer, filename, "carousel");
+        const url = getPublicFtpUrl(remotePath);
 
         return sendSuccess(
             res,
-            {
-                url,
-                key,
-                filename,
-                size: req.file.size,
-                mimetype: req.file.mimetype,
-                alt,
-            },
+            { url, key: remotePath, filename, size: req.file.size, mimetype: req.file.mimetype, alt },
             "Carousel image uploaded successfully",
             201
         );
-    } catch (error) {
-        next(error);
-    }
-};
-
-// Upload files for order after order confirmation (called from frontend after payment success)
-export const uploadOrderFilesAfterConfirmation = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        if (!req.files || (Array.isArray(req.files) && req.files.length === 0)) {
-            throw new ValidationError("No files uploaded");
-        }
-
-        if (!req.user || req.user.type !== "customer") {
-            throw new ValidationError("Customer authentication required");
-        }
-
-        const orderId = Array.isArray(req.params.orderId) 
-            ? req.params.orderId[0] 
-            : req.params.orderId;
-        const orderItemId = req.body.orderItemId as string | undefined;
-        const productId = req.body.productId as string | undefined;
-        const variantId = req.body.variantId as string | undefined;
-
-        if (!orderId) {
-            throw new ValidationError("Order ID is required");
-        }
-
-        if (!productId) {
-            throw new ValidationError("Product ID is required for matching order item");
-        }
-
-        // Verify order exists, belongs to user, and payment is successful
-        const order = await prisma.order.findFirst({
-            where: {
-                id: orderId,
-                userId: req.user.id,
-                paymentStatus: "SUCCESS",
-            },
-            include: {
-                items: true,
-            },
-        });
-
-        if (!order) {
-            throw new NotFoundError("Order not found, access denied, or payment not confirmed");
-        }
-
-        const userId = req.user.id;
-
-        // Handle both single file array and multiple files
-        let files: Express.Multer.File[] = [];
-        if (Array.isArray(req.files)) {
-            files = req.files;
-        } else if (typeof req.files === "object") {
-            files = Object.values(req.files).flat();
-        }
-
-        if (files.length === 0) {
-            throw new ValidationError("No files uploaded");
-        }
-
-        // Upload files to final order location: orders-file/{userId}/{orderId}/
-        const subfolder = `${userId}/${orderId}`;
-        const uploadResults = await Promise.all(
-            files.map(async (file, index) => {
-                const filename = generateFilename(file.originalname, "order");
-                const finalFilename = `${Date.now()}-${index}-${filename}`;
-
-                const key = await uploadToS3(
-                    file,
-                    "orders-file",
-                    subfolder,
-                    finalFilename,
-                    false // Private file
-                );
-
-                return {
-                    key,
-                    filename: finalFilename,
-                    size: file.size,
-                    mimetype: file.mimetype,
-                };
-            })
-        );
-
-        // Extract S3 keys from upload results
-        const uploadedKeys = uploadResults.map(result => result.key);
-
-        if (uploadedKeys.length === 0) {
-            throw new ValidationError("Failed to upload files");
-        }
-
-        // Find matching order item by productId and variantId
-        let matchingItem = order.items.find(item => {
-            const productMatch = item.productId === productId;
-            const variantMatch = variantId
-                ? item.variantId === variantId
-                : item.variantId === null;
-            return productMatch && variantMatch;
-        });
-
-        // If orderItemId is specified, use that instead
-        if (orderItemId) {
-            const itemById = order.items.find(item => item.id === orderItemId);
-            if (itemById) {
-                matchingItem = itemById;
-            }
-        }
-
-        if (!matchingItem) {
-            throw new NotFoundError(
-                `Order item not found for product ${productId}, variant ${variantId || 'none'}`
-            );
-        }
-
-        // Update order item with S3 URLs (replace existing array with new URLs)
-        const presignedUrls = await Promise.all(
-            uploadedKeys.map(async (key) => {
-                return await generatePresignedUrl(key, 3600 * 24 * 365); // 1 year
-            })
-        );
-
-        await prisma.orderItem.update({
-            where: { id: matchingItem.id },
-            data: {
-                customDesignUrl: presignedUrls,
-            },
-        });
-
-        return sendSuccess(res, {
-            files: uploadResults,
-            orderItemId: matchingItem.id,
-        }, "Files uploaded and linked to order successfully", 201);
     } catch (error) {
         next(error);
     }

@@ -735,7 +735,6 @@ export function CreateProductForm() {
                                                 alt={img.alt || 'Product image'}
                                                 fill
                                                 className="object-cover"
-                                                unoptimized={img.url?.includes('amazonaws.com') || img.url?.includes('s3.')}
                                             />
                                         </div>
                                     )}

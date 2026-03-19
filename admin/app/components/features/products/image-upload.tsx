@@ -2,7 +2,7 @@
 
 /**
  * Product Image Upload Component
- * Supports both file upload (S3) and URL input
+ * Supports both file upload (via FTP) and URL input
  */
 
 import { useState, useRef, FormEvent } from 'react';
@@ -210,11 +210,11 @@ export function ProductImageUpload({ productId, images, onImagesChange }: ImageU
                             <div key={image.id} className="relative group">
                                 <div className="relative aspect-square overflow-hidden rounded-md border">
                                     <Image
-                                        src={image.url}
+                                        src={image.url?.startsWith('http') ? image.url : `${process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || 'https://pagz.in'}/${image.url}`}
                                         alt={image.alt || 'Product image'}
                                         fill
                                         className="object-cover"
-                                        unoptimized={image.url?.includes('amazonaws.com') || image.url?.includes('s3.')}
+                                        unoptimized
                                     />
                                     {image.isPrimary && (
                                         <div className="absolute top-2 left-2 rounded bg-blue-500 px-2 py-1 text-xs font-semibold text-white">

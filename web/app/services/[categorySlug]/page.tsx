@@ -5,7 +5,7 @@ import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductPageTemplate } from '@/app/components/services/ProductPageTemplate';
 import { TemplateSelector } from '@/app/components/services/TemplateSelector';
-import { Select, type SelectOption } from '@/app/components/ui/select';
+import { Select } from '@/app/components/ui/select';
 import { useCategoryTemplates } from '@/lib/hooks/use-category-templates';
 import { QuantityWithCopiesSelector } from '@/app/components/services/QuantityWithCopiesSelector';
 import { FileDetail } from '@/app/components/products/ProductDocumentUpload';
@@ -968,6 +968,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 selectedAddons: selectedAddonIds,
                 fileHasPassword: fileHasPassword ? true : undefined,
                 filePassword: fileHasPassword ? (filePassword || undefined) : undefined,
+                filePasswords: fileHasPassword
+                    ? (filePassword || '')
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                    : undefined,
             };
 
             // Include template data if template is selected
@@ -1245,6 +1251,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 selectedAddons: selectedAddonIds,
                 fileHasPassword: fileHasPassword ? true : undefined,
                 filePassword: fileHasPassword ? (filePassword || undefined) : undefined,
+                filePasswords: fileHasPassword
+                    ? (filePassword || '')
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                    : undefined,
             };
 
             // Include template data if template is selected

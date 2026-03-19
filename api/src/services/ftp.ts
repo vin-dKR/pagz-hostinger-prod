@@ -1,19 +1,36 @@
 import "dotenv/config";
 import { Client, AccessOptions } from "basic-ftp";
-import path from "path";
 import fs from "fs";
+import path from "path";
+import { randomUUID } from "crypto";
 
 // FTP Configuration from environment variables or fallback to provided values
 // Note: host should be just the IP or hostname, NOT a URL (no ftp:// prefix)
+function requiredEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+        throw new Error(`Missing required environment variable: ${name}`);
+    }
+    return value;
+}
+
 const FTP_CONFIG: AccessOptions = {
-    host: process.env.FTP_HOST || "82.112.239.166",
-    port: parseInt(process.env.FTP_PORT || "21", 10),
-    user: process.env.FTP_USER || "u741493420.pagz.in",
-    password: process.env.FTP_PASSWORD || "7488465010@Hr",
+    host: requiredEnv("FTP_HOST"),
+    port: parseInt(requiredEnv("FTP_PORT"), 10),
+    user: requiredEnv("FTP_USER"),
+    password: requiredEnv("FTP_PASSWORD"),
     secure: process.env.FTP_SECURE === "true", // Use FTPS if enabled
 };
 
 const FTP_REMOTE_DIR = process.env.FTP_REMOTE_DIR || "public_html";
+
+// Used by controllers that accept multer "memoryStorage" and need a local path for basic-ftp.
+const FTP_TEMP_DIR = path.join(process.cwd(), "uploads", "ftp-temp");
+
+// Ensure temp directory exists
+if (!fs.existsSync(FTP_TEMP_DIR)) {
+    fs.mkdirSync(FTP_TEMP_DIR, { recursive: true });
+}
 
 /**
  * Upload a file to FTP server
@@ -77,18 +94,11 @@ export async function uploadToFTP(
             }
         }
         
-        // If subdirectory is provided, create it and navigate to it
+        // If subdirectory is provided, ensure it exists and navigate into it.
+        // ensureDir creates all intermediate directories as needed AND changes
+        // the working directory to the target — so no extra cd() call required.
         if (remoteSubDir) {
-            const subDirs = remoteSubDir.split("/").filter(Boolean);
-            for (const dir of subDirs) {
-                try {
-                    await client.cd(dir);
-                } catch (error) {
-                    // Directory doesn't exist, create it
-                    await client.ensureDir(dir);
-                    await client.cd(dir);
-                }
-            }
+            await client.ensureDir(remoteSubDir);
         }
         
         // Upload the file
@@ -133,6 +143,36 @@ export async function uploadToFTP(
             client.close();
         } catch (closeError) {
             // Ignore close errors
+        }
+    }
+}
+
+/**
+ * Upload an in-memory buffer to FTP by writing it to a temp file first.
+ * Returns the remote path (relative to FTP_REMOTE_DIR / public_html).
+ */
+export async function uploadBufferToFTP(
+    buffer: Buffer,
+    remoteFileName: string,
+    remoteSubDir?: string
+): Promise<string> {
+    // Create temp file with correct extension so FTP servers treat it correctly.
+    const ext = path.extname(remoteFileName);
+    const tempFilePath = path.join(FTP_TEMP_DIR, `${randomUUID()}${ext}`);
+
+    try {
+        fs.writeFileSync(tempFilePath, buffer);
+        return await uploadToFTP(tempFilePath, remoteFileName, remoteSubDir);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error("[FTP] uploadBufferToFTP failed:", errorMessage);
+        throw new Error(`FTP upload failed: ${errorMessage}`);
+    } finally {
+        try {
+            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        } catch (cleanupError) {
+            // Non-critical; temp files are safe to leave in worst case.
+            console.warn("[FTP] uploadBufferToFTP cleanup failed:", cleanupError);
         }
     }
 }
@@ -247,6 +287,39 @@ export async function listFTPFiles(remoteSubDir?: string): Promise<string[]> {
         } catch (closeError) {
             // Ignore close errors
         }
+    }
+}
+
+const FTP_PUBLIC_URL_BASE = process.env.FTP_PUBLIC_URL_BASE || "https://pagz.in";
+
+/**
+ * Construct a public URL from a relative FTP path.
+ * If a full URL is given it is returned unchanged.
+ * @param ftpPathOrUrl - e.g. "orders/abc/design.pdf" or "https://pagz.in/orders/abc/design.pdf"
+ */
+export function getPublicFtpUrl(ftpPathOrUrl: string): string {
+    if (ftpPathOrUrl.startsWith("http://") || ftpPathOrUrl.startsWith("https://")) {
+        return ftpPathOrUrl;
+    }
+    const cleanPath = ftpPathOrUrl.startsWith("/") ? ftpPathOrUrl.substring(1) : ftpPathOrUrl;
+    return `${FTP_PUBLIC_URL_BASE}/${cleanPath}`;
+}
+
+/**
+ * Extract the relative FTP path from a full URL or return the value unchanged if it
+ * is already a relative path.
+ * @param urlOrPath - e.g. "https://pagz.in/orders/abc/design.pdf" → "orders/abc/design.pdf"
+ */
+export function extractFtpPathFromUrl(urlOrPath: string): string {
+    if (!urlOrPath.startsWith("http://") && !urlOrPath.startsWith("https://")) {
+        return urlOrPath;
+    }
+    try {
+        const url = new URL(urlOrPath);
+        const pathname = url.pathname;
+        return pathname.startsWith("/") ? pathname.substring(1) : pathname;
+    } catch {
+        return urlOrPath;
     }
 }
 

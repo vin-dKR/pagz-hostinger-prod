@@ -151,15 +151,20 @@ export function EditProductForm({ productId }: EditProductFormProps) {
     const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!formData) return;
-        setError(null);
         setIsSubmitting(true);
 
         try {
             // Require at least one image before saving
             if (!formData.images || formData.images.length === 0) {
+                // Preserve any existing error (e.g. from a failed image upload)
+                if (!error) {
                 setError('Please add at least one product image before saving.');
+                }
                 return;
             }
+
+            // Clear any previous upload/save errors only after validation passes
+            setError(null);
 
             const payload: CreateProductData = {
                 ...formData,
@@ -408,6 +413,7 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                                                             ],
                                                         };
                                                     });
+                                            setError(null); // Clear any prior upload/save errors after success
 
                                                     // Clear selected files
                                                     setSelectedFiles([]);
@@ -445,7 +451,6 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                                                             alt={img.alt || 'Product image'}
                                                             fill
                                                             className="object-cover"
-                                                            unoptimized={img.url?.includes('amazonaws.com') || img.url?.includes('s3.')}
                                                         />
                                                     </div>
                                                 )}
@@ -678,7 +683,6 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                                                     alt={img.alt || 'Product image'}
                                                     fill
                                                     className="object-cover"
-                                                    unoptimized={img.url?.includes('amazonaws.com') || img.url?.includes('s3.')}
                                                 />
                                             </div>
                                         )}
@@ -1241,7 +1245,11 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                             >
                                 Cancel
                             </Button>
-                            <Button type="submit" isLoading={isSubmitting}>
+                            <Button
+                                type="submit"
+                                isLoading={isSubmitting}
+                                disabled={isSubmitting || uploadingImages}
+                            >
                                 Save Changes
                             </Button>
                         </div>

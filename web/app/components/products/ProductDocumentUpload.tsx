@@ -12,9 +12,10 @@ export interface FileDetail {
     type: 'image' | 'pdf';
     pageCount: number;
     id: string;
-    s3Key?: string; // S3 key if file has been uploaded
-    uploadStatus?: 'pending' | 'uploading' | 'uploaded' | 'error'; // Upload status
-    uploadAbortController?: AbortController; // For canceling uploads
+    /** Relative FTP path stored in DB (e.g. "orders/12345-design.pdf"). Previously called s3Key. */
+    s3Key?: string;
+    uploadStatus?: 'pending' | 'uploading' | 'uploaded' | 'error';
+    uploadAbortController?: AbortController;
 }
 
 interface ProductDocumentUploadProps {
@@ -247,8 +248,7 @@ export default function ProductDocumentUpload({
                 onQuantityChange(finalPageCount);
             }
 
-            // Upload files to S3 for both authenticated and unauthenticated users
-            // Unauthenticated uploads go to guest/{sessionId} folder
+            // Upload files via FTP (orders/ folder) for both authenticated and unauthenticated users
             newFileDetails.forEach((fileDetail) => {
                 uploadFileToS3(fileDetail);
             });
@@ -263,7 +263,7 @@ export default function ProductDocumentUpload({
         }
     };
 
-    // Upload a single file to S3
+    // Upload a single file via FTP (orders/ folder)
     const uploadFileToS3 = async (fileDetail: FileDetail) => {
         // Create abort controller for this upload
         const abortController = new AbortController();

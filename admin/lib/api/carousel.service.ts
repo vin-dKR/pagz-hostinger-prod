@@ -1,4 +1,5 @@
 import { get, post, put, del } from './api-client';
+import { uploadFileToFTP, FTP_FOLDERS } from './ftp';
 
 export interface Carousel {
     id: string;
@@ -116,25 +117,24 @@ export async function reorderCarouselsApi(data: ReorderCarouselData): Promise<Ca
 }
 
 /**
- * Upload carousel image file to S3
+ * Upload a carousel image via FTP.
+ *
+ * Files go to the `carousel/` folder on the FTP server.
+ * Returns `{ url, key, ... }` for backward compatibility with existing callers
+ * (the caller then passes `url` to `createCarouselApi`).
  */
 export async function uploadCarouselImageApi(
     file: File,
-    options?: { alt?: string }
+    options?: { alt?: string },
 ): Promise<{ url: string; key: string; filename: string; size: number; mimetype: string; alt?: string | null }> {
-    const { uploadFile } = await import('./api-client');
-    const formData: Record<string, string> = {};
-    if (options?.alt) formData.alt = options.alt;
+    const ftpResult = await uploadFileToFTP(file, FTP_FOLDERS.CAROUSEL);
 
-    const response = await uploadFile<{ url: string; key: string; filename: string; size: number; mimetype: string; alt?: string | null }>(
-        `/admin/upload/carousel-image`,
-        file,
-        formData
-    );
-
-    if (!response.success || !response.data) {
-        throw new Error(response.error || 'Failed to upload carousel image');
-    }
-
-    return response.data;
+    return {
+        url:      ftpResult.publicUrl,  // Full URL — used for preview & DB storage
+        key:      ftpResult.path,       // Relative path for compat
+        filename: ftpResult.filename,
+        size:     ftpResult.size,
+        mimetype: ftpResult.mimetype,
+        alt:      options?.alt ?? null,
+    };
 }

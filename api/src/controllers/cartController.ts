@@ -3,7 +3,7 @@ import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
-import { deleteFromS3, extractKeyFromUrl } from "../services/s3.js";
+import { deleteFromFTP, extractFtpPathFromUrl } from "../services/ftp.js";
 import { getParamAsString } from "../utils/db-utils.js";
 // Get user's cart
 export const getCart = async (req: Request, res: Response, next: NextFunction) => {
@@ -567,7 +567,7 @@ export const removeFromCart = async (req: Request, res: Response, next: NextFunc
             throw new UnauthorizedError("Not authorized to remove this cart item");
         }
 
-        // Delete S3 files associated with this cart item
+        // Delete FTP files associated with this cart item
         // Normalize customDesignUrl to array
         const designUrls = Array.isArray(cartItem.customDesignUrl)
             ? (cartItem.customDesignUrl as any[]).filter((url): url is string => typeof url === "string")
@@ -576,39 +576,21 @@ export const removeFromCart = async (req: Request, res: Response, next: NextFunc
                 : [];
 
         if (designUrls.length > 0) {
-            // Extract S3 keys from URLs
-            const s3Keys: string[] = [];
+            // Extract FTP paths from URLs/paths
+            const ftpPaths = designUrls
+                .map((urlOrKey) => extractFtpPathFromUrl(urlOrKey))
+                .filter((p) => p.trim() !== "");
 
-            for (const urlOrKey of designUrls) {
-                // Check if it's already a key (starts with "orders-file/")
-                if (urlOrKey.startsWith('orders-file/')) {
-                    s3Keys.push(urlOrKey);
-                    continue;
-                }
-
-                // Try to extract key from URL using the utility function
-                const extractedKey = extractKeyFromUrl(urlOrKey);
-                if (extractedKey) {
-                    s3Keys.push(extractedKey);
-                } else {
-                    // Fallback: try regex extraction for presigned URLs
-                    const match = urlOrKey.match(/orders-file\/[^?&#]+/);
-                    if (match) {
-                        s3Keys.push(match[0]);
-                    }
-                }
-            }
-
-            // Delete all S3 files (use allSettled to continue even if some fail)
-            if (s3Keys.length > 0) {
+            // Delete all FTP files (use allSettled to continue even if some fail)
+            if (ftpPaths.length > 0) {
                 const deleteResults = await Promise.allSettled(
-                    s3Keys.map(key => deleteFromS3(key))
+                    ftpPaths.map((p) => deleteFromFTP(p))
                 );
 
                 // Log any failures (but don't throw - cart item deletion should succeed)
                 deleteResults.forEach((result, index) => {
-                    if (result.status === 'rejected') {
-                        console.error(`[Cart] Failed to delete S3 file ${s3Keys[index]}:`, result.reason);
+                    if (result.status === "rejected") {
+                        console.error(`[Cart] Failed to delete FTP file ${ftpPaths[index]}:`, result.reason);
                     }
                 });
             }
@@ -639,8 +621,8 @@ export const clearCart = async (req: Request, res: Response, next: NextFunction)
         });
 
         if (cart && cart.items.length > 0) {
-            // Delete S3 files for all cart items before deleting the items
-            const s3Keys: string[] = [];
+            // Delete FTP files for all cart items before deleting the items
+            const ftpPaths: string[] = [];
 
             for (const item of cart.items) {
                 const designUrls = Array.isArray(item.customDesignUrl)
@@ -649,39 +631,22 @@ export const clearCart = async (req: Request, res: Response, next: NextFunction)
                         ? [item.customDesignUrl]
                         : [];
 
-                if (designUrls.length > 0) {
-                    for (const urlOrKey of designUrls) {
-                        // Check if it's already a key
-                        if (urlOrKey.startsWith('orders-file/')) {
-                            s3Keys.push(urlOrKey);
-                            continue;
-                        }
-
-                        // Try to extract key from URL
-                        const extractedKey = extractKeyFromUrl(urlOrKey);
-                        if (extractedKey) {
-                            s3Keys.push(extractedKey);
-                        } else {
-                            // Fallback: try regex extraction
-                            const match = urlOrKey.match(/orders-file\/[^?&#]+/);
-                            if (match) {
-                                s3Keys.push(match[0]);
-                            }
-                        }
-                    }
+                for (const urlOrKey of designUrls) {
+                    const ftpPath = extractFtpPathFromUrl(urlOrKey);
+                    if (ftpPath.trim()) ftpPaths.push(ftpPath);
                 }
             }
 
-            // Delete all S3 files
-            if (s3Keys.length > 0) {
+            // Delete all FTP files
+            if (ftpPaths.length > 0) {
                 const deleteResults = await Promise.allSettled(
-                    s3Keys.map(key => deleteFromS3(key))
+                    ftpPaths.map((p) => deleteFromFTP(p))
                 );
 
                 // Log any failures (but don't throw - cart clearing should succeed)
                 deleteResults.forEach((result, index) => {
-                    if (result.status === 'rejected') {
-                        console.error(`[Cart] Failed to delete S3 file ${s3Keys[index]}:`, result.reason);
+                    if (result.status === "rejected") {
+                        console.error(`[Cart] Failed to delete FTP file ${ftpPaths[index]}:`, result.reason);
                     }
                 });
             }

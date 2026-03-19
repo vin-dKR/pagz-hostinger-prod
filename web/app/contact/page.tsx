@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EnquiryForm } from "./EnquiryForm";
 
 export const metadata = {
     title: "Contact Us | Pagz",
@@ -29,7 +30,7 @@ export default function ContactPage() {
                             <p>
                                 <span className="text-gray-500">Email:</span>{" "}
                                 <a className="text-[#008ECC] hover:underline" href="mailto:admin@pagz.in">
-                                    admin@pagz.in
+                                    info@pagz.in
                                 </a>
                             </p>
                         </div>
@@ -44,6 +45,9 @@ export default function ContactPage() {
                         </div>
                     </section>
                 </div>
+
+                {/* Quick WhatsApp enquiry form */}
+                <EnquiryForm />
 
                 <section className="mt-6 rounded-xl border border-gray-200 p-6">
                     <h2 className="text-lg font-hkgb font-medium text-gray-900">Follow Us</h2>

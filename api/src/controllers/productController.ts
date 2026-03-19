@@ -1359,17 +1359,17 @@ export const deleteProduct = async (req: Request, res: Response, next: NextFunct
             throw new NotFoundError("Product not found");
         }
 
-        // Delete product images from S3 before soft deleting
+        // Delete product images from FTP before soft deleting
         if (product.images && product.images.length > 0) {
-            const { deleteFromS3, extractKeyFromUrl } = await import("../services/s3.js");
+            const { deleteFromFTP, extractFtpPathFromUrl } = await import("../services/ftp.js");
             await Promise.allSettled(
                 product.images.map(async (image) => {
-                    const key = extractKeyFromUrl(image.url);
-                    if (key) {
+                    const ftpPath = extractFtpPathFromUrl(image.url);
+                    if (ftpPath) {
                         try {
-                            await deleteFromS3(key);
+                            await deleteFromFTP(ftpPath);
                         } catch (error) {
-                            console.error(`Failed to delete S3 file for product image ${image.id}:`, error);
+                            console.error(`Failed to delete FTP file for product image ${image.id}:`, error);
                         }
                     }
                 })
@@ -1382,6 +1382,53 @@ export const deleteProduct = async (req: Request, res: Response, next: NextFunct
         });
 
         return sendSuccess(res, null, "Product deleted successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Admin: Add product image from URL (used after FTP upload)
+export const addProductImage = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const productId = getParamAsString(req.params.productId, "Product ID");
+        const { url, alt, isPrimary } = req.body;
+
+        if (!url) {
+            throw new ValidationError("Image URL is required");
+        }
+
+        const product = await prisma.product.findUnique({ where: { id: productId } });
+        if (!product) {
+            throw new NotFoundError("Product not found");
+        }
+
+        // Determine display order (append to end)
+        const maxOrder = await prisma.productImage.findFirst({
+            where: { productId },
+            orderBy: { displayOrder: "desc" },
+            select: { displayOrder: true },
+        });
+        const displayOrder = maxOrder ? maxOrder.displayOrder + 1 : 0;
+
+        // If setting as primary, unset existing primary
+        if (isPrimary) {
+            await prisma.productImage.updateMany({
+                where: { productId, isPrimary: true },
+                data: { isPrimary: false },
+            });
+        }
+
+        const image = await prisma.productImage.create({
+            data: {
+                productId,
+                url,
+                alt: alt ?? null,
+                isPrimary: isPrimary ?? false,
+                displayOrder,
+            },
+        });
+
+        return sendSuccess(res, image, "Product image added successfully", 201);
     } catch (error) {
         next(error);
     }

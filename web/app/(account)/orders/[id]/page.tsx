@@ -417,10 +417,10 @@ function OrderDetailsPageContent({
                                             // 1. Category image
                                             // 2. First custom design file (if image)
                                             // 3. Placeholder icon
-                                            const getDisplayImage = (): { url: string | null; isS3: boolean } | null => {
+                                            const getDisplayImage = (): { url: string | null } | null => {
                                                 // Priority 1: Category image
                                                 if (item.categoryImage) {
-                                                    return { url: item.categoryImage, isS3: false };
+                                                    return { url: item.categoryImage };
                                                 }
                                                 
                                                 // Priority 2: First custom design file (only if it's an image)
@@ -429,7 +429,7 @@ function OrderDetailsPageContent({
                                                         ? item.customDesignUrl[0] 
                                                         : item.customDesignUrl;
                                                     if (firstFile && isImageFile(firstFile)) {
-                                                        return { url: getPublicS3Url(firstFile), isS3: true };
+                                                        return { url: getPublicS3Url(firstFile) };
                                                     }
                                                 }
                                                 
@@ -448,7 +448,6 @@ function OrderDetailsPageContent({
                                                             className="object-cover"
                                                             sizes="(max-width: 640px) 64px, 80px"
                                                             loader={imageLoader}
-                                                            unoptimized={displayImage.isS3 || displayImage.url!.includes('amazonaws.com') || displayImage.url!.includes('s3.')}
                                                         />
                                                     ) : (
                                                         <Package className="text-gray-400 w-6 h-6 sm:w-8 sm:h-8" />
@@ -482,12 +481,6 @@ function OrderDetailsPageContent({
                                                     <p className="text-sm sm:text-base font-hkgb text-gray-900">
                                                         ₹{item.price.toFixed(2)}
                                                     </p>
-                                                    <Link
-                                                        href={`/products/${item.productId || item.id}`}
-                                                        className="text-xs sm:text-sm text-[#008ECC] hover:text-[#0077B3] font-medium"
-                                                    >
-                                                        View Product
-                                                    </Link>
                                                 </div>
                                                 {typeof item.addonsTotal === "number" && item.addonsTotal > 0 && (
                                                     <div className="mt-2 space-y-1">
@@ -540,7 +533,6 @@ function OrderDetailsPageContent({
                                                                                 fill
                                                                                 className="object-cover"
                                                                                 sizes="64px"
-                                                                                unoptimized={publicUrl.includes('amazonaws.com') || publicUrl.includes('s3.')}
                                                                             />
                                                                         ) : (
                                                                             <div className="w-full h-full flex items-center justify-center bg-gray-50">

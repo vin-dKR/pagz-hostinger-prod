@@ -18,16 +18,6 @@ const ORDERS_FILE_FOLDER = process.env.AWS_S3_ORDERS_FILE_FOLDER || "orders-file
 // If you need CDN, configure CloudFront in front of S3 bucket
 const IMAGES_CDN_URL = process.env.AWS_S3_IMAGES_CDN_URL;
 
-// Validate S3 configuration
-if (!BUCKET_NAME || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-    console.error("❌ AWS S3 configuration is incomplete!");
-    console.error("Missing required environment variables:");
-    if (!BUCKET_NAME) console.error("  - AWS_S3_BUCKET_NAME");
-    if (!process.env.AWS_ACCESS_KEY_ID) console.error("  - AWS_ACCESS_KEY_ID");
-    if (!process.env.AWS_SECRET_ACCESS_KEY) console.error("  - AWS_SECRET_ACCESS_KEY");
-    console.error("\n📖 See apps/api/AWS_S3_SETUP.md for setup instructions.");
-    console.error("File uploads will fail until these are configured.\n");
-}
 
 /**
  * Upload file to S3

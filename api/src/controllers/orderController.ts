@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
 import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
-import { copyFile, generatePresignedUrl } from "../services/s3.js";
+import { getPublicFtpUrl, extractFtpPathFromUrl } from "../services/ftp.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
 
@@ -66,7 +66,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             variantId: string | null;
             quantity: number;
             price: number;
-            customDesignUrl: string[]; // Array of S3 URLs
+            customDesignUrl: string[]; // Array of FTP file paths/URLs
             customText: string | null;
             hasAddon: boolean;
             addons: string[];
@@ -338,7 +338,9 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             },
         });
 
-        // Move files from temp to final order folder for items with customDesignUrl
+        // Files are uploaded directly to the final FTP location (orders/customer-orders/...)
+        // No temp-to-final copy step is needed for FTP (unlike the legacy S3 flow).
+        // We simply ensure any uploaded paths are persisted correctly on the order items.
         const fileMovePromises = order.items
             .map(async (orderItem, index) => {
                 const item = orderItems[index];
@@ -347,44 +349,22 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 }
 
                 try {
-                    const movedKeys: string[] = [];
                     const fileUrls = Array.isArray(item.customDesignUrl) ? item.customDesignUrl : [item.customDesignUrl];
+                    const validKeys = fileUrls.filter((k): k is string => typeof k === "string" && k.trim() !== "");
 
-                    for (let fileIndex = 0; fileIndex < fileUrls.length; fileIndex++) {
-                        const sourceKey = fileUrls[fileIndex];
-                        if (!sourceKey || !sourceKey.includes("/temp/")) {
-                            // Keep non-temp keys as-is
-                            if (sourceKey) movedKeys.push(sourceKey);
-                            continue;
-                        }
-
-                        // Extract filename from source key
-                        const filename = sourceKey.split("/").pop() || `design-${Date.now()}.pdf`;
-                        // Remove sessionId prefix if present (format: {sessionId}-{filename})
-                        const cleanFilename = filename.includes("-") ? filename.split("-").slice(1).join("-") : filename;
-                        const finalFilename = `design-${Date.now()}-${index}-${fileIndex}-${cleanFilename}`;
-
-                        const destinationKey = `orders-file/${req.user!.id}/${order.id}/${finalFilename}`;
-
-                        // Copy file from temp to final location
-                        await copyFile(sourceKey, destinationKey, false);
-                        movedKeys.push(destinationKey);
-                    }
-
-                    // Update order item with final S3 keys array
-                    if (movedKeys.length > 0) {
+                    if (validKeys.length > 0) {
                         await prisma.orderItem.update({
                             where: { id: orderItem.id },
-                            data: { customDesignUrl: movedKeys },
+                            data: { customDesignUrl: validKeys },
                         });
                     }
                 } catch (error) {
-                    console.error(`Failed to move files for order item ${orderItem.id}:`, error);
-                    // Continue even if file move fails - the temp file will be cleaned up later
+                    console.error(`Failed to persist file paths for order item ${orderItem.id}:`, error);
+                    // Non-critical – order creation should still succeed
                 }
             });
 
-        // Wait for all file moves to complete (but don't fail order creation if they fail)
+        // Wait for all file path updates to complete
         await Promise.allSettled(fileMovePromises);
 
         // Record coupon usage if applied
@@ -515,79 +495,32 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
             throw new NotFoundError("Order not found");
         }
 
-        // Generate presigned URLs for order files (customer can access their own files)
+        // Build public FTP URLs for order files (files are publicly accessible via pagz.in)
         const orderWithFiles = {
             ...order,
-            items: await Promise.all(
-                order.items.map(async (item) => {
-                    // Generate presigned URLs if customDesignUrl exists (for private order files)
-                    // Handle both array and single string for backward compatibility
-                    const fileUrls = Array.isArray(item.customDesignUrl) ? item.customDesignUrl : (item.customDesignUrl ? [item.customDesignUrl] : []);
+            items: order.items.map((item) => {
+                // Handle both array and single string for backward compatibility
+                const fileUrls = Array.isArray(item.customDesignUrl)
+                    ? item.customDesignUrl
+                    : item.customDesignUrl
+                    ? [item.customDesignUrl]
+                    : [];
 
-                    if (fileUrls.length > 0) {
-                        try {
-                            // Generate presigned URLs for all files
-                            const presignedUrls = await Promise.all(
-                                fileUrls.map(async (s3KeyOrUrl) => {
-                                    // Ensure we are dealing with a string
-                                    if (typeof s3KeyOrUrl !== 'string') {
-                                        return "";
-                                    }
+                if (fileUrls.length > 0) {
+                    // For FTP-hosted files, construct public URLs directly (no presigning needed)
+                    const publicUrls = fileUrls.map((fileUrl) => {
+                        if (typeof fileUrl !== "string") return "";
+                        return getPublicFtpUrl(extractFtpPathFromUrl(fileUrl));
+                    });
 
-                                    let s3Key = s3KeyOrUrl;
-
-                                    // If it's a full S3 URL, extract just the key
-                                    if (s3Key.includes('amazonaws.com') || s3Key.includes('.s3.')) {
-                                        try {
-                                            const urlObj = new URL(s3Key);
-                                            const pathname = urlObj.pathname || '';
-                                            s3Key = pathname.startsWith('/') ? pathname.substring(1) : pathname;
-                                        } catch {
-                                            // If URL parsing fails, try simple string extraction
-                                            const parts = s3Key.split('.amazonaws.com/');
-                                            const extractedPart = parts.length > 1 ? parts[1] : undefined;
-                                            if (extractedPart) {
-                                                s3Key = extractedPart.split('?')[0] || extractedPart; // Remove query params
-                                            } else {
-                                                // Try extracting from s3.region.amazonaws.com format
-                                                const match = s3Key.match(/s3[^/]*\/[^/]+\/(.+)/);
-                                                const matchedPart = match?.[1];
-                                                if (matchedPart) {
-                                                    s3Key = matchedPart.split('?')[0] || matchedPart;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Ensure we have a valid key before generating presigned URL
-                                    const finalKey = s3Key?.trim();
-                                    if (!finalKey || finalKey === '') {
-                                        throw new Error('Invalid S3 key');
-                                    }
-
-                                    // Generate presigned URL (1 hour expiration for customer)
-                                    return await generatePresignedUrl(finalKey, 3600);
-                                })
-                            );
-
-                            return {
-                                ...item,
-                                customDesignUrl: fileUrls, // Return array of S3 keys
-                                customDesignPresignedUrls: presignedUrls, // Array of presigned URLs
-                            };
-                        } catch (error) {
-                            console.error(`Failed to generate presigned URLs for order item ${item.id}:`, error);
-                            // Return item with error info but still show the keys
-                            return {
-                                ...item,
-                                customDesignUrl: fileUrls,
-                                customDesignPresignedUrls: [],
-                            };
-                        }
-                    }
-                    return item;
-                })
-            ),
+                    return {
+                        ...item,
+                        customDesignUrl: fileUrls,
+                        customDesignPresignedUrls: publicUrls, // Public FTP URLs (replaces presigned S3 URLs)
+                    };
+                }
+                return item;
+            }),
         };
 
         return sendSuccess(res, orderWithFiles);
@@ -977,79 +910,32 @@ export const getAdminOrder = async (req: Request, res: Response, next: NextFunct
             throw new NotFoundError("Order not found");
         }
 
-        // Generate presigned URLs for order files (admin can view all order files)
+        // Build public FTP URLs for order files (admin view, files are publicly accessible via pagz.in)
         const orderWithFiles = {
             ...order,
-            items: await Promise.all(
-                order.items.map(async (item) => {
-                    // Generate presigned URLs if customDesignUrl exists (for private order files)
-                    // Handle both array and single string for backward compatibility
-                    const fileUrls = Array.isArray(item.customDesignUrl) ? item.customDesignUrl : (item.customDesignUrl ? [item.customDesignUrl] : []);
+            items: order.items.map((item) => {
+                // Handle both array and single string for backward compatibility
+                const fileUrls = Array.isArray(item.customDesignUrl)
+                    ? item.customDesignUrl
+                    : item.customDesignUrl
+                    ? [item.customDesignUrl]
+                    : [];
 
-                    if (fileUrls.length > 0) {
-                        try {
-                            // Generate presigned URLs for all files
-                            const presignedUrls = await Promise.all(
-                                fileUrls.map(async (s3KeyOrUrl) => {
-                                    // Ensure we are dealing with a string
-                                    if (typeof s3KeyOrUrl !== 'string') {
-                                        return "";
-                                    }
+                if (fileUrls.length > 0) {
+                    // For FTP-hosted files, construct public URLs directly (no presigning needed)
+                    const publicUrls = fileUrls.map((fileUrl) => {
+                        if (typeof fileUrl !== "string") return "";
+                        return getPublicFtpUrl(extractFtpPathFromUrl(fileUrl));
+                    });
 
-                                    let s3Key = s3KeyOrUrl;
-
-                                    // If it's a full S3 URL, extract just the key
-                                    if (s3Key.includes('amazonaws.com') || s3Key.includes('.s3.')) {
-                                        try {
-                                            const urlObj = new URL(s3Key);
-                                            const pathname = urlObj.pathname || '';
-                                            s3Key = pathname.startsWith('/') ? pathname.substring(1) : pathname;
-                                        } catch {
-                                            // If URL parsing fails, try simple string extraction
-                                            const parts = s3Key.split('.amazonaws.com/');
-                                            const extractedPart = parts.length > 1 ? parts[1] : undefined;
-                                            if (extractedPart) {
-                                                s3Key = extractedPart.split('?')[0] || extractedPart; // Remove query params
-                                            } else {
-                                                // Try extracting from s3.region.amazonaws.com format
-                                                const match = s3Key.match(/s3[^/]*\/[^/]+\/(.+)/);
-                                                const matchedPart = match?.[1];
-                                                if (matchedPart) {
-                                                    s3Key = matchedPart.split('?')[0] || matchedPart;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Ensure we have a valid key before generating presigned URL
-                                    const finalKey = s3Key?.trim();
-                                    if (!finalKey || finalKey === '') {
-                                        throw new Error('Invalid S3 key');
-                                    }
-
-                                    // Generate presigned URL for admin access (24 hours expiration)
-                                    return await generatePresignedUrl(finalKey, 86400);
-                                })
-                            );
-
-                            return {
-                                ...item,
-                                customDesignUrl: fileUrls, // Array of S3 keys
-                                customDesignPresignedUrls: presignedUrls, // Array of presigned URLs
-                            };
-                        } catch (error) {
-                            console.error(`Failed to generate presigned URLs for order item ${item.id}:`, error);
-                            // Return item with error info but still show the keys
-                            return {
-                                ...item,
-                                customDesignUrl: fileUrls,
-                                customDesignPresignedUrls: [],
-                            };
-                        }
-                    }
-                    return item;
-                })
-            ),
+                    return {
+                        ...item,
+                        customDesignUrl: fileUrls,
+                        customDesignPresignedUrls: publicUrls, // Public FTP URLs (replaces presigned S3 URLs)
+                    };
+                }
+                return item;
+            }),
         };
 
         return sendSuccess(res, orderWithFiles);

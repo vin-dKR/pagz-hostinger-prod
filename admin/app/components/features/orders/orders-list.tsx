@@ -15,7 +15,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/app/components/ui/table';
-import { Spinner, PageLoading } from '@/app/components/ui/loading';
+import { PageLoading } from '@/app/components/ui/loading';
 import { Alert } from '@/app/components/ui/alert';
 import {
     getOrders,
@@ -28,15 +28,18 @@ import {
 } from '@/lib/api/orders.service';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/format';
 import Link from 'next/link';
-import { Eye, Search, Image as ImageIcon, Download } from 'lucide-react';
+import { Eye, Search, Download } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
-import { toastError, toastSuccess, toastPromise } from '@/lib/utils/toast';
+import { toastError, toastSuccess } from '@/lib/utils/toast';
 import { Input } from '@/app/components/ui/input';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { OrderStats } from './order-stats';
 import { OrderFilters } from './order-filters';
 import { OrderStatusBadge, PaymentStatusBadge } from './status-badge';
 import { BulkActions } from './bulk-actions';
+import { getPublicS3Url } from '@/lib/utils/s3';
+import Image from 'next/image';
+import { imageLoader } from '@/lib/utils/image-loader';
 
 const ORDER_STATUSES: OrderStatus[] = [
     'PENDING_REVIEW',
@@ -64,7 +67,6 @@ export function OrdersList() {
 
     useEffect(() => {
         loadOrders(page, debouncedSearch, filters);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, debouncedSearch, filters]);
 
     const loadOrders = async (pageParam = 1, searchParam = '', filterParams: OrderQueryParams = {}) => {
@@ -281,8 +283,15 @@ export function OrdersList() {
                                 <TableBody>
                                     {orders.map((order) => {
                                         const isSelected = selectedOrders.has(order.id);
-                                        const firstItem = order.items[0];
-                                        const firstImage = firstItem?.product?.images?.[0];
+                                        const orderImageUrls =
+                                            order.items.flatMap((item) =>
+                                                item.product?.images?.map((img) => img.url) ?? []
+                                            );
+                                        const visibleImages = orderImageUrls.slice(0, 4);
+                                        const remainingImagesCount = Math.max(
+                                            0,
+                                            orderImageUrls.length - visibleImages.length
+                                        );
 
                                         return (
                                             <TableRow key={order.id} className={isSelected ? 'bg-blue-50' : ''}>
@@ -296,16 +305,28 @@ export function OrdersList() {
                                                 </TableCell>
                                                 <TableCell className="font-mono text-sm">
                                                     <div className="flex items-center gap-2">
-                                                        {firstImage?.url && (
-                                                            <div className="relative w-10 h-10 rounded border overflow-hidden bg-gray-100">
-                                                                <img
-                                                                    src={firstImage.url}
-                                                                    alt={firstItem?.product?.name || 'Product'}
-                                                                    className="w-full h-full object-cover"
+                                                        {visibleImages.map((imgUrl, idx) => (
+                                                            <div
+                                                                key={`${order.id}-${idx}`}
+                                                                className="relative w-10 h-10 rounded border overflow-hidden bg-gray-100 shrink-0"
+                                                            >
+                                                                <Image
+                                                                    src={getPublicS3Url(imgUrl)}
+                                                                    alt={order.items[0]?.product?.name || 'Product'}
+                                                                    fill
+                                                                    className="object-cover"
+                                                                    loader={imageLoader}
+                                                                    sizes="40px"
                                                                     onError={(e) => {
-                                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                                        // Hide broken thumbnail; keep layout stable.
+                                                                        (e.currentTarget as HTMLImageElement).style.display = 'none';
                                                                     }}
                                                                 />
+                                                            </div>
+                                                        ))}
+                                                        {remainingImagesCount > 0 && (
+                                                            <div className="w-10 h-10 rounded border border-dashed bg-gray-50 flex items-center justify-center text-xs text-gray-500">
+                                                                +{remainingImagesCount}
                                                             </div>
                                                         )}
                                                         <div>
@@ -335,7 +356,7 @@ export function OrdersList() {
                                                     <div>
                                                         <div className="font-medium">{order.items.length} item(s)</div>
                                                         <div className="text-xs text-gray-500 max-w-[200px] truncate">
-                                                            {firstItem?.product?.name || 'Product'}
+                                                            {order.items?.[0]?.product?.name || 'Product'}
                                                             {order.items.length > 1 && ` +${order.items.length - 1} more`}
                                                         </div>
                                                     </div>

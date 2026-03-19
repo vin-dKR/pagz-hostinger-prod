@@ -3,7 +3,8 @@
  * Handles category management operations (including specifications & pricing)
  */
 
-import { get, post, put, del, uploadFile } from './api-client';
+import { get, post, put, del } from './api-client';
+import { uploadFileToFTP, FTP_FOLDERS } from './ftp';
 
 export interface CategoryImage {
     id: string;
@@ -553,33 +554,25 @@ export async function createCategoryImageApi(
 }
 
 /**
- * Upload category image file to S3
+ * Upload a category image via FTP, then register it in the DB.
+ *
+ * Files go to the `categories/` folder on the FTP server.
+ * Only the relative path is stored in the DB.
  */
 export async function uploadCategoryImageApi(
     categoryId: string,
     file: File,
-    options?: { alt?: string; isPrimary?: boolean }
+    options?: { alt?: string; isPrimary?: boolean },
 ): Promise<CategoryImage> {
-    const { uploadFile } = await import('./api-client');
-    const formData: Record<string, string> = {
-        categoryId,
-    };
-    if (options?.alt) formData.alt = options.alt;
-    if (options?.isPrimary !== undefined) formData.isPrimary = String(options.isPrimary);
+    // 1. Upload file to FTP → get relative path
+    const ftpResult = await uploadFileToFTP(file, FTP_FOLDERS.CATEGORIES);
 
-    const response = await uploadFile<{ url: string; key: string; filename: string; size: number; mimetype: string; image: CategoryImage }>(
-        `/admin/upload/category-image`,
-        file,
-        formData
-    );
-
-    if (!response.success || !response.data) {
-        throw new Error(response.error || 'Failed to upload category image');
-    }
-
-    // The API returns { url, key, filename, size, mimetype, image }
-    // We need to return the image object
-    return response.data.image || response.data as unknown as CategoryImage;
+    // 2. Register in DB via the existing category-images endpoint
+    return createCategoryImageApi(categoryId, {
+        url:       ftpResult.path,
+        alt:       options?.alt,
+        isPrimary: options?.isPrimary,
+    });
 }
 
 export async function updateCategoryImageApi(
@@ -702,3 +695,4 @@ export async function updateProductFromPricingRuleApi(
 
     return response.data;
 }
+ 

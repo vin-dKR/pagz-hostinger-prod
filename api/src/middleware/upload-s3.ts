@@ -2,7 +2,7 @@ import multer from "multer";
 import path from "path";
 import { Request } from "express";
 
-// Memory storage for S3 uploads (files are stored in memory before uploading to S3)
+// Memory storage for file uploads (files are stored in memory before uploading to FTP)
 const memoryStorage = multer.memoryStorage();
 
 /**
@@ -45,7 +45,7 @@ const orderFileFilter = (
 
 /**
  * Multer configuration for product/category image uploads
- * - Uses memory storage (files in memory before S3 upload)
+ * - Uses memory storage (files buffered in memory before FTP upload)
  * - Max size: 10MB
  * - Only image files allowed
  */
@@ -57,7 +57,7 @@ export const uploadImage = multer({
 
 /**
  * Multer configuration for order file uploads
- * - Uses memory storage (files in memory before S3 upload)
+ * - Uses memory storage (files buffered in memory before FTP upload)
  * - Max size: 50MB
  * - PDF, images, and documents allowed
  */

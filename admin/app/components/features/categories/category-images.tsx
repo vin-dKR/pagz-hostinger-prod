@@ -315,11 +315,11 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
                                     >
                                         <div className="relative aspect-square w-full bg-gray-100">
                                             <Image
-                                                src={image.url}
+                                                src={image.url?.startsWith('http') ? image.url : `${process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || 'https://pagz.in'}/${image.url}`}
                                                 alt={image.alt || 'Category image'}
                                                 fill
                                                 className="object-cover"
-                                                unoptimized={image.url?.includes('amazonaws.com') || image.url?.includes('s3.')}
+                                                unoptimized
                                             />
                                             {image.isPrimary && (
                                                 <div className="absolute top-2 left-2 rounded bg-[#008ECC] px-2 py-1 text-xs font-medium text-white">

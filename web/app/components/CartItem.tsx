@@ -224,7 +224,6 @@ export default function CartItem({
                             alt={productName}
                             fill
                             className="object-cover"
-                            unoptimized={productImage.includes('amazonaws.com') || productImage.includes('s3.')}
                             sizes="80px"
                         />
                     </div>
@@ -269,7 +268,6 @@ export default function CartItem({
                             alt={productName}
                             fill
                             className="object-cover"
-                            unoptimized={productImage.includes('amazonaws.com') || productImage.includes('s3.')}
                             sizes="(max-width: 1024px) 128px, 160px"
                         />
                     </div>
@@ -337,7 +335,6 @@ export default function CartItem({
                                                             alt={getFilenameFromS3Key(s3Key)}
                                                             fill
                                                             className="object-cover"
-                                                            unoptimized={publicUrl.includes('amazonaws.com') || publicUrl.includes('s3.')}
                                                             sizes="48px"
                                                         />
                                                     ) : (

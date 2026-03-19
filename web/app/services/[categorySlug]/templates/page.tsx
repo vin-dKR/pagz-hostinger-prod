@@ -162,6 +162,12 @@ export default function TemplatePage({ params }: TemplatePageProps) {
             pageCount: pendingUploadPageCount,
             fileHasPassword: fileHasPassword ? true : undefined,
             filePassword: fileHasPassword && filePassword ? filePassword : undefined,
+            filePasswords: fileHasPassword
+                ? (filePassword || '')
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                : undefined,
             isPasswordSubmitted: fileHasPassword && filePassword ? isPasswordSubmitted : undefined,
         };
         sessionStorage.setItem('uploadedFileData', JSON.stringify(uploadData));
@@ -173,6 +179,91 @@ export default function TemplatePage({ params }: TemplatePageProps) {
         setShowUploadDialog(false);
         setCanContinueFromUpload(false);
     };
+
+    // Reset password UI when all uploaded files are removed
+    useEffect(() => {
+        if (!uploadedFilesS3 || uploadedFilesS3.length === 0) {
+            if (fileHasPassword) setFileHasPassword(false);
+            if (filePassword) setFilePassword('');
+            if (isPasswordSubmitted) setIsPasswordSubmitted(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [uploadedFilesS3?.length]);
+    function MultiplePasswordsEditorTemplate({
+        filePassword,
+        setFilePassword,
+        setIsPasswordSubmitted,
+    }: {
+        filePassword: string;
+        setFilePassword: (value: string) => void;
+        setIsPasswordSubmitted: (value: boolean) => void;
+    }) {
+        const parsed = (filePassword || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+        const [passwords, setPasswords] = React.useState<string[]>(parsed.length ? parsed : ['']);
+        // Do not sync to parent on every keystroke to avoid re-mount/focus issues.
+        const setAt = (idx: number, value: string) => {
+            setPasswords(prev => {
+                const next = [...prev];
+                next[idx] = value;
+                return next;
+            });
+        };
+        const addField = () => setPasswords(prev => [...prev, '']);
+        const removeField = (idx: number) => {
+            setPasswords(prev => {
+                const next = prev.filter((_, i) => i !== idx);
+                return next.length ? next : [''];
+            });
+        };
+        const canSubmit = passwords.some(p => p.trim().length > 0);
+        return (
+            <>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Enter password(s) (shared with admin)
+                </label>
+                <div className="space-y-2">
+                    {passwords.map((pwd, idx) => (
+                        <div key={idx} className="flex gap-2 items-center">
+                            <input
+                                type="text"
+                                value={pwd}
+                                onChange={(e) => setAt(idx, e.target.value)}
+                                placeholder="e.g. 1234"
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            />
+                            {passwords.length > 1 && (
+                                <Button onClick={() => removeField(idx)} variant="outline" className="px-4 py-2">−</Button>
+                            )}
+                            {idx === passwords.length - 1 && (
+                                <Button onClick={addField} variant="outline" className="px-4 py-2">+</Button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                    <Button
+                        onClick={() => {
+                            if (canSubmit) {
+                                const joined = passwords.map(v => v.trim()).filter(Boolean).join(', ');
+                                setFilePassword(joined);
+                                setIsPasswordSubmitted(true);
+                            }
+                        }}
+                        disabled={!canSubmit}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Submit
+                    </Button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                    Only enter this if your PDF/document is password protected. You can add multiple passwords.
+                </p>
+            </>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -317,8 +408,16 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                 uploadedFilesS3={uploadedFilesS3}
                                 setUploadedFilesS3={setUploadedFilesS3}
                             />
+                            {uploadedFilesS3 && uploadedFilesS3.length >= 1 && (
+                                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                                    <p className="text-xs sm:text-sm text-amber-900 font-medium">
+                                        You can upload multiple PDFs at once.
+                                    </p>
+                                </div>
+                            )}
                             
-                            {/* Password-protected file info */}
+                            {/* Password-protected file info - only when files are uploaded */}
+                            {uploadedFilesS3 && uploadedFilesS3.length > 0 && (
                             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                                 <div className="flex items-center gap-2">
                                     <input
@@ -333,6 +432,7 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                                 setIsPasswordSubmitted(false);
                                             }
                                         }}
+                                        disabled={!uploadedFilesS3 || uploadedFilesS3.length === 0}
                                         className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                                     />
                                     <label htmlFor="file-has-password-template" className="text-sm font-medium text-gray-700 cursor-pointer">
@@ -343,47 +443,39 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                 {fileHasPassword && (
                                     <div className="mt-3">
                                         {!isPasswordSubmitted ? (
-                                            <>
-                                                <label htmlFor="file-password-template" className="block text-xs font-medium text-gray-600 mb-1">
-                                                    Enter password (shared with admin)
-                                                </label>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        id="file-password-template"
-                                                        type="text"
-                                                        value={filePassword}
-                                                        onChange={(e) => setFilePassword(e.target.value)}
-                                                        placeholder="e.g. 1234"
-                                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                                    />
-                                                    <Button
-                                                        onClick={() => {
-                                                            if (filePassword.trim()) {
-                                                                setIsPasswordSubmitted(true);
-                                                            }
-                                                        }}
-                                                        disabled={!filePassword.trim()}
-                                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        Submit
-                                                    </Button>
-                                                </div>
-                                                <p className="mt-1 text-xs text-gray-500">
-                                                    Only enter this if your PDF/document is password protected.
-                                                </p>
-                                            </>
+                                            <MultiplePasswordsEditorTemplate
+                                                filePassword={filePassword}
+                                                setFilePassword={setFilePassword}
+                                                setIsPasswordSubmitted={setIsPasswordSubmitted}
+                                            />
                                         ) : (
                                             <div className="space-y-2">
                                                 <label className="block text-xs font-medium text-gray-600 mb-1">
-                                                    Password (shared with admin)
+                                                    Password(s) (shared with admin)
                                                 </label>
-                                                <div className="flex gap-2 items-center">
+                                                <div className="space-y-2">
+                                                    {(filePassword || '')
+                                                        .split(',')
+                                                        .map(s => s.trim())
+                                                        .filter(Boolean)
+                                                        .map((pwd, idx) => (
                                                     <input
+                                                                key={idx}
                                                         type="password"
-                                                        value={filePassword}
+                                                                value={pwd}
                                                         readOnly
-                                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-900 text-sm font-mono"
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-900 text-sm font-mono"
                                                     />
+                                                        ))}
+                                                    {/* Hidden inputs to include each password individually */}
+                                                    {(filePassword || '')
+                                                        .split(',')
+                                                        .map(s => s.trim())
+                                                        .filter(Boolean)
+                                                        .map((pwd, idx) => (
+                                                            <input key={`hidden-${idx}`} type="hidden" name="filePasswords[]" value={pwd} />
+                                                        ))}
+                                                    <div className="flex justify-end">
                                                     <Button
                                                         onClick={() => setIsPasswordSubmitted(false)}
                                                         variant="outline"
@@ -391,6 +483,7 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                                     >
                                                         Edit
                                                     </Button>
+                                                    </div>
                                                 </div>
                                                 <p className="text-xs text-gray-500">
                                                     Password is saved. Click Edit to change it.
@@ -400,6 +493,7 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                     </div>
                                 )}
                             </div>
+                            )}
 
                             <div className="flex justify-end gap-2 pt-2">
                                 <Button variant="outline" onClick={handleCloseUploadDialog}>

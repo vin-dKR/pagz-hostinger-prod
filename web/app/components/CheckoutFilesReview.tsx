@@ -58,7 +58,7 @@ export default function CheckoutFilesReview({ cartItems = [] }: CheckoutFilesRev
                                                         alt={filename}
                                                         fill
                                                         className="object-cover"
-                                                        unoptimized={publicUrl.includes('amazonaws.com') || publicUrl.includes('s3.')}
+                                                        unoptimized
                                                         sizes="48px"
                                                     />
                                                 </div>
@@ -73,7 +73,7 @@ export default function CheckoutFilesReview({ cartItems = [] }: CheckoutFilesRev
                                                 {filename}
                                             </div>
                                             <div className="text-xs text-gray-500 mt-1">
-                                                File uploaded to S3
+                                                File uploaded
                                             </div>
                                         </div>
                                     </div>

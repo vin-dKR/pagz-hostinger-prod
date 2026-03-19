@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { type Category } from '@/lib/api/categories';
 import { ArrowRight } from 'lucide-react';
+import { getPublicS3Url } from '@/lib/utils/s3';
 
 // Color gradients for category cards (cycling through these)
 const colorGradients = [
@@ -32,11 +33,11 @@ export function SubcategoryGrid({ parentCategory, children }: SubcategoryGridPro
     const getCategoryImage = (category: Category): string => {
         // Use primary image if available
         if (category.images && category.images.length > 0 && category.images[0]) {
-            return category.images[0].url;
+            return getPublicS3Url(category.images[0].url);
         }
         // Fallback to legacy image field
         if (category.image) {
-            return category.image;
+            return getPublicS3Url(category.image);
         }
         // Default placeholder
         return "/images/rows/row1.png";

@@ -3,7 +3,8 @@
  * Handles product management operations
  */
 
-import { get, post, put, del, uploadFile } from './api-client';
+import { get, post, put, del } from './api-client';
+import { uploadFileToFTP, uploadFilesToFTP, FTP_FOLDERS } from './ftp';
 
 export interface ProductListResponse {
     products: Product[];
@@ -355,73 +356,78 @@ export async function addProductVariant(
 }
 
 /**
- * Upload product image file to S3
+ * Upload a single product image via FTP, then register it in the DB.
+ *
+ * Files go to the `products/` folder on the FTP server.
+ * Only the relative path (e.g. "products/12345-image.jpg") is stored in the DB.
  */
 export async function uploadProductImageApi(
     productId: string,
     file: File,
-    options?: { alt?: string; isPrimary?: boolean }
+    options?: { alt?: string; isPrimary?: boolean },
 ): Promise<ProductImage> {
-    const formData: Record<string, string> = {
-        productId,
-    };
-    if (options?.alt) formData.alt = options.alt;
-    if (options?.isPrimary !== undefined) formData.isPrimary = String(options.isPrimary);
+    // 1. Upload file to FTP → get relative path
+    const ftpResult = await uploadFileToFTP(file, FTP_FOLDERS.PRODUCTS);
 
-    const response = await uploadFile<{ url: string; key: string; filename: string; size: number; mimetype: string; image: ProductImage }>(
-        `/admin/upload/product-image`,
-        file,
-        formData
+    // 2. Register the image in the DB (new endpoint that accepts a URL)
+    const response = await post<ProductImage>(
+        `/admin/products/${productId}/images`,
+        {
+            url:       ftpResult.path,
+            alt:       options?.alt ?? null,
+            isPrimary: options?.isPrimary ?? false,
+        },
     );
 
     if (!response.success || !response.data) {
-        throw new Error(response.error || 'Failed to upload product image');
+        throw new Error(response.error || 'Failed to register product image');
     }
 
-    // The API returns { url, key, filename, size, mimetype, image }
-    // We need to return the image object
-    return response.data.image || response.data as unknown as ProductImage;
+    return response.data;
 }
 
 /**
- * Upload multiple product images to S3
+ * Upload multiple product images via FTP, then register each in the DB.
+ *
+ * Uploads run in parallel for performance.
  */
 export async function uploadProductImagesApi(
     productId: string,
-    files: File[]
+    files: File[],
 ): Promise<ProductImage[]> {
-    const formData = new FormData();
-    files.forEach((file) => {
-        formData.append('files', file);
-    });
-    formData.append('productId', productId);
+    if (files.length === 0) return [];
 
-    const token = typeof window !== 'undefined' ?
-        document.cookie.split(';').find(c => c.trim().startsWith('admin_token='))?.split('=')[1]?.trim() : null;
+    // 1. Upload all files to FTP in parallel
+    const ftpResults = await uploadFilesToFTP(files, FTP_FOLDERS.PRODUCTS);
 
-    const headers: Record<string, string> = {};
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+    // 2. Register each image in the DB (sequential to preserve order)
+    const images: ProductImage[] = [];
+    for (let i = 0; i < ftpResults.length; i++) {
+        const ftpResult = ftpResults[i];
+        if (!ftpResult) continue;
+
+        const response = await post<ProductImage>(
+            `/admin/products/${productId}/images`,
+            {
+                url:       ftpResult.path,
+                alt:       null,
+                isPrimary: false,
+            },
+        );
+
+        if (!response.success || !response.data) {
+            throw new Error(response.error || `Failed to register product image ${i + 1}`);
+        }
+
+        images.push(response.data);
     }
 
-    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
-    const response = await fetch(`${API_BASE_URL}/admin/upload/product-images`, {
-        method: 'POST',
-        headers,
-        body: formData,
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to upload product images');
-    }
-
-    return data.data?.images || [];
+    return images;
 }
 
 /**
- * Delete product image
+ * Delete a product image record from the DB.
+ * The file itself on the FTP server is left in place (serves as a CDN cache).
  */
 export async function deleteProductImageApi(imageId: string): Promise<void> {
     const response = await del(`/admin/upload/product-image/${imageId}`);

@@ -20,8 +20,8 @@ export interface OrderItem {
     variantId?: string | null;
     quantity: number;
     price: number;
-    customDesignUrl?: string[] | null; // Array of S3 URLs
-    customDesignPresignedUrls?: string[] | null; // Array of presigned URLs for viewing private S3 files
+    customDesignUrl?: string[] | null; // Array of FTP file paths/URLs
+    customDesignPresignedUrls?: string[] | null; // Array of public FTP URLs for viewing order files
     customDesignPresignedUrl?: string | null; // Legacy: single presigned URL (for backward compatibility)
     customText?: string | null;
     addons?: Array<{

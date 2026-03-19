@@ -27,12 +27,12 @@ import {
 } from '@/lib/api/orders.service';
 import { downloadInvoicePDF, getInvoicePDFBlobUrl } from '@/lib/api/invoice.service';
 import { formatCurrency, formatDateTime } from '@/lib/utils/format';
+import { getPublicFileUrl, getFilenameFromPath } from '@/lib/utils/fileUrl';
 import { OrderStatusBadge, PaymentStatusBadge } from './status-badge';
 import {
     ArrowLeft,
     Copy,
     Download,
-    Mail,
     Package,
     Truck,
     CreditCard,
@@ -45,6 +45,8 @@ import { toastError, toastSuccess, toastWarning } from '@/lib/utils/toast';
 import Image from 'next/image';
 import { imageLoader } from '@/lib/utils/image-loader';
 import { TemplateDisplay } from './TemplateDisplay';
+const { getInvoicePDFUrl } = await import('@/lib/api/invoice.service');
+
 
 export function OrderDetail({ orderId, initialOrder }: { orderId: string; initialOrder?: Order }) {
     const router = useRouter();
@@ -133,7 +135,13 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
             const blobUrl = await getInvoicePDFBlobUrl(orderId);
             setInvoicePdfUrl(blobUrl);
         } catch (err) {
-            toastError(err instanceof Error ? err.message : 'Failed to load invoice');
+            // Fallback: use direct URL with token (works if server supports token in query and allows iframe)
+            try {
+                const directUrl = getInvoicePDFUrl(orderId);
+                setInvoicePdfUrl(directUrl);
+            } catch (e) {
+                toastError(err instanceof Error ? err.message : 'Failed to load invoice');
+            }
         } finally {
             setLoadingInvoice(false);
         }
@@ -624,37 +632,64 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                 )}
 
                                                 {/* Custom Design Files */}
-                                                {((Array.isArray(item.customDesignUrl) && item.customDesignUrl.length > 0) ||
-                                                    (typeof item.customDesignUrl === 'string' && item.customDesignUrl) ||
-                                                    (Array.isArray(item.customDesignPresignedUrls) && item.customDesignPresignedUrls.length > 0) ||
-                                                    item.customDesignPresignedUrl) && (
+                                                {(() => {
+                                                    // Build a unified list of file entries from all possible sources,
+                                                    // always resolving the href through getPublicFileUrl so S3/FTP URLs
+                                                    // are consistently served from pagz.in.
+                                                    const rawUrls: string[] = Array.isArray(item.customDesignUrl)
+                                                        ? (item.customDesignUrl as string[]).filter(Boolean)
+                                                        : typeof item.customDesignUrl === 'string' && item.customDesignUrl
+                                                        ? [item.customDesignUrl]
+                                                        : [];
+
+                                                    // customDesignPresignedUrls are now public FTP URLs from the backend
+                                                    const publicUrls: string[] = Array.isArray(item.customDesignPresignedUrls)
+                                                        ? (item.customDesignPresignedUrls as string[]).filter(Boolean)
+                                                        : [];
+
+                                                    if (rawUrls.length === 0 && publicUrls.length === 0 && !item.customDesignPresignedUrl) {
+                                                        return null;
+                                                    }
+
+                                                    const fileCount = Math.max(rawUrls.length, publicUrls.length);
+
+                                                    return (
                                                         <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
                                                             <h4 className="font-semibold text-indigo-900 mb-3 text-sm uppercase tracking-wide">
-                                                                Custom Design Files {Array.isArray(item.customDesignUrl) ? `(${item.customDesignUrl.length})` : ''}
+                                                                Custom Design Files {fileCount > 0 ? `(${fileCount})` : ''}
                                                             </h4>
                                                             <div className="space-y-2">
-                                                                {Array.isArray(item.customDesignPresignedUrls) && item.customDesignPresignedUrls.length > 0 ? (
-                                                                    item.customDesignPresignedUrls.map((presignedUrl, fileIndex) => {
-                                                                        const fileUrl = Array.isArray(item.customDesignUrl) ? item.customDesignUrl[fileIndex] : '';
-                                                                        const fileName = fileUrl ? fileUrl.split('/').pop() : `File ${fileIndex + 1}`;
+                                                                {fileCount > 0 ? (
+                                                                    Array.from({ length: fileCount }).map((_, fileIndex) => {
+                                                                        const rawPath = rawUrls[fileIndex] ?? '';
+                                                                        // Prefer the backend-resolved public URL; fall back to
+                                                                        // constructing it client-side from the raw stored path.
+                                                                        const href = getPublicFileUrl(
+                                                                            publicUrls[fileIndex] || rawPath
+                                                                        );
+                                                                        console.log(publicUrls[fileIndex], rawPath, href);
+                                                                        const fileName = rawPath
+                                                                            ? getFilenameFromPath(rawPath)
+                                                                            : `File ${fileIndex + 1}`;
                                                                         return (
                                                                             <a
                                                                                 key={fileIndex}
-                                                                                href={presignedUrl || fileUrl || '#'}
+                                                                                href={href || '#'}
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
                                                                                 className="flex items-center gap-2 p-3 bg-white rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors"
                                                                             >
                                                                                 <Download className="h-5 w-5 text-indigo-600 shrink-0" />
-                                                                                <span className="text-sm font-medium text-indigo-900 flex-1">
+                                                                                <span className="text-sm font-medium text-indigo-900 flex-1 truncate" title={fileName}>
                                                                                     {fileName}
                                                                                 </span>
                                                                             </a>
                                                                         );
                                                                     })
                                                                 ) : (
+                                                                    // Legacy single-file fallback
                                                                     <a
-                                                                        href={item.customDesignPresignedUrl || (typeof item.customDesignUrl === 'string' ? item.customDesignUrl : '') || '#'}
+                                                                        href={getPublicFileUrl(item.customDesignPresignedUrl || (typeof item.customDesignUrl === 'string' ? item.customDesignUrl : '') || '') || '#'}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         className="flex items-center gap-2 p-3 bg-white rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors"
@@ -667,7 +702,8 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                                 )}
                                                             </div>
                                                         </div>
-                                                    )}
+                                                    );
+                                                })()}
 
                                                 {/* Template Data and Price Breakdown in Row */}
                                                 {(item.metadata?.templateId || (item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0)) && (

@@ -6,6 +6,17 @@ const nextConfig = {
     // Ensure static files are generated correctly
     generateEtags: true,
     
+    // Redirects
+    async redirects() {
+        return [
+            {
+                source: '/home',
+                destination: '/',
+                permanent: true,
+            },
+        ];
+    },
+    
     // Power optimization for better chunk loading
     poweredByHeader: false,
     
@@ -74,31 +85,19 @@ const nextConfig = {
         imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
         minimumCacheTTL: 60,
         remotePatterns: [
-            // Specific S3 bucket URL (most specific first)
+            // Primary image host — FTP files served from pagz.in
             {
                 protocol: "https",
-                hostname: "pagz-files.s3.ap-south-1.amazonaws.com",
+                hostname: "pagz.in",
                 pathname: "/**",
             },
-            // S3 regional URLs pattern (bucket.s3.region.amazonaws.com)
+            // Development / staging variants
             {
                 protocol: "https",
-                hostname: "*.s3.*.amazonaws.com",
+                hostname: "*.pagz.in",
                 pathname: "/**",
             },
-            // Legacy S3 URLs (bucket.s3.amazonaws.com)
-            {
-                protocol: "https",
-                hostname: "*.s3.amazonaws.com",
-                pathname: "/**",
-            },
-            // All AWS S3 domains
-            {
-                protocol: "https",
-                hostname: "*.amazonaws.com",
-                pathname: "/**",
-            },
-            // Unsplash images
+            // Unsplash images (used in seed data / demos)
             {
                 protocol: "https",
                 hostname: "images.unsplash.com",
@@ -107,6 +106,23 @@ const nextConfig = {
                 protocol: "https",
                 hostname: "*.unsplash.com",
             },
+            // Legacy: keep AWS S3 patterns so old DB records with S3 URLs still render
+            {
+                protocol: "https",
+                hostname: "pagz-files.s3.ap-south-1.amazonaws.com",
+                pathname: "/**",
+            },
+            {
+                protocol: "https",
+                hostname: "*.s3.*.amazonaws.com",
+                pathname: "/**",
+            },
+            {
+                protocol: "https",
+                hostname: "*.amazonaws.com",
+                pathname: "/**",
+            },
+            // External image sources (seed/demo data)
             {
                 protocol: "https",
                 hostname: "www.novaprint.ca",
@@ -117,7 +133,6 @@ const nextConfig = {
                 hostname: "*.novaprint.ca",
                 pathname: "/**",
             },
-            // T-shirt supplier images
             {
                 protocol: "https",
                 hostname: "www.tshirt-supplier.com",
@@ -129,8 +144,6 @@ const nextConfig = {
                 pathname: "/**",
             },
         ],
-        // Increasing the Bandwidth here because we are using the images from the S3 bucket and we want to avoid the image optimization.
-        // unoptimized: true,
         loader: "default",
     },
 };

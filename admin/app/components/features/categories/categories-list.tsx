@@ -33,6 +33,27 @@ import Image from 'next/image';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
 
+const UPLOADS_BASE_URL =
+    process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || 'https://pagz.in';
+
+function normalizeImageSrc(src?: string | null): string {
+    if (!src) return '/images/rows/row1.png';
+
+    // Next.js Image requires src to be absolute or root-relative (starts with "/").
+    if (
+        src.startsWith('http://') ||
+        src.startsWith('https://') ||
+        src.startsWith('data:') ||
+        src.startsWith('blob:')
+    ) {
+        return src;
+    }
+
+    if (src.startsWith('/')) return src;
+
+    return `${UPLOADS_BASE_URL}/${src}`;
+}
+
 export function CategoriesList() {
     const [categories, setCategories] = useState<Category[]>([]);
     const [page, setPage] = useState(1);
@@ -227,7 +248,9 @@ export function CategoriesList() {
                                             {category.primaryImage || category.images?.[0] ? (
                                                 <div className="relative h-12 w-12 overflow-hidden rounded-md border border-gray-200">
                                                     <Image
-                                                        src={category.primaryImage?.url || category.images?.[0]?.url || ''}
+                                                        src={normalizeImageSrc(
+                                                            category.primaryImage?.url || category.images?.[0]?.url || ''
+                                                        )}
                                                         alt={category.primaryImage?.alt || category.name || ''}
                                                         fill
                                                         className="object-cover"
@@ -292,7 +315,9 @@ export function CategoriesList() {
                                     <div className="relative h-48 w-full bg-gray-100">
                                         {category.primaryImage || category.images?.[0] ? (
                                             <Image
-                                                src={category.primaryImage?.url || category.images?.[0]?.url || ''}
+                                                src={normalizeImageSrc(
+                                                    category.primaryImage?.url || category.images?.[0]?.url || ''
+                                                )}
                                                 alt={category.primaryImage?.alt || category.name || ''}
                                                 fill
                                                 className="object-cover"

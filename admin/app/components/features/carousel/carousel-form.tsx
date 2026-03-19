@@ -23,6 +23,7 @@ import {
 import { getCategories, type Category } from '@/lib/api/categories.service';
 import Image from 'next/image';
 import { Upload, X, Loader2 } from 'lucide-react';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 import { toastPromise } from '@/lib/utils/toast';
 
 interface CarouselFormProps {
@@ -227,7 +228,7 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                         {formData.imageUrl ? (
                             <div className="relative inline-block">
                                 <Image
-                                    src={formData.imageUrl}
+                                    src={getPublicFileUrl(formData.imageUrl)}
                                     alt={formData.alt || 'Carousel preview'}
                                     width={400}
                                     height={250}

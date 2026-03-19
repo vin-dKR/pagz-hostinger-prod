@@ -2,25 +2,19 @@
 const nextConfig = {
   images: {
     remotePatterns: [
-      // Specific S3 bucket URL - MUST be first for exact match
+      // Primary image host — FTP files served from pagz.in
       {
         protocol: 'https',
-        hostname: 'pagz-files.s3.ap-south-1.amazonaws.com',
+        hostname: 'pagz.in',
         pathname: '/**',
       },
-      // Generic AWS S3 pattern (matches bucket.s3.amazonaws.com)
+      // Development / staging variants
       {
         protocol: 'https',
-        hostname: '*.s3.amazonaws.com',
+        hostname: '*.pagz.in',
         pathname: '/**',
       },
-      // All AWS domains as fallback
-      {
-        protocol: 'https',
-        hostname: '*.amazonaws.com',
-        pathname: '/**',
-      },
-      // Unsplash images
+      // Unsplash (seed / demo data)
       {
         protocol: 'https',
         hostname: 'images.unsplash.com',
@@ -34,13 +28,28 @@ const nextConfig = {
         protocol: 'http',
         hostname: 'localhost',
       },
-      // Allow all other HTTPS domains as final fallback
+      // Legacy: keep AWS S3 patterns so old DB records with S3 URLs still render
+      {
+        protocol: 'https',
+        hostname: 'pagz-files.s3.ap-south-1.amazonaws.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.s3.amazonaws.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.amazonaws.com',
+        pathname: '/**',
+      },
+      // Allow all other HTTPS domains as final fallback (external demo images)
       {
         protocol: 'https',
         hostname: '**',
       },
     ],
-    // Configuration options
     unoptimized: false,
     formats: ['image/avif', 'image/webp'],
   },
