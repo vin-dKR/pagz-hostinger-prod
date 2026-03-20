@@ -2,6 +2,11 @@
 const nextConfig = {
     // Production optimizations
     compress: true,
+
+    // Hostinger is adding redirects for some paths (notably `/orders`),
+    // which can create an `/orders` <-> `/orders/` redirect loop and break RSC payload fetches.
+    // Enabling trailingSlash makes Next's canonical URLs match Hostinger's.
+    trailingSlash: true,
     
     // Ensure static files are generated correctly
     generateEtags: true,

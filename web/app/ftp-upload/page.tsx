@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { uploadFileToFTP, uploadMultipleFilesToFTP, testFTPConnection, type FTPUploadResult } from "@/lib/api/ftp";
+import { extractPathFromUrl } from "@/lib/utils/fileUrl";
 import toast from "react-hot-toast";
 
 export default function FTPUploadPage() {
@@ -74,7 +75,16 @@ export default function FTPUploadPage() {
                 if (file) {
                     const response = await uploadFileToFTP(file, subDir);
                     if (response.success && response.data) {
-                        results = [response.data];
+                        const r = response.data; // FTPUploadResponse (legacy shape)
+                        const mapped: FTPUploadResult = {
+                            path: extractPathFromUrl(r.publicUrl),
+                            publicUrl: r.publicUrl,
+                            filename: r.remoteFileName,
+                            size: r.size,
+                            mimetype: r.mimetype,
+                            originalName: r.originalName,
+                        };
+                        results = [mapped];
                         toast.success("File uploaded successfully!");
                     }
                 }
@@ -299,7 +309,7 @@ export default function FTPUploadPage() {
                                                 {file.originalName}
                                             </p>
                                             <p className="text-xs text-gray-600 mt-1">
-                                                Remote: {file.remoteFileName}
+                                                Remote: {file.filename}
                                             </p>
                                             <p className="text-xs text-gray-500 mt-1">
                                                 Size: {formatFileSize(file.size)} • {file.mimetype}

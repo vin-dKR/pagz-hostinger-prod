@@ -134,7 +134,7 @@ export default function ProfileSidebar() {
                     {/* Secondary Navigation */}
                     <div className="p-1">
                         <Link
-                            href="/help"
+                            href="/contact"
                             className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition-all duration-200"
                         >
                             <HelpCircle className="w-4 h-4 text-gray-500" />
