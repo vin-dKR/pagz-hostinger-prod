@@ -171,6 +171,10 @@ interface ProductPageTemplateProps {
     onFileHasPasswordChange?: (value: boolean) => void;
     onFilePasswordChange?: (value: string) => void;
     onPasswordSubmittedChange?: (value: boolean) => void;
+    pageControllerMaxPages?: number | null;
+    pageControllerCurrentPageCount?: number;
+    pageControllerError?: string | null;
+    hasPageControllerRules?: boolean;
 }
 
 export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
@@ -215,6 +219,10 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
     onFileHasPasswordChange,
     onFilePasswordChange,
     onPasswordSubmittedChange,
+    pageControllerMaxPages = null,
+    pageControllerCurrentPageCount = 0,
+    pageControllerError = null,
+    hasPageControllerRules = false,
 }) => {
     const router = useRouter();
     const outOfStock = isOutOfStock || (stock !== null && stock !== undefined && stock <= 0);
@@ -273,6 +281,13 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                 type: 'warning' as const,
                 title: 'Missing required selection',
                 message: 'Please select all mandatory fields in “Customize Your Order”.',
+            };
+        }
+        if (pageControllerError) {
+            return {
+                type: 'error' as const,
+                title: 'Page Limit Exceeded',
+                message: pageControllerError,
             };
         }
         return null;
@@ -381,6 +396,10 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                             maxSizeMB={50}
                                             uploadedFilesS3={uploadedFilesS3}
                                             setUploadedFilesS3={setUploadedFilesS3}
+                                             maxPages={pageControllerMaxPages}
+                                             currentPageCount={pageControllerCurrentPageCount}
+                                             pageControllerError={pageControllerError}
+                                             hasPageControllerRules={hasPageControllerRules}
                                         />
                                         {uploadedFilesS3 && uploadedFilesS3.length >= 1 && (
                                             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">

@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, File, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info } from "lucide-react";
+import { Upload, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info } from "lucide-react";
 import { uploadOrderFilesToS3, deleteOrderFile } from "@/lib/api/uploads";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
-import { useAuth } from "@/contexts/AuthContext";
 import { isValidFileType, validateFiles, getFileType } from "@/lib/utils/file-validation";
 
 export interface FileDetail {
@@ -27,7 +26,10 @@ interface ProductDocumentUploadProps {
     className?: string;
     uploadedFilesS3?: FileDetail[]
     setUploadedFilesS3: React.Dispatch<React.SetStateAction<FileDetail[]>>
-    // Page controller props
+    maxPages?: number | null;
+    currentPageCount?: number;
+    pageControllerError?: string | null;
+    hasPageControllerRules?: boolean;
 }
 
 export default function ProductDocumentUpload({
@@ -39,8 +41,11 @@ export default function ProductDocumentUpload({
     className = "",
     uploadedFilesS3,
     setUploadedFilesS3,
+    maxPages = null,
+    currentPageCount = 0,
+    pageControllerError = null,
+    hasPageControllerRules = false,
 }: ProductDocumentUploadProps) {
-    const { isAuthenticated } = useAuth();
     const [totalQuantity, setTotalQuantity] = useState<number>(0);
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -434,6 +439,12 @@ export default function ProductDocumentUpload({
                         Supported formats: Images (JPG, PNG - Max 10MB) and PDFs (Max 50MB)
                         {maxFiles && ` • Max ${maxFiles} files`}
                     </p>
+                    {hasPageControllerRules && maxPages !== null && (
+                        <p className="mt-1 text-xs text-blue-600 flex items-center gap-1">
+                            <Info size={12} />
+                            Maximum {maxPages} page{maxPages !== 1 ? 's' : ''} allowed for selected options
+                        </p>
+                    )}
                 </div>
 
                 {/* Error Display */}
@@ -441,6 +452,23 @@ export default function ProductDocumentUpload({
                     <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                         <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
                         <p className="text-sm text-red-700">{error}</p>
+                    </div>
+                )}
+
+                {pageControllerError && (
+                    <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
+                        <p className="text-sm text-red-700">{pageControllerError}</p>
+                    </div>
+                )}
+
+                {hasPageControllerRules && currentPageCount > 0 && maxPages !== null && (
+                    <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <Info size={16} className="text-blue-600 shrink-0" />
+                        <p className="text-sm text-blue-700">
+                            Current: <span className="font-semibold">{currentPageCount}</span> • Max:{" "}
+                            <span className="font-semibold">{maxPages}</span>
+                        </p>
                     </div>
                 )}
 

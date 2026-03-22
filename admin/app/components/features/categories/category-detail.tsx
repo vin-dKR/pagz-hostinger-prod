@@ -28,13 +28,14 @@ import { CategoryImages } from './category-images';
 import { CategoryTemplatesForms } from './category-templates-forms';
 import { ParentCategorySelector } from './parent-category-selector';
 import { ChildCategoriesSelector } from './child-categories-selector';
+import { CategoryPageController } from './category-page-controller';
 import { getProducts, type Product } from '@/lib/api/products.service';
 
 interface CategoryDetailProps {
     categoryId: string;
 }
 
-type TabType = 'overview' | 'specifications' | 'pricing' | 'products' | 'images' | 'templates';
+type TabType = 'overview' | 'specifications' | 'pricing' | 'products' | 'images' | 'templates' | 'page-controller';
 
 export function CategoryDetail({ categoryId }: CategoryDetailProps) {
     const router = useRouter();
@@ -294,6 +295,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         { id: 'products', label: 'Products' },
         { id: 'images', label: 'Images' },
         { id: 'templates', label: 'Templates & Forms' },
+        { id: 'page-controller', label: 'Page Controller' },
     ];
 
     return (
@@ -604,6 +606,10 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
             {activeTab === 'templates' && (
                 <CategoryTemplatesForms categoryId={categoryId} />
+            )}
+
+            {activeTab === 'page-controller' && (
+                <CategoryPageController categoryId={categoryId} />
             )}
         </div>
     );

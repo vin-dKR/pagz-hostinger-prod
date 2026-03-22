@@ -7,6 +7,7 @@ import { ProductPageTemplate } from '@/app/components/services/ProductPageTempla
 import { TemplateSelector } from '@/app/components/services/TemplateSelector';
 import { Select } from '@/app/components/ui/select';
 import { useCategoryTemplates } from '@/lib/hooks/use-category-templates';
+import { usePageController } from '@/lib/hooks/use-page-controller';
 import { QuantityWithCopiesSelector } from '@/app/components/services/QuantityWithCopiesSelector';
 import { FileDetail } from '@/app/components/products/ProductDocumentUpload';
 import {
@@ -89,6 +90,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     // Check if templates exist for this category
     const { data: categoryTemplates = [] } = useCategoryTemplates(categorySlug, !!category);
     const hasTemplates = categoryTemplates.length > 0;
+    const pageController = usePageController({
+        categorySlug,
+        selectedSpecifications,
+        pageCount,
+        enabled: !!category,
+    });
 
     // Template selection state
     const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -781,6 +788,11 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
 
     const handleAddToCart = async () => {
+        if (!pageController.isValid) {
+            toastError(pageController.errorMessage || 'Page limit exceeded');
+            return;
+        }
+
         // Check authentication - if not authenticated, save data and redirect
         if (!isAuthenticated) {
             try {
@@ -1044,6 +1056,11 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     };
 
     const handleBuyNow = async () => {
+        if (!pageController.isValid) {
+            toastError(pageController.errorMessage || 'Page limit exceeded');
+            return;
+        }
+
         // Check authentication - if not authenticated, save data and redirect
         if (!isAuthenticated) {
             try {
@@ -1595,6 +1612,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 uploadedFilesS3={uploadedFilesS3}
                 setUploadedFilesS3={setUploadedFilesS3}
                 hideFileUpload={hasTemplates}
+                pageControllerMaxPages={pageController.maxPages}
+                pageControllerCurrentPageCount={pageCount}
+                pageControllerError={pageController.errorMessage}
+                hasPageControllerRules={pageController.hasRules}
                 templateSelector={
                     hasTemplates ? (
                         <TemplateSelector
