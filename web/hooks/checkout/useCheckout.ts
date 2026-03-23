@@ -9,6 +9,15 @@ import { useAddresses } from '@/hooks/addresses/useAddresses';
 import { validateCoupon, getAvailableCoupons, type Coupon, type ValidateCouponResponse } from '@/lib/api/coupons';
 import { Address } from '@/lib/api/addresses';
 
+function normalizeErrorMessage(input: unknown, fallback: string): string {
+    if (typeof input === 'string') return input;
+    if (input && typeof input === 'object' && 'message' in input) {
+        const msg = (input as { message?: unknown }).message;
+        if (typeof msg === 'string') return msg;
+    }
+    return fallback;
+}
+
 export interface UseCheckoutReturn {
     // Cart data
     cartItems: any[];
@@ -33,7 +42,7 @@ export interface UseCheckoutReturn {
     discountAmount: number;
     isApplyingCoupon: boolean;
     couponError: string | null;
-    applyCoupon: () => Promise<boolean>;
+    applyCoupon: (codeOverride?: string) => Promise<boolean>;
     removeCoupon: () => void;
 
     // Calculated totals
@@ -261,8 +270,9 @@ export function useCheckout(): UseCheckoutReturn {
     }, []);
 
     // Apply coupon
-    const applyCoupon = useCallback(async (): Promise<boolean> => {
-        if (!couponCode.trim()) {
+    const applyCoupon = useCallback(async (codeOverride?: string): Promise<boolean> => {
+        const effectiveCode = (codeOverride ?? couponCode).trim().toUpperCase();
+        if (!effectiveCode) {
             setCouponError('Please enter a coupon code');
             return false;
         }
@@ -287,7 +297,7 @@ export function useCheckout(): UseCheckoutReturn {
                 }));
 
             const response = await validateCoupon({
-                code: couponCode.trim().toUpperCase(),
+                code: effectiveCode,
                 orderAmount: subtotal || 0,
                 cartItems: cartItemsForValidation,
             });
@@ -324,7 +334,10 @@ export function useCheckout(): UseCheckoutReturn {
                 }
             } else {
                 // API returned success: false with error message
-                const errorMessage = response.error || response.message || 'Invalid coupon code';
+                const errorMessage =
+                    normalizeErrorMessage(response.error, '') ||
+                    normalizeErrorMessage(response.message, '') ||
+                    'Invalid coupon code';
                 setCouponError(errorMessage);
                 setAppliedCoupon(null);
                 return false;

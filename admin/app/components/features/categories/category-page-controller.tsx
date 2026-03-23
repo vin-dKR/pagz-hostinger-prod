@@ -17,6 +17,8 @@ import {
     createCategoryPageControllerRule,
     updateCategoryPageControllerRule,
     deleteCategoryPageControllerRule,
+    getCategoryPageControllerSettings,
+    updateCategoryPageControllerSettings,
     type CategoryPageControllerRule,
 } from '@/lib/api/categoryPageController.service';
 
@@ -31,6 +33,12 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [settingsSaving, setSettingsSaving] = useState(false);
+    const [settingsForm, setSettingsForm] = useState({
+        showBulkToggle: true,
+        bulkToggleLabel: 'Do you need in bulks?',
+        copiesLabel: 'Number of Quantity/Copies',
+    });
     const { confirm, ConfirmDialog } = useConfirm();
 
     const [form, setForm] = useState({
@@ -53,6 +61,8 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                 ]);
                 setRules(nextRules);
                 setSpecs(nextSpecs);
+                const nextSettings = await getCategoryPageControllerSettings(categoryId);
+                setSettingsForm(nextSettings);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load page controller data');
             } finally {
@@ -150,6 +160,21 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
             },
         });
         if (!approved) return;
+    };
+
+    const handleSettingsSave = async (e: FormEvent) => {
+        e.preventDefault();
+        try {
+            setSettingsSaving(true);
+            setError(null);
+            const updated = await updateCategoryPageControllerSettings(categoryId, settingsForm);
+            setSettingsForm(updated);
+            toastSuccess('Page controller settings updated');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to update settings');
+        } finally {
+            setSettingsSaving(false);
+        }
     };
 
     if (loading) {
@@ -272,6 +297,53 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                             )}
                             <Button type="submit" isLoading={saving}>
                                 {editingId ? 'Update Rule' : 'Create Rule'}
+                            </Button>
+                        </div>
+                    </form>
+                </CardContent>
+            </Card>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Page Controller UI Settings</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <form onSubmit={handleSettingsSave} className="grid gap-4 md:grid-cols-2">
+                        <div className="md:col-span-2 flex items-center gap-2">
+                            <input
+                                id="showBulkToggle"
+                                type="checkbox"
+                                checked={settingsForm.showBulkToggle}
+                                onChange={(e) =>
+                                    setSettingsForm((prev) => ({ ...prev, showBulkToggle: e.target.checked }))
+                                }
+                            />
+                            <Label htmlFor="showBulkToggle">Show bulk/copies toggle in web selector</Label>
+                        </div>
+                        <div>
+                            <Label htmlFor="bulkToggleLabel">Bulk Toggle Label</Label>
+                            <Input
+                                id="bulkToggleLabel"
+                                value={settingsForm.bulkToggleLabel}
+                                onChange={(e) =>
+                                    setSettingsForm((prev) => ({ ...prev, bulkToggleLabel: e.target.value }))
+                                }
+                                placeholder="Do you need in bulks?"
+                            />
+                        </div>
+                        <div>
+                            <Label htmlFor="copiesLabel">Copies Input Label</Label>
+                            <Input
+                                id="copiesLabel"
+                                value={settingsForm.copiesLabel}
+                                onChange={(e) =>
+                                    setSettingsForm((prev) => ({ ...prev, copiesLabel: e.target.value }))
+                                }
+                                placeholder="Number of Quantity/Copies"
+                            />
+                        </div>
+                        <div className="md:col-span-2 flex justify-end">
+                            <Button type="submit" isLoading={settingsSaving}>
+                                Save UI Settings
                             </Button>
                         </div>
                     </form>

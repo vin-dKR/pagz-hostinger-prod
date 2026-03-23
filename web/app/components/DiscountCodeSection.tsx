@@ -7,7 +7,7 @@ import { getAvailableCoupons, type Coupon } from "@/lib/api/coupons";
 interface DiscountCodeSectionProps {
     couponCode: string;
     setCouponCode: (code: string) => void;
-    onApply: () => Promise<boolean>;
+    onApply: (codeOverride?: string) => Promise<boolean>;
     isApplying: boolean;
     error: string | null;
     appliedCoupon: {
@@ -84,7 +84,7 @@ export default function DiscountCodeSection({
         setCouponCode(code);
         setLocalCode(code);
         setShowSuggestions(false);
-        const success = await onApply();
+        const success = await onApply(code);
         if (success) {
             setLocalCode("");
         }
@@ -189,6 +189,11 @@ export default function DiscountCodeSection({
                                             <div className="flex-1">
                                                 <div className="font-semibold text-gray-900">{coupon.code}</div>
                                                 <div className="text-sm text-gray-500">{coupon.name}</div>
+                                                {coupon.firstOrderOnly && (
+                                                    <div className="text-xs text-amber-700 mt-1 font-medium">
+                                                        First order only
+                                                    </div>
+                                                )}
                                                 {coupon.minPurchaseAmount && (
                                                     <div className="text-xs text-gray-400 mt-1">
                                                         Min. purchase: ₹{Number(coupon.minPurchaseAmount).toLocaleString()}

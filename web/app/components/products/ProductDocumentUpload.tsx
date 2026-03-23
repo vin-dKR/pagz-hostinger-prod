@@ -241,6 +241,14 @@ export default function ProductDocumentUpload({
             const allFiles = allFileDetails.map(fd => fd.file);
             const finalPageCount = allFileDetails.reduce((sum, fd) => sum + fd.pageCount, 0);
 
+            // Hard guard: never upload files if page-controller max page limit is exceeded.
+            if (hasPageControllerRules && maxPages !== null && finalPageCount > maxPages) {
+                setError(
+                    `Uploaded pages (${finalPageCount}) exceed allowed limit (${maxPages}) for the current selection.`
+                );
+                return;
+            }
+
             // Update state first
             setUploadedFilesS3(allFileDetails);
             setTotalQuantity(finalPageCount);

@@ -708,6 +708,7 @@ model Coupon {
   maxDiscountAmount Decimal?           @db.Decimal(10, 2) // Maximum discount cap
   usageLimit        Int? // Total usage limit (null = unlimited)
   usageLimitPerUser Int                @default(1) // Per user usage limit
+  firstOrderOnly    Boolean            @default(false)
   validFrom         DateTime
   validUntil        DateTime
   isActive          Boolean            @default(true)

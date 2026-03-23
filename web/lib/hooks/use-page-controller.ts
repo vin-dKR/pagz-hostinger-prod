@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getCategoryPageControllerRules, type PageControllerRule } from '@/lib/api/pageController';
+import {
+    getCategoryPageControllerRules,
+    getCategoryPageControllerSettings,
+    type PageControllerRule,
+    type PageControllerUiSettings,
+} from '@/lib/api/pageController';
 
 interface UsePageControllerArgs {
     categorySlug: string;
@@ -15,6 +20,11 @@ export function usePageController({
     enabled = true,
 }: UsePageControllerArgs) {
     const [rules, setRules] = useState<PageControllerRule[]>([]);
+    const [uiSettings, setUiSettings] = useState<PageControllerUiSettings>({
+        showBulkToggle: true,
+        bulkToggleLabel: 'Do you need in bulks?',
+        copiesLabel: 'Number of Quantity/Copies',
+    });
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -23,8 +33,12 @@ export function usePageController({
         const load = async () => {
             try {
                 setLoading(true);
-                const nextRules = await getCategoryPageControllerRules(categorySlug);
+                const [nextRules, nextUiSettings] = await Promise.all([
+                    getCategoryPageControllerRules(categorySlug),
+                    getCategoryPageControllerSettings(categorySlug),
+                ]);
                 setRules(nextRules);
+                setUiSettings(nextUiSettings);
             } finally {
                 setLoading(false);
             }
@@ -59,5 +73,6 @@ export function usePageController({
         isValid: !errorMessage,
         errorMessage,
         matchedRule,
+        uiSettings,
     };
 }

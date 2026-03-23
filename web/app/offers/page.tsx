@@ -6,7 +6,7 @@ import CouponCard from "../components/offers/OfferCard";
 import { BarsSpinner } from "../components/shared/BarsSpinner";
 import { useCoupons } from "@/lib/hooks/use-coupons";
 
-type FilterType = "all" | "products" | "categories"; 
+type FilterType = "all" | "categories"; 
 
 function OffersPageChild() {
     const searchParams = useSearchParams();
@@ -20,11 +20,7 @@ function OffersPageChild() {
 
     // Memoized filtered coupons - no need for separate state
     const filteredCoupons = useMemo(() => {
-        if (activeFilter === "products") {
-            return coupons.filter(
-                (coupon) => coupon.applicableTo === "PRODUCT" && coupon._count.offerProducts > 0
-            );
-        } else if (activeFilter === "categories") {
+        if (activeFilter === "categories") {
             return coupons.filter(
                 (coupon) => coupon.applicableTo === "CATEGORY" && coupon._count.offerProducts > 0
             );
@@ -93,20 +89,6 @@ function OffersPageChild() {
                             {activeFilter === "all" && (
                                 <span className="ml-2 text-xs text-gray-500">
                                     ({coupons.length})
-                                </span>
-                            )}
-                        </button>
-                        <button
-                            onClick={() => handleFilterChange("products")}
-                            className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${activeFilter === "products"
-                                ? "border-[#008ECC] text-[#008ECC]"
-                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                }`}
-                        >
-                            Product Coupons
-                            {activeFilter === "products" && (
-                                <span className="ml-2 text-xs text-gray-500">
-                                    ({coupons.filter((c) => c.applicableTo === "PRODUCT" && c._count.offerProducts > 0).length})
                                 </span>
                             )}
                         </button>

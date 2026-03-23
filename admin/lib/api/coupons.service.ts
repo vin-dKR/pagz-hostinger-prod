@@ -19,6 +19,7 @@ export interface Coupon {
     maxDiscountAmount?: number;
     usageLimit?: number;
     usageLimitPerUser: number;
+    firstOrderOnly?: boolean;
     validFrom: string;
     validUntil: string;
     isActive: boolean;
@@ -37,6 +38,7 @@ export interface CreateCouponData {
     maxDiscountAmount?: number;
     usageLimit?: number;
     usageLimitPerUser?: number;
+    firstOrderOnly?: boolean;
     validFrom: string;
     validUntil: string;
     isActive?: boolean;
@@ -59,7 +61,10 @@ export async function getCoupons(): Promise<Coupon[]> {
         throw new Error(response.error || 'Failed to fetch coupons');
     }
 
-    return response.data;
+    return response.data.map((coupon) => ({
+        ...coupon,
+        firstOrderOnly: coupon.firstOrderOnly ?? false,
+    }));
 }
 
 /**
@@ -72,7 +77,10 @@ export async function getCoupon(id: string): Promise<Coupon> {
         throw new Error(response.error || 'Failed to fetch coupon');
     }
 
-    return response.data;
+    return {
+        ...response.data,
+        firstOrderOnly: response.data.firstOrderOnly ?? false,
+    };
 }
 
 /**
@@ -85,7 +93,10 @@ export async function createCoupon(data: CreateCouponData): Promise<Coupon> {
         throw new Error(response.error || 'Failed to create coupon');
     }
 
-    return response.data;
+    return {
+        ...response.data,
+        firstOrderOnly: response.data.firstOrderOnly ?? data.firstOrderOnly ?? false,
+    };
 }
 
 /**
@@ -99,7 +110,13 @@ export async function updateCoupon(data: UpdateCouponData): Promise<Coupon> {
         throw new Error(response.error || 'Failed to update coupon');
     }
 
-    return response.data;
+    return {
+        ...response.data,
+        // Preserve submitted value when older backend responses don't include this field yet.
+        firstOrderOnly:
+            response.data.firstOrderOnly ??
+            (typeof updateData.firstOrderOnly === 'boolean' ? updateData.firstOrderOnly : false),
+    };
 }
 
 /**

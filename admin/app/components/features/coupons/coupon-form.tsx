@@ -49,6 +49,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
         maxDiscountAmount: initialData?.maxDiscountAmount ? Number(initialData.maxDiscountAmount) : undefined,
         usageLimit: initialData?.usageLimit || undefined,
         usageLimitPerUser: initialData?.usageLimitPerUser || 1,
+        firstOrderOnly: initialData?.firstOrderOnly ?? false,
         validFrom: initialData?.validFrom
             ? new Date(initialData.validFrom).toISOString().slice(0, 16)
             : new Date().toISOString().slice(0, 16),
@@ -56,7 +57,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
             ? new Date(initialData.validUntil).toISOString().slice(0, 16)
             : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
         isActive: initialData?.isActive ?? true,
-        applicableTo: initialData?.applicableTo || 'ALL',
+        applicableTo: initialData?.applicableTo === 'PRODUCT' ? 'CATEGORY' : (initialData?.applicableTo || 'ALL'),
     });
 
     const handleGenerateCode = () => {
@@ -363,6 +364,26 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                             required
                         />
                     </div>
+
+                    <div className="flex items-center space-x-2 pt-1">
+                        <input
+                            type="checkbox"
+                            id="firstOrderOnly"
+                            checked={!!formData.firstOrderOnly}
+                            onChange={(e) =>
+                                setFormData({
+                                    ...formData,
+                                    firstOrderOnly: e.target.checked,
+                                    usageLimitPerUser: e.target.checked ? 1 : formData.usageLimitPerUser,
+                                })
+                            }
+                            className="rounded border-gray-300"
+                        />
+                        <Label htmlFor="firstOrderOnly">First purchase only</Label>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                        When enabled, coupon is valid only for users with no previous non-cancelled orders.
+                    </p>
                 </CardContent>
             </Card>
 
@@ -410,14 +431,14 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                             onChange={(e) =>
                                 setFormData({
                                     ...formData,
-                                    applicableTo: e.target.value as 'ALL' | 'CATEGORY' | 'PRODUCT',
+                                    applicableTo: e.target.value as 'ALL' | 'CATEGORY',
                                 })
                             }
                             required
                         >
                             <option value="ALL">All Products</option>
                             <option value="CATEGORY">Specific Categories</option>
-                            <option value="PRODUCT">Specific Products</option>
+                            {/* <option value="PRODUCT">Specific Products</option> */}
                         </Select>
                         <p className="text-xs text-gray-500">
                             Configure products or categories below based on your selection

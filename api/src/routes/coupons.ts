@@ -5,6 +5,7 @@ import {
     getMyCoupons,
     getCouponById,
     getCouponProductsPublic,
+    getCouponCategoriesPublic,
 } from "../controllers/couponController.js";
 import { customerAuth } from "../middleware/auth.js";
 
@@ -20,6 +21,7 @@ const router: IRouter = Router();
 router.get("/available", getAvailableCoupons);
 router.get("/:id", getCouponById);
 router.get("/:id/products", getCouponProductsPublic);
+router.get("/:id/categories", getCouponCategoriesPublic);
 
 // Protected routes
 router.use(customerAuth);

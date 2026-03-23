@@ -80,6 +80,19 @@ export const validateCoupon = async (req: Request, res: Response, next: NextFunc
             throw new ValidationError("You have already used this coupon");
         }
 
+        // First-order-only coupons can only be used if user has no prior non-cancelled/non-rejected orders.
+        if (coupon.firstOrderOnly) {
+            const priorOrderCount = await prisma.order.count({
+                where: {
+                    userId: req.user.id,
+                    status: { notIn: ["CANCELLED", "REJECTED"] },
+                },
+            });
+            if (priorOrderCount > 0) {
+                throw new ValidationError("This coupon is valid only for first purchase");
+            }
+        }
+
         // Validate against cart items if provided
         const eligibleItems: any[] = [];
         const ineligibleItems: any[] = [];
@@ -232,6 +245,7 @@ export const getAvailableCoupons = async (req: Request, res: Response, next: Nex
                 applicableTo: true,
                 usageLimit: true,
                 usageLimitPerUser: true,
+                firstOrderOnly: true,
                 _count: {
                     select: {
                         offerProducts: true,
@@ -284,6 +298,7 @@ export const getCouponById = async (req: Request, res: Response, next: NextFunct
                 applicableTo: true,
                 usageLimit: true,
                 usageLimitPerUser: true,
+                firstOrderOnly: true,
                 createdAt: true,
                 updatedAt: true,
                 _count: {
@@ -425,6 +440,91 @@ export const getCouponProductsPublic = async (req: Request, res: Response, next:
             });
 
         return sendSuccess(res, productsWithDiscount);
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get categories for a specific coupon (public)
+ * @route GET /api/v1/coupons/:id/categories
+ */
+export const getCouponCategoriesPublic = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const id = Array.isArray(req.params.id)
+            ? req.params.id[0]
+            : req.params.id;
+
+        const coupon = await prisma.coupon.findUnique({
+            where: { id },
+            select: { id: true },
+        });
+
+        if (!coupon) {
+            throw new NotFoundError("Coupon not found");
+        }
+
+        const offerProducts = await prisma.offerProduct.findMany({
+            where: { couponId: id },
+            include: {
+                product: {
+                    select: {
+                        categoryId: true,
+                    },
+                },
+            },
+        });
+
+        const categoryIds = [...new Set(offerProducts.map((op) => op.product.categoryId))];
+        if (categoryIds.length === 0) {
+            return sendSuccess(res, []);
+        }
+
+        const categories = await prisma.category.findMany({
+            where: { id: { in: categoryIds }, isActive: true },
+            select: {
+                id: true,
+                name: true,
+                slug: true,
+                image: true,
+                images: {
+                    where: { isPrimary: true },
+                    select: { url: true },
+                    take: 1,
+                    orderBy: { displayOrder: "asc" },
+                },
+                _count: {
+                    select: {
+                        products: true,
+                    },
+                },
+            },
+            orderBy: { name: "asc" },
+        });
+
+        const categoriesWithCounts = await Promise.all(
+            categories.map(async (category) => {
+                const productCount = await prisma.offerProduct.count({
+                    where: {
+                        couponId: id,
+                        product: {
+                            categoryId: category.id,
+                            isActive: true,
+                        },
+                    },
+                });
+
+                return {
+                    id: category.id,
+                    name: category.name,
+                    slug: category.slug,
+                    imageUrl: category.images[0]?.url || category.image || null,
+                    productCount,
+                };
+            })
+        );
+
+        return sendSuccess(res, categoriesWithCounts);
     } catch (error) {
         next(error);
     }
@@ -826,6 +926,7 @@ export const createAdminCoupon = async (req: Request, res: Response, next: NextF
             maxDiscountAmount,
             usageLimit,
             usageLimitPerUser,
+            firstOrderOnly,
             validFrom,
             validUntil,
             isActive,
@@ -858,6 +959,7 @@ export const createAdminCoupon = async (req: Request, res: Response, next: NextF
                 maxDiscountAmount: maxDiscountAmount ? Number(maxDiscountAmount) : null,
                 usageLimit: usageLimit ? Number(usageLimit) : null,
                 usageLimitPerUser: usageLimitPerUser ? Number(usageLimitPerUser) : 1,
+                firstOrderOnly: Boolean(firstOrderOnly),
                 validFrom: new Date(validFrom),
                 validUntil: new Date(validUntil),
                 isActive: isActive !== undefined ? isActive : true,
@@ -1033,6 +1135,7 @@ export const updateAdminCoupon = async (req: Request, res: Response, next: NextF
             maxDiscountAmount,
             usageLimit,
             usageLimitPerUser,
+            firstOrderOnly,
             validFrom,
             validUntil,
             isActive,
@@ -1062,6 +1165,7 @@ export const updateAdminCoupon = async (req: Request, res: Response, next: NextF
         if (maxDiscountAmount !== undefined) updateData.maxDiscountAmount = maxDiscountAmount ? Number(maxDiscountAmount) : null;
         if (usageLimit !== undefined) updateData.usageLimit = usageLimit ? Number(usageLimit) : null;
         if (usageLimitPerUser !== undefined) updateData.usageLimitPerUser = Number(usageLimitPerUser);
+        if (firstOrderOnly !== undefined) updateData.firstOrderOnly = Boolean(firstOrderOnly);
         if (validFrom !== undefined) updateData.validFrom = new Date(validFrom);
         if (validUntil !== undefined) updateData.validUntil = new Date(validUntil);
         if (isActive !== undefined) updateData.isActive = isActive;

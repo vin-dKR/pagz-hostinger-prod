@@ -36,15 +36,15 @@ export default function CouponCard({ coupon }: CouponCardProps) {
     const getApplicableToText = () => {
         switch (coupon.applicableTo) {
             case "ALL":
-                return "All Products";
+                return "All Categories";
             case "CATEGORY":
                 return "Selected Categories";
             case "PRODUCT":
-                return "Selected Products";
+                return "Selected Categories";
             case "BRAND":
-                return "Selected Brands";
+                return "Selected Categories";
             default:
-                return "All Products";
+                return "All Categories";
         }
     };
 
@@ -52,7 +52,7 @@ export default function CouponCard({ coupon }: CouponCardProps) {
         <Link href={`/offers/${coupon.id}`} onMouseEnter={handleMouseEnter}>
             <div className="group relative bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow overflow-hidden cursor-pointer">
                 {/* Coupon Header with Code */}
-                <div className="relative h-48 w-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <div className="relative h-48 w-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center">
                     <div className="text-white text-center p-4 w-full">
                         <Ticket className="w-12 h-12 mx-auto mb-2 opacity-80" />
                         <div className="bg-red-500 text-white px-4 py-2 rounded-full text-lg font-bold inline-block mb-3 shadow-lg">
@@ -93,13 +93,18 @@ export default function CouponCard({ coupon }: CouponCardProps) {
                             <Calendar className="w-4 h-4" />
                             <span>Valid until {formatDate(coupon.validUntil)}</span>
                         </div>
+                        {coupon.firstOrderOnly && (
+                            <div className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 border border-amber-200">
+                                First order only
+                            </div>
+                        )}
                     </div>
 
-                    {/* Product Count & Usage Limits */}
+                    {/* Mapping Count & Usage Limits */}
                     <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                         <div className="flex flex-col gap-1">
                             <span className="text-sm text-gray-600">
-                                {coupon._count.offerProducts} {coupon._count.offerProducts === 1 ? "product" : "products"}
+                                {coupon._count.offerProducts} {coupon._count.offerProducts === 1 ? "mapped item" : "mapped items"}
                             </span>
                             {coupon.usageLimit && (
                                 <span className="text-xs text-gray-500">

@@ -1,5 +1,4 @@
-import puppeteer from 'puppeteer';
-import fs from 'fs';
+import PDFDocument from 'pdfkit';
 
 export interface InvoiceData {
     invoiceNumber: string;
@@ -51,410 +50,203 @@ export interface InvoiceData {
     };
 }
 
-function resolvePuppeteerExecutablePath(): string | undefined {
-    // Highest priority: explicit env var override (recommended for production hosts)
-    const envPath =
-        process.env.PUPPETEER_EXECUTABLE_PATH ||
-        process.env.CHROME_EXECUTABLE_PATH ||
-        process.env.CHROMIUM_PATH;
-    if (envPath && fs.existsSync(envPath)) {
-        return envPath;
-    }
-
-    // Next: Puppeteer's bundled Chromium (if it was downloaded during install)
-    try {
-        const bundled = puppeteer.executablePath();
-        if (bundled && fs.existsSync(bundled)) {
-            return bundled;
-        }
-    } catch {
-        // ignore
-    }
-
-    // Finally: common system paths (varies by distro/hosting)
-    const candidates = [
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable',
-        '/snap/bin/chromium',
-    ];
-
-    for (const p of candidates) {
-        if (fs.existsSync(p)) return p;
-    }
-
-    return undefined;
-}
-
 export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buffer> {
-    const executablePath = resolvePuppeteerExecutablePath();
-
-    const browser = await puppeteer.launch({
-        headless: true,
-        ...(executablePath ? { executablePath } : {}),
-        // Flags for constrained Linux hosts (containers/shared hosting)
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-zygote',
-            '--single-process',
-        ],
-    });
-
-    try {
-        const page = await browser.newPage();
-        
-        const html = generateInvoiceHTML(invoiceData);
-        
-        await page.setContent(html, { waitUntil: 'networkidle0' });
-        
-        const pdf = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: {
-                top: '20mm',
-                right: '15mm',
-                bottom: '20mm',
-                left: '15mm',
-            },
-        });
-
-        return Buffer.from(pdf);
-    } catch (err) {
-        const hint =
-            executablePath
-                ? `Using Chromium at: ${executablePath}`
-                : 'No Chromium executablePath resolved. Set PUPPETEER_EXECUTABLE_PATH (or CHROME_EXECUTABLE_PATH) in production.';
-        const message = err instanceof Error ? err.message : String(err);
-        throw new Error(`[PDF_GENERATION_FAILED] ${message}. ${hint}`);
-    } finally {
-        await browser.close();
-    }
-}
-
-function generateInvoiceHTML(data: InvoiceData): string {
-    const company = data.company || {
+	return new Promise<Buffer>((resolve, reject) => {
+		try {
+			const company = invoiceData.company || {
         name: 'pagz',
         address: 'Company Address',
         phone: '+91 1234567890',
         email: 'info@pagz.com',
     };
 
-    return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice ${data.invoiceNumber}</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Arial', 'Helvetica', sans-serif;
-            font-size: 12px;
-            color: #0F1111;
-            line-height: 1.6;
-            background: #FFFFFF;
-        }
-        .invoice-container {
-            max-width: 210mm;
-            margin: 0 auto;
-            padding: 20mm;
-            background: white;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #FF9900;
-        }
-        .company-info {
-            flex: 1;
-        }
-        .company-info h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
-            color: #FF9900;
-            font-weight: bold;
-            letter-spacing: -0.5px;
-        }
-        .company-info p {
-            margin: 3px 0;
-            color: #666;
-            font-size: 11px;
-        }
-        .invoice-info {
-            text-align: right;
-        }
-        .invoice-info h2 {
-            font-size: 28px;
-            margin-bottom: 10px;
-            color: #333;
-        }
-        .invoice-info p {
-            margin: 5px 0;
-            color: #666;
-        }
-        .invoice-number {
-            font-size: 14px;
-            font-weight: bold;
-            color: #333;
-        }
-        .details-section {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-bottom: 30px;
-        }
-        .detail-box {
-            background: #f9f9f9;
-            padding: 15px;
-            border-radius: 5px;
-        }
-        .detail-box h3 {
-            font-size: 14px;
-            margin-bottom: 10px;
-            color: #333;
-            border-bottom: 2px solid #ddd;
-            padding-bottom: 5px;
-        }
-        .detail-box p {
-            margin: 5px 0;
-            font-size: 11px;
-            color: #555;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        thead {
-            background: #232F3E;
-            color: white;
-        }
-        th {
-            padding: 12px;
-            text-align: left;
-            font-size: 11px;
-            font-weight: bold;
-        }
-        td {
-            padding: 10px 12px;
-            border-bottom: 1px solid #E7E7E7;
-            font-size: 11px;
-        }
-        tbody tr:hover {
-            background: #F8F9FA;
-        }
-        .text-right {
-            text-align: right;
-        }
-        .addon-item {
-            padding-left: 20px;
-            font-size: 10px;
-            color: #565959;
-            margin-top: 4px;
-        }
-        .addon-row {
-            padding-left: 20px;
-            font-size: 10px;
-            color: #565959;
-        }
-        .billing-summary {
-            margin-top: 30px;
-            margin-left: auto;
-            width: 300px;
-        }
-        .billing-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            font-size: 11px;
-        }
-        .billing-row.label {
-            color: #666;
-        }
-        .billing-row.value {
-            font-weight: 500;
-            color: #333;
-        }
-        .billing-row.subtotal {
-            border-top: 1px solid #ddd;
-            padding-top: 10px;
-            margin-top: 5px;
-            font-weight: 600;
-        }
-        .billing-row.total {
-            border-top: 2px solid #FF9900;
-            padding-top: 15px;
-            margin-top: 10px;
-            font-size: 16px;
-            font-weight: bold;
-            color: #0F1111;
-        }
-        .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-            text-align: center;
-            color: #666;
-            font-size: 10px;
-        }
-        .payment-info {
-            margin-top: 20px;
-            padding: 15px;
-            background: #f0f0f0;
-            border-radius: 5px;
-        }
-        .payment-info p {
-            margin: 5px 0;
-            font-size: 11px;
-        }
-        @media print {
-            .invoice-container {
-                padding: 0;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="invoice-container">
-        <!-- Header -->
-        <div class="header">
-            <div class="company-info">
-                <h1>${company.name}</h1>
-                <p>${company.address}</p>
-                <p>Phone: ${company.phone} | Email: ${company.email}</p>
-                ${company.gstin ? `<p>GSTIN: ${company.gstin}</p>` : ''}
-            </div>
-            <div class="invoice-info">
-                <h2>INVOICE</h2>
-                <p class="invoice-number">${data.invoiceNumber}</p>
-                <p><strong>Date:</strong> ${data.orderDate}</p>
-                <p><strong>Order ID:</strong> ${data.orderId.slice(0, 8).toUpperCase()}</p>
-            </div>
-        </div>
+			const doc = new PDFDocument({
+				size: 'A4',
+				margin: 40,
+				bufferPages: true,
+				info: {
+					Title: `Invoice ${invoiceData.invoiceNumber}`,
+					Author: company.name,
+				},
+			});
 
-        <!-- Customer & Shipping Details -->
-        <div class="details-section">
-            <div class="detail-box">
-                <h3>Bill To:</h3>
-                <p><strong>${data.customer.name}</strong></p>
-                <p>${data.customer.email}</p>
-                ${data.customer.phone ? `<p>${data.customer.phone}</p>` : ''}
-            </div>
-            <div class="detail-box">
-                <h3>Ship To:</h3>
-                <p>${data.shippingAddress.street}</p>
-                <p>${data.shippingAddress.city}, ${data.shippingAddress.state} ${data.shippingAddress.zipCode}</p>
-                <p>${data.shippingAddress.country}</p>
-            </div>
-        </div>
+			const chunks: Buffer[] = [];
+			doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+			doc.on('error', (err: unknown) => reject(new Error(`[PDF_GENERATION_FAILED] ${String(err)}`)));
+			doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-        <!-- Order Items -->
-        <table>
-            <thead>
-                <tr>
-                    <th>Item</th>
-                    <th>Quantity</th>
-                    <th class="text-right">Unit Price</th>
-                    <th class="text-right">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${data.items.map(item => {
-                    const addonsTotal = item.addons ? item.addons.reduce((sum, addon) => sum + addon.price, 0) : 0;
-                    const itemTotalWithAddons = item.total + addonsTotal;
-                    return `
-                    <tr>
-                        <td>
-                            <strong>${item.name}</strong>
-                            ${item.variant ? `<br><small style="color: #565959;">Variant: ${item.variant}</small>` : ''}
-                        </td>
-                        <td>${item.quantity}</td>
-                        <td class="text-right">₹${item.price.toFixed(2)}</td>
-                        <td class="text-right">₹${itemTotalWithAddons.toFixed(2)}</td>
-                    </tr>
-                    ${item.addons && item.addons.length > 0 ? item.addons.map(addon => `
-                        <tr class="addon-row">
-                            <td style="padding-left: 30px; color: #565959;">
-                                <small>• ${addon.name}</small>
-                            </td>
-                            <td></td>
-                            <td></td>
-                            <td class="text-right" style="color: #565959;">
-                                <small>₹${addon.price.toFixed(2)}</small>
-                            </td>
-                        </tr>
-                    `).join('') : ''}
-                `;
-                }).join('')}
-            </tbody>
-        </table>
+			const pageWidth = doc.page.width;
+			const margin = 40;
+			const contentWidth = pageWidth - margin * 2;
 
-        <!-- Billing Summary -->
-        <div class="billing-summary">
-            <div class="billing-row">
-                <span class="label">Base Price Subtotal:</span>
-                <span class="value">₹${data.billing.baseSubtotal.toFixed(2)}</span>
-            </div>
-            ${data.billing.addonsSubtotal > 0 ? `
-                <div class="billing-row">
-                    <span class="label">Addons Subtotal:</span>
-                    <span class="value">₹${data.billing.addonsSubtotal.toFixed(2)}</span>
-                </div>
-            ` : ''}
-            <div class="billing-row subtotal">
-                <span class="label"><strong>Subtotal:</strong></span>
-                <span class="value"><strong>₹${data.billing.subtotal.toFixed(2)}</strong></span>
-            </div>
-            ${data.billing.discount > 0 ? `
-                <div class="billing-row">
-                    <span class="label">Discount:</span>
-                    <span class="value" style="color: #28a745;">-₹${data.billing.discount.toFixed(2)}</span>
-                </div>
-            ` : ''}
-            ${data.billing.shipping > 0 ? `
-                <div class="billing-row">
-                    <span class="label">Shipping Charges:</span>
-                    <span class="value">₹${data.billing.shipping.toFixed(2)}</span>
-                </div>
-            ` : ''}
-            ${data.billing.tax && data.billing.tax > 0 ? `
-                <div class="billing-row">
-                    <span class="label">Tax (GST):</span>
-                    <span class="value">₹${data.billing.tax.toFixed(2)}</span>
-                </div>
-            ` : ''}
-            <div class="billing-row total">
-                <span>Total Amount:</span>
-                <span>₹${data.billing.total.toFixed(2)}</span>
-            </div>
-        </div>
+			const currency = (value: number) => `Rs ${Number(value || 0).toFixed(2)}`;
+			const line = (y: number) => {
+				doc.moveTo(margin, y).lineTo(pageWidth - margin, y).strokeColor('#D0D0D0').lineWidth(1).stroke();
+			};
 
-        <!-- Payment Information -->
-        <div class="payment-info">
-            <h3 style="margin-bottom: 10px; font-size: 12px;">Payment Information</h3>
-            <p><strong>Payment Method:</strong> ${data.payment.method}</p>
-            <p><strong>Payment Status:</strong> ${data.payment.status}</p>
-            ${data.payment.transactionId ? `<p><strong>Transaction ID:</strong> ${data.payment.transactionId}</p>` : ''}
-        </div>
+			doc.fontSize(24).fillColor('#111').text(company.name, margin, 36, { width: contentWidth * 0.6 });
+			doc.fontSize(20).fillColor('#222').text('INVOICE', margin + contentWidth * 0.6, 40, {
+				width: contentWidth * 0.4,
+				align: 'right',
+			});
+			doc.moveDown(0.2);
+			doc.fontSize(10).fillColor('#444').text(company.address, margin, 68, { width: contentWidth * 0.6 });
+			doc.text(`Phone: ${company.phone}`, margin, 82, { width: contentWidth * 0.6 });
+			doc.text(`Email: ${company.email}`, margin, 96, { width: contentWidth * 0.6 });
+			if (company.gstin) {
+				doc.text(`GSTIN: ${company.gstin}`, margin, 110, { width: contentWidth * 0.6 });
+			}
 
-        <!-- Footer -->
-        <div class="footer">
-            <p>Thank you for your business!</p>
-            <p>This is a computer-generated invoice and does not require a signature.</p>
-        </div>
-    </div>
-</body>
-</html>
-    `;
+			doc.fontSize(10).fillColor('#222').text(`Invoice No: ${invoiceData.invoiceNumber}`, margin + contentWidth * 0.6, 72, {
+				width: contentWidth * 0.4,
+				align: 'right',
+			});
+			doc.text(`Date: ${invoiceData.orderDate}`, margin + contentWidth * 0.6, 86, {
+				width: contentWidth * 0.4,
+				align: 'right',
+			});
+			doc.text(`Order ID: ${invoiceData.orderId.slice(0, 8).toUpperCase()}`, margin + contentWidth * 0.6, 100, {
+				width: contentWidth * 0.4,
+				align: 'right',
+			});
+
+			line(132);
+
+			let y = 146;
+			doc.fontSize(11).fillColor('#111').text('Bill To', margin, y);
+			doc.text('Ship To', margin + contentWidth / 2, y);
+			y += 16;
+
+			doc.fontSize(10).fillColor('#333').text(invoiceData.customer.name, margin, y, { width: contentWidth / 2 - 10 });
+			doc.text(invoiceData.customer.email, margin, y + 14, { width: contentWidth / 2 - 10 });
+			if (invoiceData.customer.phone) {
+				doc.text(invoiceData.customer.phone, margin, y + 28, { width: contentWidth / 2 - 10 });
+			}
+
+			doc.text(invoiceData.shippingAddress.street, margin + contentWidth / 2, y, { width: contentWidth / 2 - 10 });
+			doc.text(
+				`${invoiceData.shippingAddress.city}, ${invoiceData.shippingAddress.state} ${invoiceData.shippingAddress.zipCode}`,
+				margin + contentWidth / 2,
+				y + 14,
+				{ width: contentWidth / 2 - 10 }
+			);
+			doc.text(invoiceData.shippingAddress.country, margin + contentWidth / 2, y + 28, { width: contentWidth / 2 - 10 });
+
+			y = y + 52;
+			line(y);
+			y += 10;
+
+			const col = {
+				item: margin,
+				qty: margin + contentWidth * 0.53,
+				unitPrice: margin + contentWidth * 0.66,
+				total: margin + contentWidth * 0.82,
+			};
+
+			doc.fontSize(10).fillColor('#111').text('Item', col.item, y);
+			doc.text('Qty', col.qty, y, { width: 40, align: 'left' });
+			doc.text('Unit Price', col.unitPrice, y, { width: 90, align: 'right' });
+			doc.text('Total', col.total, y, { width: contentWidth - (col.total - margin), align: 'right' });
+			y += 14;
+			line(y);
+			y += 8;
+
+			const ensurePageSpace = (required: number) => {
+				if (y + required <= doc.page.height - 80) return;
+				doc.addPage();
+				y = 50;
+			};
+
+			for (const item of invoiceData.items) {
+				const addons = item.addons || [];
+				const addonsTotal = addons.reduce((sum, addon) => sum + addon.price, 0);
+				const itemTotalWithAddons = item.total + addonsTotal;
+				const rowHeight = 14 + addons.length * 12 + 4;
+				ensurePageSpace(rowHeight + 10);
+
+				const itemTitle = item.variant ? `${item.name} (${item.variant})` : item.name;
+				doc.fontSize(10).fillColor('#222').text(itemTitle, col.item, y, {
+					width: col.qty - col.item - 12,
+				});
+				doc.text(String(item.quantity), col.qty, y, { width: 40, align: 'left' });
+				doc.text(currency(item.price), col.unitPrice, y, { width: 90, align: 'right' });
+				doc.text(currency(itemTotalWithAddons), col.total, y, {
+					width: contentWidth - (col.total - margin),
+					align: 'right',
+				});
+				y += 14;
+
+				for (const addon of addons) {
+					doc.fontSize(9).fillColor('#666').text(`- Addon: ${addon.name}`, col.item + 10, y, {
+						width: col.qty - col.item - 22,
+					});
+					doc.text(currency(addon.price), col.total, y, {
+						width: contentWidth - (col.total - margin),
+						align: 'right',
+					});
+					y += 12;
+				}
+
+				doc.strokeColor('#EFEFEF').moveTo(margin, y + 2).lineTo(pageWidth - margin, y + 2).stroke();
+				y += 8;
+			}
+
+			ensurePageSpace(130);
+			y += 8;
+			const summaryX = margin + contentWidth * 0.54;
+			const summaryWidth = contentWidth * 0.46;
+			const summaryRow = (label: string, value: string, color = '#333', bold = false) => {
+				doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).fillColor(color);
+				doc.text(label, summaryX, y, { width: summaryWidth * 0.55, align: 'left' });
+				doc.text(value, summaryX + summaryWidth * 0.55, y, { width: summaryWidth * 0.45, align: 'right' });
+				y += 14;
+			};
+
+			summaryRow('Base Price Subtotal', currency(invoiceData.billing.baseSubtotal));
+			if (invoiceData.billing.addonsSubtotal > 0) {
+				summaryRow('Addons Subtotal', currency(invoiceData.billing.addonsSubtotal));
+			}
+			summaryRow('Subtotal', currency(invoiceData.billing.subtotal), '#111', true);
+			if (invoiceData.billing.discount > 0) {
+				summaryRow('Discount', `- ${currency(invoiceData.billing.discount)}`, '#0F7A37');
+			}
+			if (invoiceData.billing.shipping > 0) {
+				summaryRow('Shipping', currency(invoiceData.billing.shipping));
+			}
+			if ((invoiceData.billing.tax || 0) > 0) {
+				summaryRow('Tax (GST)', currency(invoiceData.billing.tax || 0));
+			}
+			doc.strokeColor('#D0D0D0').moveTo(summaryX, y + 2).lineTo(summaryX + summaryWidth, y + 2).stroke();
+			y += 8;
+			summaryRow('Total Amount', currency(invoiceData.billing.total), '#111', true);
+
+			y += 12;
+			ensurePageSpace(60);
+			doc.font('Helvetica-Bold').fontSize(11).fillColor('#111').text('Payment Information', margin, y);
+			y += 16;
+			doc.font('Helvetica').fontSize(10).fillColor('#333').text(`Method: ${invoiceData.payment.method}`, margin, y);
+			y += 14;
+			doc.text(`Status: ${invoiceData.payment.status}`, margin, y);
+			y += 14;
+			if (invoiceData.payment.transactionId) {
+				doc.text(`Transaction ID: ${invoiceData.payment.transactionId}`, margin, y);
+				y += 14;
+			}
+
+			// Always render closing note on the first page so it never shifts to a later page.
+			const pageRange = doc.bufferedPageRange();
+			if (pageRange.count > 0) {
+				doc.switchToPage(pageRange.start);
+				const footerY = doc.page.height - 40;
+				doc.fontSize(9).fillColor('#666').text('Thank you for your business!', margin, footerY, {
+					width: contentWidth,
+					align: 'center',
+				});
+			}
+
+			doc.end();
+		} catch (err) {
+			reject(new Error(`[PDF_GENERATION_FAILED] ${err instanceof Error ? err.message : String(err)}`));
+		}
+	});
 }

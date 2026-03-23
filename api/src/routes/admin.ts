@@ -149,6 +149,8 @@ import {
     createCategoryPageControllerRule,
     updateCategoryPageControllerRule,
     deleteCategoryPageControllerRule,
+    getCategoryPageControllerSettings,
+    upsertCategoryPageControllerSettings,
 } from "../controllers/categoryPageControllerController.js";
 
 const router: IRouter = Router();
@@ -307,9 +309,11 @@ router.delete("/categories/:categoryId/templates/:templateId/form", deleteTempla
 // Category Page Controller Management (admin only)
 router.get("/categories/:categoryId/page-controller", getCategoryPageControllerRules);
 router.post("/categories/:categoryId/page-controller", createCategoryPageControllerRule);
-router.get("/categories/:categoryId/page-controller/:ruleId", getCategoryPageControllerRule);
-router.put("/categories/:categoryId/page-controller/:ruleId", updateCategoryPageControllerRule);
-router.delete("/categories/:categoryId/page-controller/:ruleId", deleteCategoryPageControllerRule);
+router.get("/categories/:categoryId/page-controller/settings", getCategoryPageControllerSettings);
+router.put("/categories/:categoryId/page-controller/settings", upsertCategoryPageControllerSettings);
+router.get("/categories/:categoryId/page-controller/:ruleId([0-9a-fA-F-]{36})", getCategoryPageControllerRule);
+router.put("/categories/:categoryId/page-controller/:ruleId([0-9a-fA-F-]{36})", updateCategoryPageControllerRule);
+router.delete("/categories/:categoryId/page-controller/:ruleId([0-9a-fA-F-]{36})", deleteCategoryPageControllerRule);
 
 // Publish Pricing Rule as Product (admin only)
 router.get("/categories/:categoryId/pricing-rules/:ruleId/preview-product", previewProductFromPricingRule);

@@ -15,7 +15,7 @@ import { useCart } from "@/contexts/CartContext";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
 import { createPhonePeOrder } from "@/lib/api/payments";
 import CheckoutFilesReview from "../components/CheckoutFilesReview";
-import { toastWarning, toastError, toastSuccess } from "@/lib/utils/toast";
+import { toastWarning, toastError } from "@/lib/utils/toast";
 
 function CheckoutPageContent() {
     const searchParams = useSearchParams();

@@ -277,6 +277,17 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             setUploadedFilesS3(restoredFileDetails);
                             setPageCount(pendingData.pageCount || 0);
 
+                            // Do not upload pending files if restored page count exceeds active page-controller limit.
+                            if (
+                                typeof pageController.maxPages === 'number' &&
+                                (pendingData.pageCount || 0) > pageController.maxPages
+                            ) {
+                                toastError(
+                                    `Uploaded pages (${pendingData.pageCount || 0}) exceed allowed limit (${pageController.maxPages}) for the current selection.`
+                                );
+                                return;
+                            }
+
                             // Only upload files to S3 if they don't already have s3Key
                             const filesToUpload = restoredFileDetails.filter(fd => !fd.s3Key);
                             if (filesToUpload.length > 0) {
@@ -1761,6 +1772,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                         label={spec.name}
                                         min={1}
                                         max={1000}
+                                        showBulkToggle={pageController.uiSettings.showBulkToggle}
+                                        bulkToggleLabel={pageController.uiSettings.bulkToggleLabel}
+                                        copiesLabel={pageController.uiSettings.copiesLabel}
                                     />
                                 );
                             }
@@ -1834,6 +1848,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 max={999}
                                 label="Quantity"
                                 quantityReadOnly
+                                showBulkToggle={pageController.uiSettings.showBulkToggle}
+                                bulkToggleLabel={pageController.uiSettings.bulkToggleLabel}
+                                copiesLabel={pageController.uiSettings.copiesLabel}
                             />
 
                         </>
@@ -1851,6 +1868,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                 min={1}
                                 max={1000}
                                 label="Quantity"
+                                showBulkToggle={pageController.uiSettings.showBulkToggle}
+                                bulkToggleLabel={pageController.uiSettings.bulkToggleLabel}
+                                copiesLabel={pageController.uiSettings.copiesLabel}
                             />
                         </div>
                     )}

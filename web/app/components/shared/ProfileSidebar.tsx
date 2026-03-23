@@ -28,7 +28,7 @@ export default function ProfileSidebar() {
         { id: "overview", label: "Overview", href: "/profile", icon: User },
         { id: "orders", label: "My Orders", href: "/orders", icon: Package },
         { id: "addresses", label: "Saved Addresses", href: "/addresses", icon: MapPin },
-        { id: "wishlist", label: "Wishlist", href: "/wishlist", icon: Heart },
+        // { id: "wishlist", label: "Wishlist", href: "/wishlist", icon: Heart },
         { id: "settings", label: "Settings", href: "/settings", icon: Settings },
     ];
 

@@ -3,10 +3,10 @@
 import { useState, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import CouponProductCard from "@/app/components/offers/OfferProductCard";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
-import { ArrowLeft, Calendar, Tag, Ticket, Copy, Check } from "lucide-react";
-import { useCoupon, useCouponProducts } from "@/lib/hooks/use-coupons";
+import { ArrowLeft, Calendar, Tag, Ticket, Copy, Check, ArrowRight } from "lucide-react";
+import { useCoupon, useCouponCategories } from "@/lib/hooks/use-coupons";
+import { getPublicS3Url } from "@/lib/utils/s3";
 
 function OfferDetailPageChild() {
     const params = useParams();
@@ -14,13 +14,17 @@ function OfferDetailPageChild() {
     const offerId = params.id as string;
 
     const [copied, setCopied] = useState(false);
+    const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 
     // Use TanStack Query hooks - coupon will use cached data from list if available
     const { data: coupon, isLoading: couponLoading, error: couponError } = useCoupon(offerId);
-    const { data: products = [], isLoading: productsLoading, error: productsError } = useCouponProducts(offerId);
+    const { data: categories = [], isLoading: categoriesLoading, error: categoriesError } = useCouponCategories(offerId);
 
-    const loading = couponLoading || productsLoading;
-    const error = couponError || productsError;
+    const loading = couponLoading || categoriesLoading;
+    const couponErrorMessage =
+        couponError instanceof Error ? couponError.message : (typeof couponError === "string" ? couponError : null);
+    const categoriesErrorMessage =
+        categoriesError instanceof Error ? categoriesError.message : (typeof categoriesError === "string" ? categoriesError : null);
 
     const formatDiscount = () => {
         if (!coupon) return "";
@@ -51,17 +55,26 @@ function OfferDetailPageChild() {
         if (!coupon) return "";
         switch (coupon.applicableTo) {
             case "ALL":
-                return "All Products";
+                return "All Categories";
             case "CATEGORY":
                 return "Selected Categories";
             case "PRODUCT":
-                return "Selected Products";
+                return "Selected Categories";
             case "BRAND":
-                return "Selected Brands";
+                return "Selected Categories";
             default:
-                return "All Products";
+                return "All Categories";
         }
     };
+
+    const colorGradients = [
+        "from-blue-900/90 to-blue-700/90",
+        "from-purple-900/90 to-purple-700/90",
+        "from-amber-900/90 to-amber-700/90",
+        "from-emerald-900/90 to-emerald-700/90",
+        "from-red-900/90 to-red-700/90",
+        "from-indigo-900/90 to-indigo-700/90",
+    ];
 
     if (loading) {
         return (
@@ -71,12 +84,14 @@ function OfferDetailPageChild() {
         );
     }
 
-    if (error || !coupon) {
+    if (couponError || !coupon) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
                     <h2 className="text-2xl font-semibold text-gray-900 mb-2">Coupon Not Found</h2>
-                    <p className="text-gray-600 mb-4">{error instanceof Error ? error.message : error || "The coupon you're looking for doesn't exist."}</p>
+                    <p className="text-gray-600 mb-4">
+                        {couponErrorMessage || "The coupon you're looking for doesn't exist."}
+                    </p>
                     <div className="flex gap-3 justify-center">
                         <button
                             onClick={() => router.back()}
@@ -110,7 +125,7 @@ function OfferDetailPageChild() {
 
                 {/* Coupon Header */}
                 <div className="bg-white rounded-xl shadow-md overflow-hidden mb-8">
-                    <div className="relative h-64 md:h-80 w-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <div className="relative h-64 md:h-80 w-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center">
                         <div className="text-white text-center p-6 w-full">
                             <Ticket className="w-20 h-20 mx-auto mb-4 opacity-80" />
                             <div className="bg-red-500 text-white px-6 py-3 rounded-full text-2xl font-bold inline-block mb-4 shadow-lg">
@@ -170,26 +185,75 @@ function OfferDetailPageChild() {
                             <div className="flex items-center gap-2 text-sm text-gray-600">
                                 <span>Per User Limit: <strong className="text-gray-900">{coupon.usageLimitPerUser}</strong></span>
                             </div>
+                            {coupon.firstOrderOnly && (
+                                <div className="flex items-center gap-2 text-sm text-amber-800">
+                                    <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium border border-amber-200">
+                                        First order only coupon
+                                    </span>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Product Count */}
+                        {/* Category Count */}
                         <div className="pt-4 border-t border-gray-200">
                             <p className="text-gray-600">
-                                <strong>{products.length}</strong>{" "}
-                                {products.length === 1 ? "product" : "products"} available with this coupon
+                                <strong>{categories.length}</strong>{" "}
+                                {categories.length === 1 ? "category" : "categories"} available with this coupon
                             </p>
                         </div>
                     </div>
                 </div>
 
-                {/* Products Grid */}
-                {products.length > 0 ? (
+                {/* Categories Grid */}
+                {categoriesErrorMessage ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+                        <h3 className="text-lg font-semibold text-amber-900 mb-2">Unable to load categories</h3>
+                        <p className="text-sm text-amber-800">{categoriesErrorMessage}</p>
+                    </div>
+                ) : categories.length > 0 ? (
                     <>
-                        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6">Products Available with This Coupon</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-                            {products.map((product) => (
-                                <CouponProductCard key={product.id} product={product} />
-                            ))}
+                        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6">Categories Available with This Coupon</h2>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 md:gap-4 w-full place-items-center justify-center">
+                            {categories.map((category, index) => {
+                                const imageUrl = category.imageUrl ? getPublicS3Url(category.imageUrl) : "/images/rows/row1.png";
+                                const gradient = colorGradients[index % colorGradients.length] ?? colorGradients[0]!;
+                                return (
+                                    <div key={category.id} className="flex flex-col w-[167px] md:w-[253px]">
+                                        <Link
+                                            href={`/services/${category.slug}`}
+                                            className="relative group aspect-square w-full rounded-2xl overflow-hidden cursor-pointer"
+                                            onMouseEnter={() => setHoveredCard(category.id)}
+                                            onMouseLeave={() => setHoveredCard(null)}
+                                        >
+                                            <div className="absolute inset-0">
+                                                <div
+                                                    className={`w-full h-full bg-cover bg-center transition-transform duration-700 ${hoveredCard === category.id ? "scale-110" : "scale-100"}`}
+                                                    style={{ backgroundImage: `url(${imageUrl})` }}
+                                                />
+                                            </div>
+                                            <div className="hidden md:block absolute bottom-0 left-0 right-0 p-4 bg-linear-to-t from-black/80 to-transparent">
+                                                <h3 className="text-lg font-bold text-white">{category.name}</h3>
+                                            </div>
+                                            <div
+                                                className={`hidden md:block absolute inset-x-0 bottom-0 top-auto h-full bg-linear-to-t ${gradient} transition-all duration-500 ${hoveredCard === category.id ? "translate-y-0 opacity-100" : "translate-y-full opacity-0"}`}
+                                            >
+                                                <div className="h-full flex flex-col justify-center items-center p-5">
+                                                    <p className="text-white text-center mb-5 leading-relaxed text-sm">
+                                                        {category.productCount} {category.productCount === 1 ? "mapped product" : "mapped products"} available in this category.
+                                                    </p>
+                                                    <button className="bg-white text-gray-900 py-2.5 px-5 rounded-lg font-bold hover:bg-gray-100 flex items-center gap-2 transform hover:scale-105 transition-all text-sm">
+                                                        View Service
+                                                        <ArrowRight className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </Link>
+                                        <Link href={`/services/${category.slug}`} className="md:hidden mt-2">
+                                            <h3 className="text-xs font-bold text-gray-900 text-center">{category.name}</h3>
+                                        </Link>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </>
                 ) : (
@@ -209,9 +273,9 @@ function OfferDetailPageChild() {
                                 />
                             </svg>
                         </div>
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">No Products Available</h3>
+                        <h3 className="text-xl font-semibold text-gray-900 mb-2">No Categories Available</h3>
                         <p className="text-gray-600 mb-6">
-                            This coupon doesn&apos;t have any products available at the moment.
+                            This coupon doesn&apos;t have any categories available at the moment.
                         </p>
                         <Link
                             href="/offers"

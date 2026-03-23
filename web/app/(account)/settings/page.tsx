@@ -360,8 +360,9 @@ function SettingsPageContent() {
                     </form>
                 </div>
 
+                {/* FUTURE: inactive for now */}
                 {/* Notification Preferences */}
-                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6 mb-4 sm:mb-6">
+                {/* <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-4 sm:p-6 mb-4 sm:mb-6">
                     <div className="flex items-center gap-3 mb-4 sm:mb-6">
                         <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-[#008ECC]" />
                         <h2 className="text-lg sm:text-xl font-hkgb text-gray-900">
@@ -406,10 +407,10 @@ function SettingsPageContent() {
                             Saving preferences...
                         </div>
                     )}
-                </div>
+                </div> */}
 
                 {/* Danger Zone */}
-                <div className="bg-gray-50/50 rounded-2xl border-2 border-red-200 p-4 sm:p-6">
+                {/* <div className="bg-gray-50/50 rounded-2xl border-2 border-red-200 p-4 sm:p-6">
                     <div className="flex items-center gap-3 mb-4">
                         <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-red-600" />
                         <h2 className="text-lg sm:text-xl font-hkgb text-red-600">
@@ -468,7 +469,7 @@ function SettingsPageContent() {
                             </div>
                         )}
                     </div>
-                </div>
+                </div> */}
             </div>
         </>
     );

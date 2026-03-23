@@ -14,6 +14,7 @@ export interface Coupon {
     minPurchaseAmount: number | null;
     maxDiscountAmount: number | null;
     validUntil: string;
+    firstOrderOnly?: boolean;
 }
 
 export interface ValidateCouponResponse {

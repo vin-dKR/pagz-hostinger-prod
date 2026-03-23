@@ -343,6 +343,7 @@ export function CouponsListEnhanced() {
                                         <TableHead>Discount</TableHead>
                                         <TableHead>Valid Until</TableHead>
                                         <TableHead>Status</TableHead>
+                                        <TableHead>Flags</TableHead>
                                         <TableHead>Usage</TableHead>
                                         <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
@@ -395,6 +396,15 @@ export function CouponsListEnhanced() {
                                                         showIcon
                                                         size="sm"
                                                     />
+                                                </TableCell>
+                                                <TableCell>
+                                                    {coupon.firstOrderOnly ? (
+                                                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 border border-amber-200">
+                                                            First order only
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-400">-</span>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     {usageLimit ? (

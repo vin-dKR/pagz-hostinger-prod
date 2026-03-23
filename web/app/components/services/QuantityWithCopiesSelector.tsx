@@ -15,6 +15,9 @@ interface QuantityWithCopiesSelectorProps {
     label?: string;
     className?: string;
     quantityReadOnly?: boolean;
+    showBulkToggle?: boolean;
+    bulkToggleLabel?: string;
+    copiesLabel?: string;
 }
 
 export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProps> = ({
@@ -28,6 +31,9 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
     label = 'Quantity',
     className,
     quantityReadOnly = false,
+    showBulkToggle = true,
+    bulkToggleLabel = 'Do you need in bulks?',
+    copiesLabel = 'Number of Quantity/Copies',
 }) => {
     const [isCopiesMode, setIsCopiesMode] = useState(false);
 
@@ -105,27 +111,29 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
             </div>
 
             {/* Copies Checkbox (optional bulk toggle) */}
-            <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
-                <input
-                    type="checkbox"
-                    id="copies-checkbox"
-                    checked={isCopiesMode}
-                    onChange={handleModeToggle}
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                />
-                <label
-                    htmlFor="copies-checkbox"
-                    className="text-sm font-medium text-gray-700 cursor-pointer"
-                >
-                    Do you need in bulks?
-                </label>
-            </div>
+            {showBulkToggle && (
+                <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
+                    <input
+                        type="checkbox"
+                        id="copies-checkbox"
+                        checked={isCopiesMode}
+                        onChange={handleModeToggle}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <label
+                        htmlFor="copies-checkbox"
+                        className="text-sm font-medium text-gray-700 cursor-pointer"
+                    >
+                        {bulkToggleLabel}
+                    </label>
+                </div>
+            )}
 
             {/* Copies Selector (Only when checked) */}
-            {isCopiesMode && (
+            {(showBulkToggle ? isCopiesMode : true) && (
                 <div className="space-y-2">
                     <label className="block text-xs font-medium text-gray-600">
-                        Number of Quantity
+                        Number of {copiesLabel}
                     </label>
                     <div className="flex items-center gap-4 max-w-xs">
                         <button
@@ -149,7 +157,7 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
                                 className="w-full text-2xl sm:text-3xl font-hkgb text-gray-900 text-center bg-white border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none cursor-text"
                             />
                             <div className="text-sm text-gray-600 mt-1">
-                                {copies === 1 ? 'copy/quantity' : 'copies/quantities'}
+                                {copiesLabel}
                             </div>
                         </div>
 
@@ -170,7 +178,7 @@ export const QuantityWithCopiesSelector: React.FC<QuantityWithCopiesSelectorProp
                             <span className="font-semibold">Total Pages to Print:</span> {totalPages} {totalPages === 1 ? 'page' : 'pages'}
                             <br />
                             <span className="text-xs text-blue-700">
-                                ({quantity} {quantity === 1 ? 'page' : 'pages'} × {copies} {copies === 1 ? 'copy/quantity' : 'copies/quantities'})
+                                ({quantity} {quantity === 1 ? 'page' : 'pages'} × {copies} {copiesLabel})
                             </span>
                         </p>
                     </div>

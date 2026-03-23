@@ -12,6 +12,53 @@ interface RulePayload {
     displayOrder?: number;
 }
 
+interface PageControllerSettingsPayload {
+    showBulkToggle?: boolean;
+    bulkToggleLabel?: string;
+    copiesLabel?: string;
+}
+
+const PAGE_CONTROLLER_SETTINGS_DEFAULTS = {
+    showBulkToggle: true,
+    bulkToggleLabel: "Do you need in bulks?",
+    copiesLabel: "Number of Quantity/Copies",
+};
+
+const getPageControllerSettingsFromLayoutConfig = (layoutConfig: unknown): Required<PageControllerSettingsPayload> => {
+    const config = layoutConfig && typeof layoutConfig === "object" ? (layoutConfig as Record<string, unknown>) : {};
+    const pageControllerUi =
+        config.pageControllerUi && typeof config.pageControllerUi === "object"
+            ? (config.pageControllerUi as Record<string, unknown>)
+            : {};
+
+    return {
+        showBulkToggle:
+            typeof pageControllerUi.showBulkToggle === "boolean"
+                ? pageControllerUi.showBulkToggle
+                : PAGE_CONTROLLER_SETTINGS_DEFAULTS.showBulkToggle,
+        bulkToggleLabel:
+            typeof pageControllerUi.bulkToggleLabel === "string" && pageControllerUi.bulkToggleLabel.trim() !== ""
+                ? pageControllerUi.bulkToggleLabel
+                : PAGE_CONTROLLER_SETTINGS_DEFAULTS.bulkToggleLabel,
+        copiesLabel:
+            typeof pageControllerUi.copiesLabel === "string" && pageControllerUi.copiesLabel.trim() !== ""
+                ? pageControllerUi.copiesLabel
+                : PAGE_CONTROLLER_SETTINGS_DEFAULTS.copiesLabel,
+    };
+};
+
+const validateSettingsPayload = (payload: PageControllerSettingsPayload): void => {
+    if (payload.showBulkToggle !== undefined && typeof payload.showBulkToggle !== "boolean") {
+        throw new ValidationError("showBulkToggle must be a boolean");
+    }
+    if (payload.bulkToggleLabel !== undefined && payload.bulkToggleLabel.trim() === "") {
+        throw new ValidationError("bulkToggleLabel cannot be empty");
+    }
+    if (payload.copiesLabel !== undefined && payload.copiesLabel.trim() === "") {
+        throw new ValidationError("copiesLabel cannot be empty");
+    }
+};
+
 const validateRulePayload = (payload: RulePayload, requireMaxPages: boolean): void => {
     if (requireMaxPages && (payload.maxPages === undefined || payload.maxPages < 1)) {
         throw new ValidationError("maxPages is required and must be at least 1");
@@ -174,6 +221,79 @@ export const getCategoryPageControllerRulesBySlug = async (req: Request, res: Re
         });
 
         return sendSuccess(res, rules);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getCategoryPageControllerSettings = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const categoryId = getParamAsString(req.params.categoryId, "Category ID");
+        const configuration = await prisma.categoryConfiguration.findUnique({
+            where: { categoryId },
+            select: { layoutConfig: true },
+        });
+
+        const settings = getPageControllerSettingsFromLayoutConfig(configuration?.layoutConfig);
+        return sendSuccess(res, settings);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const upsertCategoryPageControllerSettings = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const categoryId = getParamAsString(req.params.categoryId, "Category ID");
+        const payload = req.body as PageControllerSettingsPayload;
+        validateSettingsPayload(payload);
+
+        const existing = await prisma.categoryConfiguration.findUnique({
+            where: { categoryId },
+            select: { layoutConfig: true },
+        });
+
+        const currentLayoutConfig =
+            existing?.layoutConfig && typeof existing.layoutConfig === "object"
+                ? (existing.layoutConfig as Record<string, unknown>)
+                : {};
+        const currentSettings = getPageControllerSettingsFromLayoutConfig(existing?.layoutConfig);
+        const nextSettings = {
+            ...currentSettings,
+            ...(payload.showBulkToggle !== undefined ? { showBulkToggle: payload.showBulkToggle } : {}),
+            ...(payload.bulkToggleLabel !== undefined ? { bulkToggleLabel: payload.bulkToggleLabel } : {}),
+            ...(payload.copiesLabel !== undefined ? { copiesLabel: payload.copiesLabel } : {}),
+        };
+
+        const nextLayoutConfig = {
+            ...currentLayoutConfig,
+            pageControllerUi: nextSettings,
+        };
+
+        await prisma.categoryConfiguration.upsert({
+            where: { categoryId },
+            update: { layoutConfig: nextLayoutConfig },
+            create: { categoryId, layoutConfig: nextLayoutConfig },
+        });
+
+        return sendSuccess(res, nextSettings, "Page controller settings updated successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getCategoryPageControllerSettingsBySlug = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const slug = getParamAsString(req.params.slug, "Category slug");
+        const category = await prisma.category.findUnique({ where: { slug } });
+        if (!category) throw new NotFoundError("Category not found");
+
+        const configuration = await prisma.categoryConfiguration.findUnique({
+            where: { categoryId: category.id },
+            select: { layoutConfig: true },
+        });
+
+        const settings = getPageControllerSettingsFromLayoutConfig(configuration?.layoutConfig);
+        return sendSuccess(res, settings);
     } catch (error) {
         next(error);
     }

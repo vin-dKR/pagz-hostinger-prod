@@ -15,6 +15,7 @@ export interface Coupon {
     applicableTo: "ALL" | "CATEGORY" | "PRODUCT" | "BRAND";
     usageLimit: number | null;
     usageLimitPerUser: number;
+    firstOrderOnly?: boolean;
     createdAt: string;
     updatedAt: string;
     _count: {
@@ -52,6 +53,14 @@ export interface CouponProduct {
     savings: number;
 }
 
+export interface CouponCategory {
+    id: string;
+    name: string;
+    slug: string;
+    imageUrl?: string | null;
+    productCount: number;
+}
+
 /**
  * Get all active coupons
  */
@@ -71,4 +80,11 @@ export async function getCouponById(id: string): Promise<ApiResponse<Coupon>> {
  */
 export async function getCouponProducts(id: string): Promise<ApiResponse<CouponProduct[]>> {
     return get<CouponProduct[]>(`/coupons/${id}/products`);
+}
+
+/**
+ * Get categories for a specific coupon
+ */
+export async function getCouponCategories(id: string): Promise<ApiResponse<CouponCategory[]>> {
+    return get<CouponCategory[]>(`/coupons/${id}/categories`);
 }
