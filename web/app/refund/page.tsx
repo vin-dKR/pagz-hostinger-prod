@@ -104,6 +104,25 @@ export default function RefundPolicyPage() {
                             </div>
                         </div>
                     </section>
+
+                    {/* Additional Terms */}
+                    <section>
+                        <div className="flex items-start gap-4 mb-4">
+                            <div className="w-10 h-10 bg-[#008ECC]/10 rounded-xl flex items-center justify-center shrink-0">
+                                <svg className="w-5 h-5 text-[#008ECC]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <div className="flex-1">
+                                <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-4">Additional Terms</h2>
+                                <div className="space-y-4 text-base sm:text-lg text-gray-600 leading-relaxed">
+                                    <p>No return policy</p>
+                                    <p>All the Approved exchange and replacement will be completed with in 7 business days</p>
+                                    <p>Refunds will be credited back to the original payment method in 7 business days</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
         </div>

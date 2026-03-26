@@ -277,10 +277,12 @@ export default function Footer() {
                                                 </a>
                                             </p>
                                             <p>
-                                                <a href="mailto:admin@pagz.in" className="hover:text-[#008ECC] transition-colors">
-                                                    admin@pagz.in
+                                                <a href="mailto:info@pagz.in" className="hover:text-[#008ECC] transition-colors">
+                                                    info@pagz.in
                                                 </a>
                                             </p>
+                                            <p className="pt-2 font-medium text-gray-900">Company Name</p>
+                                            <p>HRNG PRINTS PVT LTD</p>
                                         </div>
                                     </div>
                                 </div>

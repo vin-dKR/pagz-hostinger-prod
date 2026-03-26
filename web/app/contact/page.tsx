@@ -29,7 +29,7 @@ export default function ContactPage() {
                             </p>
                             <p>
                                 <span className="text-gray-500">Email:</span>{" "}
-                                <a className="text-[#008ECC] hover:underline" href="mailto:admin@pagz.in">
+                                <a className="text-[#008ECC] hover:underline" href="mailto:info@pagz.in">
                                     info@pagz.in
                                 </a>
                             </p>

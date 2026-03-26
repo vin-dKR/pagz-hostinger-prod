@@ -219,28 +219,6 @@ export default function PrivacyPolicyPage() {
                             </div>
                         </div>
                     </section>
-
-                    {/* Grievance Officer */}
-                    <section>
-                        <div className="flex items-start gap-4 mb-4">
-                            <div className="w-10 h-10 bg-[#008ECC]/10 rounded-xl flex items-center justify-center shrink-0">
-                                <svg className="w-5 h-5 text-[#008ECC]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                            </div>
-                            <div className="flex-1">
-                                <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-4">Grievance Officer</h2>
-                                <div className="space-y-3 text-base sm:text-lg text-gray-600 leading-relaxed">
-                                    <p><strong className="text-gray-900">Name:</strong> [Insert Name of the Officer]</p>
-                                    <p><strong className="text-gray-900">Designation:</strong> [Insert Designation]</p>
-                                    <p><strong className="text-gray-900">Company:</strong> [Insert Name and Address of the Company]</p>
-                                    <p><strong className="text-gray-900">Contact us:</strong></p>
-                                    <p><strong className="text-gray-900">Phone:</strong> [Insert Phone Number]</p>
-                                    <p><strong className="text-gray-900">Time:</strong> Monday – Friday (9:00 – 18:00)</p>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
                 </div>
             </div>
         </div>
