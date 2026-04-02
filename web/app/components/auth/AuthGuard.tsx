@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../contexts/AuthContext";
-import { getRedirectPath, clearRedirectPath } from "../../../lib/utils/auth-redirect";
+import {
+    clearRedirectPath,
+    getAuthIntentFromSearch,
+    getRedirectPath,
+} from "../../../lib/utils/auth-redirect";
+import { processPendingAddToCartIntent } from "../../../lib/utils/pending-cart-intent";
+import { toastError } from "../../../lib/utils/toast";
 
 /**
  * AuthGuard Component
@@ -13,23 +19,50 @@ import { getRedirectPath, clearRedirectPath } from "../../../lib/utils/auth-redi
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const { isAuthenticated, loading } = useAuth();
+    const redirectHandledRef = useRef(false);
 
     useEffect(() => {
         // Wait for auth state to be determined
-        if (loading) return;
+        if (loading || redirectHandledRef.current) return;
 
         // If user is authenticated, check for saved redirect path
         if (isAuthenticated) {
+            redirectHandledRef.current = true;
             // Small delay to ensure auth state is fully updated
             const timer = setTimeout(() => {
-                const redirectPath = getRedirectPath();
-                if (redirectPath) {
-                    clearRedirectPath();
-                    // Use window.location for full page reload to ensure proper navigation
-                    window.location.href = redirectPath;
-                } else {
-                    router.replace("/");
-                }
+                const handleAuthenticatedRedirect = async () => {
+                    const redirectPath = getRedirectPath();
+                    const authIntent = getAuthIntentFromSearch();
+
+                    if (authIntent === "add_to_cart") {
+                        const result = await processPendingAddToCartIntent();
+                        if (result.handled) {
+                            clearRedirectPath();
+                            if (result.success) {
+                                // Use full reload to avoid stale cart context initialized pre-token.
+                                window.location.href = "/cart";
+                            } else {
+                                toastError(result.error || "Failed to restore your cart item.");
+                                if (redirectPath) {
+                                    window.location.href = redirectPath;
+                                } else {
+                                    router.replace("/");
+                                }
+                            }
+                            return;
+                        }
+                    }
+
+                    if (redirectPath) {
+                        clearRedirectPath();
+                        // Use window.location for full page reload to ensure proper navigation
+                        window.location.href = redirectPath;
+                    } else {
+                        router.replace("/");
+                    }
+                };
+
+                void handleAuthenticatedRedirect();
             }, 100);
 
             return () => clearTimeout(timer);

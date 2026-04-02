@@ -7,6 +7,8 @@ import { type Category } from "@/lib/api/categories";
 import { useCarousel } from "@/lib/hooks/use-carousel";
 import Image from "next/image";
 
+const EMPTY_CATEGORIES: Category[] = [];
+
 export default function HeroSection() {
     const router = useRouter();
     const [searchQuery, setSearchQuery] = useState("");
@@ -15,7 +17,8 @@ export default function HeroSection() {
     const [showSuggestions, setShowSuggestions] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
     const { data: carousels = [], isLoading: carouselLoading } = useCarousel();
-    const { data: allCategories = [], isLoading: categoriesLoading } = useCategories();
+    const { data: allCategoriesData, isLoading: categoriesLoading } = useCategories();
+    const allCategories = allCategoriesData ?? EMPTY_CATEGORIES;
     
     const [virtualIndex, setVirtualIndex] = useState(1); // Start at 1 (first real slide after duplicate)
     const [isTransitioning, setIsTransitioning] = useState(true);
@@ -109,11 +112,19 @@ export default function HeroSection() {
                     )
                 )
                 .slice(0, 5); // Show top 5 suggestions
-            setSearchSuggestions(filtered);
-            setShowSuggestions(filtered.length > 0);
+            setSearchSuggestions((prev) => {
+                const isSame =
+                    prev.length === filtered.length &&
+                    prev.every((item, index) => item.id === filtered[index]?.id);
+                return isSame ? prev : filtered;
+            });
+            setShowSuggestions((prev) => {
+                const next = filtered.length > 0;
+                return prev === next ? prev : next;
+            });
         } else {
-            setSearchSuggestions([]);
-            setShowSuggestions(false);
+            setSearchSuggestions((prev) => (prev.length === 0 ? prev : []));
+            setShowSuggestions((prev) => (prev ? false : prev));
         }
     }, [searchQuery, allCategories]);
 

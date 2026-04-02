@@ -15,13 +15,6 @@ export default function Testimonials() {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [testimonials] = useState<Testimonial[]>([
         {
-            id: "1",
-            customerName: "Priya Sharma",
-            isVerified: true,
-            rating: 5,
-            review: "Ordered 500 business cards for my startup and the quality is outstanding! The colors came out exactly as I designed them. Fast delivery and excellent customer support. Highly recommend for professional printing needs."
-        },
-        {
             id: "2",
             customerName: "Rajesh Kumar",
             isVerified: true,

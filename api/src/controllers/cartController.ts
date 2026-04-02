@@ -5,6 +5,21 @@ import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/erro
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { deleteFromFTP, extractFtpPathFromUrl } from "../services/ftp.js";
 import { getParamAsString } from "../utils/db-utils.js";
+
+function normalizeDesignUrls(value: unknown): string[] {
+    if (!value) return [];
+
+    const rawValues: string[] = Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === "string")
+        : typeof value === "string"
+            ? [value]
+            : [];
+
+    return rawValues
+        .flatMap((entry) => entry.split(","))
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+}
 // Get user's cart
 export const getCart = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -327,32 +342,11 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
 
         let cartItem;
         if (existingItem) {
-            // Normalize existing customDesignUrl to array (handle legacy string values and Prisma types)
-            let existingUrls: string[] = [];
-            if (existingItem.customDesignUrl) {
-                if (Array.isArray(existingItem.customDesignUrl)) {
-                    existingUrls = (existingItem.customDesignUrl as unknown[]).filter((url) => {
-                        return typeof url === 'string' && url.trim().length > 0;
-                    }) as string[];
-                } else if (typeof existingItem.customDesignUrl === 'string') {
-                    const urlStr = String(existingItem.customDesignUrl).trim();
-                    if (urlStr.length > 0) {
-                        existingUrls = [urlStr];
-                    }
-                }
-            }
+            // Normalize existing customDesignUrl to array (handles legacy comma-separated values too)
+            const existingUrls = normalizeDesignUrls(existingItem.customDesignUrl);
 
             // Normalize new customDesignUrl to array
-            let newUrls: string[] = [];
-            if (customDesignUrl) {
-                if (Array.isArray(customDesignUrl)) {
-                    newUrls = customDesignUrl.filter((url) => {
-                        return typeof url === 'string' && url.trim().length > 0;
-                    }) as string[];
-                } else if (typeof customDesignUrl === 'string' && customDesignUrl.length > 0) {
-                    newUrls = [customDesignUrl];
-                }
-            }
+            const newUrls = normalizeDesignUrls(customDesignUrl);
 
             // Merge or replace URLs (if new URLs provided, use them; otherwise keep existing)
             const finalUrls = newUrls.length > 0 ? newUrls : existingUrls;
@@ -400,14 +394,7 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
         } else {
             // Create new cart item
             // Normalize customDesignUrl to always be an array
-            let normalizedUrls: string[] = [];
-            if (customDesignUrl) {
-                if (Array.isArray(customDesignUrl)) {
-                    normalizedUrls = customDesignUrl.filter((url): url is string => typeof url === 'string' && url.length > 0);
-                } else if (typeof customDesignUrl === 'string' && customDesignUrl.length > 0) {
-                    normalizedUrls = [customDesignUrl];
-                }
-            }
+            const normalizedUrls = normalizeDesignUrls(customDesignUrl);
 
             // Normalize addons for new item
             const addonIds: string[] = Array.isArray(addons)
@@ -490,32 +477,13 @@ export const updateCartItem = async (req: Request, res: Response, next: NextFunc
             throw new ValidationError("Insufficient stock");
         }
 
-        // Normalize existing customDesignUrl to array (handle legacy string values and Prisma types)
-        let existingUrls: string[] = [];
-        if (cartItem.customDesignUrl) {
-            if (Array.isArray(cartItem.customDesignUrl)) {
-                for (const url of cartItem.customDesignUrl) {
-                    const urlStr = String(url);
-                    if (urlStr && urlStr.trim().length > 0) {
-                        existingUrls.push(urlStr.trim());
-                    }
-                }
-            } else {
-                const urlStr = String(cartItem.customDesignUrl).trim();
-                if (urlStr.length > 0) {
-                    existingUrls = [urlStr];
-                }
-            }
-        }
+        // Normalize existing customDesignUrl to array (handles legacy comma-separated values too)
+        const existingUrls = normalizeDesignUrls(cartItem.customDesignUrl);
 
         // Normalize new customDesignUrl to array
         let newUrls: string[] = [];
         if (customDesignUrl !== undefined) {
-            if (Array.isArray(customDesignUrl)) {
-                newUrls = customDesignUrl.filter((url): url is string => typeof url === 'string' && url.trim().length > 0);
-            } else if (customDesignUrl && typeof customDesignUrl === 'string' && customDesignUrl.length > 0) {
-                newUrls = [customDesignUrl];
-            }
+            newUrls = normalizeDesignUrls(customDesignUrl);
         } else {
             newUrls = existingUrls;
         }
@@ -569,17 +537,17 @@ export const removeFromCart = async (req: Request, res: Response, next: NextFunc
 
         // Delete FTP files associated with this cart item
         // Normalize customDesignUrl to array
-        const designUrls = Array.isArray(cartItem.customDesignUrl)
-            ? (cartItem.customDesignUrl as any[]).filter((url): url is string => typeof url === "string")
-            : typeof cartItem.customDesignUrl === "string"
-                ? [cartItem.customDesignUrl]
-                : [];
+        const designUrls = normalizeDesignUrls(cartItem.customDesignUrl);
 
         if (designUrls.length > 0) {
             // Extract FTP paths from URLs/paths
-            const ftpPaths = designUrls
-                .map((urlOrKey) => extractFtpPathFromUrl(urlOrKey))
-                .filter((p) => p.trim() !== "");
+            const ftpPaths = Array.from(
+                new Set(
+                    designUrls
+                        .map((urlOrKey) => extractFtpPathFromUrl(urlOrKey))
+                        .filter((p) => p.trim() !== "")
+                )
+            );
 
             // Delete all FTP files (use allSettled to continue even if some fail)
             if (ftpPaths.length > 0) {
@@ -625,11 +593,7 @@ export const clearCart = async (req: Request, res: Response, next: NextFunction)
             const ftpPaths: string[] = [];
 
             for (const item of cart.items) {
-                const designUrls = Array.isArray(item.customDesignUrl)
-                    ? (item.customDesignUrl as any[]).filter((url): url is string => typeof url === "string")
-                    : typeof item.customDesignUrl === "string"
-                        ? [item.customDesignUrl]
-                        : [];
+                const designUrls = normalizeDesignUrls(item.customDesignUrl);
 
                 for (const urlOrKey of designUrls) {
                     const ftpPath = extractFtpPathFromUrl(urlOrKey);

@@ -10,6 +10,8 @@ import { useCart } from "@/contexts/CartContext";
 import { getProducts, type Product } from "../../lib/api/products";
 import { addToCart } from "@/lib/api/cart";
 import { toastError, toastPromise } from "@/lib/utils/toast";
+import { redirectToLoginWithReturn } from "@/lib/utils/auth-redirect";
+import { savePendingProductForCartIntent } from "@/lib/utils/pending-cart-intent";
 
 export default function BestSeller() {
     const router = useRouter();
@@ -58,7 +60,12 @@ export default function BestSeller() {
         }
 
         if (!isAuthenticated) {
-            router.push('/auth/login');
+            try {
+                await savePendingProductForCartIntent({ productId, quantity: 1 });
+                redirectToLoginWithReturn(undefined, { intent: "add_to_cart" });
+            } catch (error) {
+                toastError("Unable to save your cart action. Please try again.");
+            }
             return;
         }
 

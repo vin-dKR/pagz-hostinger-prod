@@ -77,6 +77,13 @@ export interface Order {
     status: OrderStatus;
     paymentMethod: PaymentMethod;
     paymentStatus: PaymentStatus;
+    refundStatus?: RefundStatus;
+    refundEligibleAmount?: number | null;
+    refundProcessedAt?: string | null;
+    refundFailureReason?: string | null;
+    cancelledAt?: string | null;
+    cancelledBy?: 'CUSTOMER' | 'ADMIN' | 'SYSTEM' | null;
+    cancellationReason?: string | null;
     phonePeOrderId?: string | null;
     couponId?: string | null;
     address: Address;
@@ -91,6 +98,18 @@ export interface Order {
     };
     payments?: Payment[];
     statusHistory?: OrderStatusHistory[];
+    refunds?: Array<{
+        id: string;
+        gateway?: string;
+        gatewayRefundId?: string | null;
+        amount: number;
+        status: 'PROCESSING' | 'PROCESSED' | 'FAILED' | 'MANUAL_REVIEW';
+        reason?: string | null;
+        adminNote?: string | null;
+        requestedAt: string;
+        processedAt?: string | null;
+        failureReason?: string | null;
+    }>;
 }
 
 export type OrderStatus =
@@ -105,6 +124,7 @@ export type OrderStatus =
 export type PaymentMethod = 'ONLINE' | 'OFFLINE';
 
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
+export type RefundStatus = 'NOT_REQUIRED' | 'PENDING' | 'PROCESSING' | 'PROCESSED' | 'FAILED' | 'MANUAL_REVIEW';
 
 export interface OrderStatusHistory {
     id: string;
@@ -376,8 +396,8 @@ export async function processRefund(
     orderId: string,
     data: {
         amount?: number;
-        reason: string;
-        method?: string;
+        reason?: string;
+        adminNote?: string;
     }
 ): Promise<Order> {
     const response = await post<Order>(`/admin/orders/${orderId}/payment/refund`, data);

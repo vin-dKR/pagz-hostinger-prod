@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import { setAuthToken } from "../../../lib/api-client";
 import { useAuth } from "../../../contexts/AuthContext";
-import { getRedirectPath, clearRedirectPath } from "../../../lib/utils/auth-redirect";
+import {
+    clearRedirectPath,
+    getAuthIntentFromSearch,
+    getRedirectPath,
+} from "../../../lib/utils/auth-redirect";
+import { processPendingAddToCartIntent } from "../../../lib/utils/pending-cart-intent";
 
 /**
  * OAuth Callback Page
@@ -41,6 +46,23 @@ export default function AuthCallbackPage() {
 
                     // Check for saved redirect path
                     const redirectPath = getRedirectPath();
+                    const authIntent = getAuthIntentFromSearch();
+
+                    if (authIntent === "add_to_cart") {
+                        const result = await processPendingAddToCartIntent();
+                        if (result.handled) {
+                            clearRedirectPath();
+                            if (result.success) {
+                                window.location.href = "/cart";
+                            } else if (redirectPath) {
+                                window.location.href = redirectPath;
+                            } else {
+                                window.location.href = "/";
+                            }
+                            return;
+                        }
+                    }
+
                     if (redirectPath) {
                         clearRedirectPath();
                         window.location.href = redirectPath;

@@ -11,6 +11,8 @@ import { addToWishlist, removeFromWishlist, checkWishlist } from "@/lib/api/wish
 import { useCart } from "@/contexts/CartContext";
 import { toastError, toastPromise } from "@/lib/utils/toast";
 import type { CouponProduct } from "@/lib/api/offers";
+import { redirectToLoginWithReturn } from "@/lib/utils/auth-redirect";
+import { savePendingProductForCartIntent } from "@/lib/utils/pending-cart-intent";
 
 interface CouponProductCardProps {
     product: CouponProduct;
@@ -56,7 +58,12 @@ export default function CouponProductCard({ product }: CouponProductCardProps) {
         }
 
         if (!isAuthenticated) {
-            router.push('/auth/login');
+            try {
+                await savePendingProductForCartIntent({ productId: product.id, quantity: 1 });
+                redirectToLoginWithReturn(undefined, { intent: "add_to_cart" });
+            } catch (error) {
+                toastError("Unable to save your cart action. Please try again.");
+            }
             return;
         }
 

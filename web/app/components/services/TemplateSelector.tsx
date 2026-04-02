@@ -127,7 +127,7 @@ export function TemplateSelector({
                     )}
                     <p className="mt-2 text-xs text-gray-500">
                         {templates.length === 0 
-                            ? 'Supported formats: Images (JPG, PNG, WebP, GIF - Max 10MB) and PDFs (Max 50MB)'
+                            ? 'Supported formats: Images (JPG, PNG, WebP, GIF - Max 25MB) and PDFs (Max 75MB)'
                             : 'Upload your own design or select from available templates'
                         }
                     </p>

@@ -13,6 +13,7 @@ import {
     type CartItem,
     type CartResponse,
 } from '@/lib/api/cart';
+import { getAuthToken } from '@/lib/api-client';
 
 export interface UseCartReturn {
     cart: Cart | null;
@@ -49,6 +50,13 @@ export function useCart(): UseCartReturn {
                 setLoading(true);
             }
             setError(null);
+            if (!getAuthToken()) {
+                setCart(null);
+                setCartSubtotal(0);
+                setBaseSubtotal(0);
+                setAddonsSubtotal(0);
+                return;
+            }
             const response = await getCart();
 
             if (response.success && response.data) {
@@ -58,12 +66,22 @@ export function useCart(): UseCartReturn {
                 setBaseSubtotal(cartResponse.baseSubtotal ?? 0);
                 setAddonsSubtotal(cartResponse.addonsSubtotal ?? 0);
             } else {
-                setError(response.error || 'Failed to fetch cart');
+                const cartError = response.error || 'Failed to fetch cart';
+                // Avoid sticky error banners during auth token propagation races.
+                if (cartError.toLowerCase().includes('token')) {
+                    setError(null);
+                } else {
+                    setError(cartError);
+                }
                 setCart(null);
             }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-            setError(errorMessage);
+            if (errorMessage.toLowerCase().includes('token')) {
+                setError(null);
+            } else {
+                setError(errorMessage);
+            }
             setCart(null);
         } finally {
             if (setLoadingState) {
@@ -76,6 +94,26 @@ export function useCart(): UseCartReturn {
     useEffect(() => {
         fetchCart(true);
     }, [fetchCart]);
+
+    // Recover automatically if initial cart fetch ran before auth token was fully available.
+    useEffect(() => {
+        if (cart || getAuthToken()) return;
+
+        let attempts = 0;
+        const intervalId = window.setInterval(() => {
+            attempts += 1;
+            if (getAuthToken()) {
+                void fetchCart(false);
+                window.clearInterval(intervalId);
+                return;
+            }
+            if (attempts >= 20) {
+                window.clearInterval(intervalId);
+            }
+        }, 150);
+
+        return () => window.clearInterval(intervalId);
+    }, [cart, fetchCart]);
 
     // Update cart item quantity (optimistic update)
     const updateQuantity = useCallback(async (itemId: string, quantity: number): Promise<boolean> => {
@@ -216,6 +254,10 @@ export function useCart(): UseCartReturn {
         return items.some(item => item.product?.name === productName);
     }, [items]);
 
+    const refetch = useCallback(async () => {
+        await fetchCart(true);
+    }, [fetchCart]);
+
     return {
         cart,
         items,
@@ -227,7 +269,7 @@ export function useCart(): UseCartReturn {
         baseSubtotal,
         addonsSubtotal,
         itemCount,
-        refetch: () => fetchCart(true),
+        refetch,
         updateQuantity,
         removeItem,
         clearCartItems,

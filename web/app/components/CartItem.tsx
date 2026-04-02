@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useRef, useMemo, useEffect } from "react";
 import PriceDisplay from "./PriceDisplay";
 import { CartItem as CartItemType, AddonRule } from "@/lib/api/cart";
@@ -156,11 +155,16 @@ export default function CartItem({
             return;
         }
 
-        // Validate file sizes (max 50MB per file)
-        const maxSize = 50 * 1024 * 1024; // 50MB
-        const oversizedFiles = files.filter(f => f.size > maxSize);
+        // Validate file sizes (JPG/PNG/GIF/WEBP: 25MB, PDF: 75MB)
+        const oversizedFiles = files.filter((f) => {
+            const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+            const maxBytes = (isPdf ? 75 : 25) * 1024 * 1024;
+            return f.size > maxBytes;
+        });
         if (oversizedFiles.length > 0) {
-            setUploadError(`File size must be less than 50MB. ${oversizedFiles.map(f => f.name).join(', ')}`);
+            setUploadError(
+                `File size limit exceeded. Images must be <= 25MB and PDFs must be <= 75MB. ${oversizedFiles.map(f => f.name).join(', ')}`
+            );
             return;
         }
 
@@ -217,7 +221,7 @@ export default function CartItem({
                 )}
 
                 {/* Product Image - Mobile */}
-                <Link href={`/products/${item.productId}`} className="shrink-0">
+                <div className="shrink-0">
                     <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
                         <Image
                             src={productImage}
@@ -227,7 +231,7 @@ export default function CartItem({
                             sizes="80px"
                         />
                     </div>
-                </Link>
+                </div>
 
                 {/* Delete Button - Mobile */}
                 <button
@@ -261,7 +265,7 @@ export default function CartItem({
                 )}
 
                 {/* Product Image - Desktop - Larger */}
-                <Link href={`/products/${item.productId}`} className="shrink-0">
+                <div className="shrink-0">
                     <div className="relative w-32 h-32 lg:w-40 lg:h-40 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
                         <Image
                             src={productImage}
@@ -271,7 +275,7 @@ export default function CartItem({
                             sizes="(max-width: 1024px) 128px, 160px"
                         />
                     </div>
-                </Link>
+                </div>
 
                 {/* Delete Button - Desktop */}
                 <button
@@ -289,11 +293,9 @@ export default function CartItem({
             <div className="flex-1 flex flex-col justify-between min-w-0 pr-8 sm:pr-0">
                 <div className="space-y-3 sm:space-y-4">
                     <div>
-                        <Link href={`/products/${item.productId}`}>
-                            <h3 className="font-bold text-base sm:text-lg lg:text-xl text-gray-900 mb-2 hover:text-blue-600 transition-colors">
-                                {productName}
-                            </h3>
-                        </Link>
+                        <h3 className="font-bold text-base sm:text-lg lg:text-xl text-gray-900 mb-2">
+                            {productName}
+                        </h3>
                         <div className="flex flex-wrap gap-3 sm:gap-4 text-sm sm:text-base text-gray-600">
                             {size && <span className="font-medium">Size: <span className="font-normal">{size}</span></span>}
                         </div>
@@ -411,7 +413,7 @@ export default function CartItem({
                                 <p className="mt-2 text-sm text-red-600">{uploadError}</p>
                             )}
                             <p className="mt-2 text-xs sm:text-sm text-yellow-700">
-                                Upload images or PDF files (max 50MB per file)
+                                Upload images (max 25MB) or PDF files (max 75MB)
                             </p>
                         </div>
                     )}

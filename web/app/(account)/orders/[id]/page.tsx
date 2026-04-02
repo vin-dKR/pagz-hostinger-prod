@@ -15,11 +15,13 @@ import {
     ArrowLeft,
     Check,
 } from "lucide-react";
-import { getOrder, type Order, type OrderStatusHistory } from "@/lib/api/orders";
+import { cancelOrder, getOrder, type Order, type OrderStatusHistory } from "@/lib/api/orders";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
 import { downloadInvoicePDF } from "@/lib/api/invoice";
 import { toastSuccess, toastError } from "@/lib/utils/toast";
 import { TemplateDataDisplay } from "@/app/components/orders/TemplateDataDisplay";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
+import { Button } from "@/app/components/ui/button";
 
 interface OrderItem {
     id: string;
@@ -76,6 +78,9 @@ interface OrderDetails {
     };
     paymentMethod: string;
     paymentStatus: string;
+    refundStatus?: string;
+    refundMessage?: string;
+    cancellationReason?: string;
     trackingNumber?: string;
     estimatedDelivery?: string;
     statusHistory: OrderStatusHistoryDisplay[];
@@ -269,6 +274,11 @@ function transformOrder(order: Order): OrderDetails {
         },
         paymentMethod: paymentMethodMap[order.paymentMethod] || order.paymentMethod,
         paymentStatus: paymentStatusMap[order.paymentStatus] || order.paymentStatus,
+        refundStatus: order.refundStatus ? order.refundStatus.replace(/_/g, " ") : undefined,
+        refundMessage: order.status === "CANCELLED"
+            ? "Refund will be credited to your bank account within 7 working days."
+            : undefined,
+        cancellationReason: order.cancellationReason || undefined,
         statusHistory,
     };
 }
@@ -293,6 +303,9 @@ function OrderDetailsPageContent({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+    const [isCancelling, setIsCancelling] = useState(false);
+    const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+    const [cancelReason, setCancelReason] = useState("");
 
     useEffect(() => {
         async function fetchOrder() {
@@ -327,6 +340,33 @@ function OrderDetailsPageContent({
             toastError(err instanceof Error ? err.message : 'Failed to download invoice');
         } finally {
             setDownloadingInvoice(false);
+        }
+    };
+
+    const handleCancelOrder = async () => {
+        if (!order || isCancelling) return;
+        if (!cancelReason.trim()) {
+            toastError("Please enter a cancellation reason");
+            return;
+        }
+
+        try {
+            setIsCancelling(true);
+            const response = await cancelOrder(order.id, { reason: cancelReason.trim() });
+            if (!response.success) {
+                throw new Error(response.error || "Failed to cancel order");
+            }
+            const updated = await getOrder(order.id);
+            if (updated.success && updated.data) {
+                setOrder(transformOrder(updated.data));
+            }
+            toastSuccess("Order cancelled successfully");
+            setCancelDialogOpen(false);
+            setCancelReason("");
+        } catch (err) {
+            toastError(err instanceof Error ? err.message : "Failed to cancel order");
+        } finally {
+            setIsCancelling(false);
         }
     };
 
@@ -802,6 +842,17 @@ function OrderDetailsPageContent({
                                         {order.paymentStatus}
                                     </span>
                                 </div>
+                                {order.refundStatus && (
+                                    <div>
+                                        <p className="text-sm text-gray-600 mb-1">Refund Status</p>
+                                        <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-sm font-medium rounded-full border border-blue-200">
+                                            {order.refundStatus}
+                                        </span>
+                                        {order.refundMessage && (
+                                            <p className="text-xs text-gray-500 mt-2">{order.refundMessage}</p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -816,9 +867,13 @@ function OrderDetailsPageContent({
                                         Track Order
                                     </button>
                                 )}
-                                {order.status === "Processing" && (
-                                    <button className="w-full px-4 py-2.5 border border-red-500 text-red-500 rounded-lg hover:bg-red-50 transition-colors font-medium text-sm">
-                                        Cancel Order
+                                {(order.status === "Processing" || order.status === "Accepted" || order.status === "Pending Review") && (
+                                    <button
+                                        onClick={() => setCancelDialogOpen(true)}
+                                        disabled={isCancelling}
+                                        className="w-full px-4 py-2.5 border border-red-500 text-red-500 rounded-lg hover:bg-red-50 transition-colors font-medium text-sm disabled:opacity-60"
+                                    >
+                                        {isCancelling ? "Cancelling..." : "Cancel Order"}
                                     </button>
                                 )}
 
@@ -855,6 +910,49 @@ function OrderDetailsPageContent({
                     </div>
                 </div>
             </div>
+
+            <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+                <DialogContent className="max-w-md w-full">
+                    <DialogHeader>
+                        <DialogTitle>Cancel Order</DialogTitle>
+                        <DialogDescription>
+                            This action cannot be undone. Please tell us why you want to cancel this order.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700">Cancellation Reason</label>
+                        <textarea
+                            value={cancelReason}
+                            onChange={(e) => setCancelReason(e.target.value)}
+                            rows={4}
+                            placeholder="Enter reason..."
+                            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-[#008ECC] focus:ring-2 focus:ring-[#008ECC]/20"
+                        />
+                        <p className="text-xs text-gray-500">
+                            Refund will be credited to your bank account within 7 working days.
+                        </p>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setCancelDialogOpen(false);
+                                setCancelReason("");
+                            }}
+                            disabled={isCancelling}
+                        >
+                            Keep Order
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleCancelOrder}
+                            disabled={isCancelling}
+                        >
+                            {isCancelling ? "Cancelling..." : "Confirm Cancel"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }

@@ -46,6 +46,8 @@ export default function ProductDocumentUpload({
     pageControllerError = null,
     hasPageControllerRules = false,
 }: ProductDocumentUploadProps) {
+    const IMAGE_MAX_SIZE_MB = 25;
+    const PDF_MAX_SIZE_MB = 75;
     const [totalQuantity, setTotalQuantity] = useState<number>(0);
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -178,7 +180,7 @@ export default function ProductDocumentUpload({
             }
 
             // Validate file size
-            const maxSize = fileType === 'image' ? 10 : 50; // Images: 10MB, PDFs: 50MB
+            const maxSize = fileType === 'image' ? IMAGE_MAX_SIZE_MB : PDF_MAX_SIZE_MB;
             if (!validateFileSize(file, maxSize)) {
                 throw new Error(`File ${file.name} exceeds ${maxSize}MB size limit.`);
             }
@@ -268,6 +270,7 @@ export default function ProductDocumentUpload({
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to process files';
             setError(errorMessage);
+            toastError(errorMessage);
         } finally {
             setIsProcessing(false);
             if (fileInputRef.current) {
@@ -444,7 +447,7 @@ export default function ProductDocumentUpload({
                         )}
                     </label>
                     <p className="mt-2 text-xs text-gray-500">
-                        Supported formats: Images (JPG, PNG - Max 10MB) and PDFs (Max 50MB)
+                        Supported formats: Images (JPG, PNG - Max {IMAGE_MAX_SIZE_MB}MB) and PDFs (Max {PDF_MAX_SIZE_MB}MB)
                         {maxFiles && ` • Max ${maxFiles} files`}
                     </p>
                     {hasPageControllerRules && maxPages !== null && (

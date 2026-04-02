@@ -1,5 +1,5 @@
 /**
- * Payments API functions (PhonePe)
+ * Payments API functions
  */
 
 import { post, type ApiResponse } from "../api-client";
@@ -34,6 +34,14 @@ export interface CreatePhonePeOrderResponse {
     merchantOrderId: string;
 }
 
+export interface CreateRazorpayOrderResponse {
+    keyId: string;
+    merchantOrderId: string;
+    razorpayOrderId: string;
+    amount: number;
+    currency: string;
+}
+
 export interface VerifyPhonePePaymentRequest {
     merchantOrderId: string;
 }
@@ -43,6 +51,13 @@ export interface VerifyPhonePePaymentResponse {
     orderId?: string;
     state?: string;
     message?: string;
+}
+
+export interface VerifyRazorpayPaymentRequest {
+    merchantOrderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
 }
 
 /**
@@ -61,4 +76,16 @@ export async function verifyPhonePePayment(
     data: VerifyPhonePePaymentRequest
 ): Promise<ApiResponse<VerifyPhonePePaymentResponse>> {
     return post<VerifyPhonePePaymentResponse>("/payment/verify", data);
+}
+
+export async function createRazorpayOrder(
+    data: CreatePhonePeOrderRequest
+): Promise<ApiResponse<CreateRazorpayOrderResponse>> {
+    return post<CreateRazorpayOrderResponse>("/payment/razorpay/create-order-from-cart", data);
+}
+
+export async function verifyRazorpayPayment(
+    data: VerifyRazorpayPaymentRequest
+): Promise<ApiResponse<VerifyPhonePePaymentResponse>> {
+    return post<VerifyPhonePePaymentResponse>("/payment/razorpay/verify", data);
 }

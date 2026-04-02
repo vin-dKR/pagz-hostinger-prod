@@ -6,6 +6,7 @@ import { sendSuccess, sendError } from "../utils/response.js";
 import { ValidationError, UnauthorizedError, NotFoundError } from "../utils/errors.js";
 import { sendPasswordResetOTP } from "../services/email.js";
 import { generateOTP, storeOTP, checkOTP } from "../services/otp.js";
+import { Prisma } from "../../generated/prisma/client.js";
 
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
@@ -19,19 +20,47 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             throw new ValidationError("Email and password are required");
         }
 
+        // Block duplicate registrations by email/phone before creating auth user.
+        const normalizedEmail = String(email).trim().toLowerCase();
+        const normalizedPhone = phone ? String(phone).trim() : undefined;
+        const existingUser = await prisma.user.findFirst({
+            where: {
+                OR: [
+                    { email: normalizedEmail },
+                    ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+                ],
+            },
+        });
+
+        if (existingUser) {
+            if (existingUser.email === normalizedEmail) {
+                return sendError(res, "Email already registered. Please login.", 400);
+            }
+            return sendError(res, "Phone number already registered. Please login.", 400);
+        }
+
         // Try Supabase first
         if (supabase) {
             const { data, error } = await supabase.auth.signUp({
-                email,
+                email: normalizedEmail,
                 password,
                 options: {
                     data: {
-                        name: name || email.split("@")[0],
+                        name: name || normalizedEmail.split("@")[0],
                     },
                 },
             });
 
             if (error) {
+                const message = error.message?.toLowerCase() || "";
+                if (
+                    message.includes("already registered") ||
+                    message.includes("already been registered") ||
+                    message.includes("already exists") ||
+                    message.includes("already in use")
+                ) {
+                    return sendError(res, "Email already registered. Please login.", 400);
+                }
                 return sendError(res, error.message, 400);
             }
 
@@ -39,10 +68,10 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
                 // Create user in our database
                 const user = await prisma.user.create({
                     data: {
-                        email: data.user.email || email,
+                        email: data.user.email || normalizedEmail,
                         supabaseId: data.user.id,
-                        name: name || data.user.user_metadata?.name || email.split("@")[0],
-                        phone: phone,
+                        name: name || data.user.user_metadata?.name || normalizedEmail.split("@")[0],
+                        phone: normalizedPhone,
                         isAdmin: isAdmin || false,
                         isSuperAdmin: isSuperAdmin || false,
                     },
@@ -66,9 +95,9 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
                 // User created but no session (email confirmation required)
                 const user = await prisma.user.create({
                     data: {
-                        email,
-                        name: name || email.split("@")[0],
-                        phone,
+                        email: normalizedEmail,
+                        name: name || normalizedEmail.split("@")[0],
+                        phone: normalizedPhone,
                         supabaseId: data.user.id,
                         isAdmin,
                         isSuperAdmin
@@ -88,19 +117,28 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
 
         // Fallback: Local registration (without Supabase)
         // In a real scenario, you'd hash the password here
-        const existingUser = await prisma.user.findUnique({
-            where: { email },
+        const existingUserByEmail = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
         });
 
-        if (existingUser) {
-            return sendError(res, "User already exists", 400);
+        if (existingUserByEmail) {
+            return sendError(res, "Email already registered. Please login.", 400);
+        }
+
+        if (normalizedPhone) {
+            const existingUserByPhone = await prisma.user.findFirst({
+                where: { phone: normalizedPhone },
+            });
+            if (existingUserByPhone) {
+                return sendError(res, "Phone number already registered. Please login.", 400);
+            }
         }
 
         const user = await prisma.user.create({
             data: {
-                email,
-                name: name || email.split("@")[0],
-                phone: phone,
+                email: normalizedEmail,
+                name: name || normalizedEmail.split("@")[0],
+                phone: normalizedPhone,
                 isAdmin: isAdmin || false,
                 isSuperAdmin: isSuperAdmin || false,
             },
@@ -126,6 +164,9 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             "Registration successful"
         );
     } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            return sendError(res, "Email already registered. Please login.", 400);
+        }
         next(error);
     }
 };

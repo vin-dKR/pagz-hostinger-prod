@@ -175,7 +175,7 @@ function ProfilePageContent() {
                                     <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                                     <p className="text-gray-600 text-sm">No orders yet</p>
                                     <Link
-                                        href="/products"
+                                        href="/services"
                                         className="inline-block mt-4 px-4 py-2 bg-[#008ECC] text-white rounded-xl hover:bg-[#0077B3] transition-colors font-medium text-sm"
                                     >
                                         Start Shopping
@@ -223,7 +223,7 @@ function ProfilePageContent() {
                         <div className="mt-6 pt-4 sm:pt-6 border-t border-gray-100">
                             <div className="flex flex-col sm:flex-row gap-3">
                                 <Link
-                                    href="/products"
+                                    href="/services"
                                     className="flex-1 px-4 py-3 bg-[#008ECC] text-white rounded-xl hover:bg-[#0077B3] transition-colors font-medium text-sm text-center"
                                 >
                                     Continue Shopping

@@ -6,6 +6,25 @@ import { getPublicFtpUrl, extractFtpPathFromUrl } from "../services/ftp.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
 
+const CUSTOMER_CANCELLABLE_STATUSES = new Set(["PENDING_REVIEW", "ACCEPTED", "PROCESSING"]);
+const REFUND_TIMELINE_MESSAGE = "Refund will be credited to your bank account within 7 working days.";
+
+type NumericLike = number | string | { toString(): string };
+
+const getOrderRefundDefaults = (order: { paymentMethod: string; paymentStatus: string; total: NumericLike }) => {
+    const isPrepaidSuccess = order.paymentMethod === "ONLINE" && order.paymentStatus === "SUCCESS";
+    if (!isPrepaidSuccess) {
+        return {
+            refundStatus: "NOT_REQUIRED" as const,
+            refundEligibleAmount: 0,
+        };
+    }
+    return {
+        refundStatus: "PENDING" as const,
+        refundEligibleAmount: Number(order.total || 0),
+    };
+};
+
 // Customer: Create order
 export const createOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -301,6 +320,8 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 paymentMethod,
                 couponId,
                 status: "PENDING_REVIEW",
+                refundStatus: "NOT_REQUIRED",
+                refundEligibleAmount: 0,
                 items: {
                     create: orderItems.map((oi) => ({
                         productId: oi.productId,
@@ -424,6 +445,9 @@ export const getMyOrders = async (req: Request, res: Response, next: NextFunctio
                         },
                     },
                     address: true,
+                    refunds: {
+                        orderBy: { requestedAt: "desc" },
+                    },
                 },
                 skip,
                 take: limit,
@@ -488,6 +512,9 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
                     orderBy: { createdAt: "asc" },
                 },
                 payments: true,
+                refunds: {
+                    orderBy: { requestedAt: "desc" },
+                },
             },
         });
 
@@ -528,6 +555,95 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
         next(error);
     }
 }
+
+// Customer: Cancel own order
+export const cancelMyOrder = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            throw new UnauthorizedError("User not authenticated");
+        }
+
+        const { id } = req.params;
+        const { reason, comment } = req.body as { reason?: string; comment?: string };
+
+        if (!reason || !reason.trim()) {
+            throw new ValidationError("Cancellation reason is required");
+        }
+
+        const order = await prisma.order.findFirst({
+            where: {
+                id: id as string,
+                userId: req.user.id,
+            },
+            include: {
+                payments: {
+                    where: { status: "SUCCESS" },
+                    orderBy: { createdAt: "desc" },
+                    take: 1,
+                },
+            },
+        });
+
+        if (!order) {
+            throw new NotFoundError("Order not found");
+        }
+
+        if (order.status === "CANCELLED") {
+            throw new ValidationError("Order is already cancelled");
+        }
+
+        if (!CUSTOMER_CANCELLABLE_STATUSES.has(order.status)) {
+            throw new ValidationError("This order can no longer be cancelled");
+        }
+
+        const refundDefaults = getOrderRefundDefaults(order);
+        const statusComment = comment?.trim() || `Order cancelled by customer. Reason: ${reason.trim()}`;
+
+        const updatedOrder = await prisma.$transaction(async (tx) => {
+            const cancelled = await tx.order.update({
+                where: { id: order.id },
+                data: {
+                    status: "CANCELLED",
+                    cancelledAt: new Date(),
+                    cancelledBy: "CUSTOMER",
+                    cancellationReason: reason.trim(),
+                    refundStatus: refundDefaults.refundStatus,
+                    refundEligibleAmount: refundDefaults.refundEligibleAmount,
+                    refundFailureReason: null,
+                },
+                include: {
+                    items: { include: { product: true, variant: true, addons: true } },
+                    address: true,
+                    payments: true,
+                    refunds: {
+                        orderBy: { requestedAt: "desc" },
+                    },
+                    statusHistory: {
+                        orderBy: { createdAt: "asc" },
+                    },
+                },
+            });
+
+            await tx.orderStatusHistory.create({
+                data: {
+                    orderId: order.id,
+                    status: "CANCELLED",
+                    comment: statusComment,
+                },
+            });
+
+            return cancelled;
+        });
+
+        return sendSuccess(res, {
+            order: updatedOrder,
+            refundStatus: updatedOrder.refundStatus,
+            timelineMessage: REFUND_TIMELINE_MESSAGE,
+        }, "Order cancelled successfully");
+    } catch (error) {
+        next(error);
+    }
+};
 
 /**
  * @openapi
@@ -836,6 +952,10 @@ export const getAdminOrders = async (req: Request, res: Response, next: NextFunc
                         take: 1,
                         orderBy: { createdAt: "desc" },
                     },
+                    refunds: {
+                        take: 1,
+                        orderBy: { requestedAt: "desc" },
+                    },
                     statusHistory: {
                         take: 1,
                         orderBy: { createdAt: "desc" },
@@ -903,6 +1023,9 @@ export const getAdminOrder = async (req: Request, res: Response, next: NextFunct
                     orderBy: { createdAt: "asc" },
                 },
                 payments: true,
+                refunds: {
+                    orderBy: { requestedAt: "desc" },
+                },
             },
         });
 
@@ -1223,7 +1346,7 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
 export const cancelOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
-        const { reason, refund } = req.body;
+        const { reason, comment } = req.body;
 
         if (!reason) {
             throw new ValidationError("Cancellation reason is required");
@@ -1246,52 +1369,46 @@ export const cancelOrder = async (req: Request, res: Response, next: NextFunctio
             throw new ValidationError("Order is already cancelled");
         }
 
-        // Update order status
-        const updatedOrder = await prisma.order.update({
-            where: { id: id as string },
-            data: { status: "CANCELLED" },
-            include: {
-                user: true,
-                items: {
-                    include: {
-                        product: true,
-                        variant: true,
+        const refundDefaults = getOrderRefundDefaults(order);
+        const updatedOrder = await prisma.$transaction(async (tx) => {
+            const cancelled = await tx.order.update({
+                where: { id: id as string },
+                data: {
+                    status: "CANCELLED",
+                    cancelledAt: new Date(),
+                    cancelledBy: "ADMIN",
+                    cancellationReason: reason.trim(),
+                    refundStatus: refundDefaults.refundStatus,
+                    refundEligibleAmount: refundDefaults.refundEligibleAmount,
+                    refundFailureReason: null,
+                },
+                include: {
+                    user: true,
+                    items: {
+                        include: {
+                            product: true,
+                            variant: true,
+                        },
+                    },
+                    address: true,
+                    statusHistory: true,
+                    payments: true,
+                    refunds: {
+                        orderBy: { requestedAt: "desc" },
                     },
                 },
-                address: true,
-                statusHistory: true,
-                payments: true,
-            },
-        });
+            });
 
-        // Create status history entry
-        if (id) {
-            await prisma.orderStatusHistory.create({
+            await tx.orderStatusHistory.create({
                 data: {
                     orderId: id as string,
                     status: "CANCELLED",
-                    comment: reason || "Order cancelled",
+                    comment: comment?.trim() || `Order cancelled by admin. Reason: ${reason.trim()}`,
                 },
             });
-        }
 
-        // Handle refund if requested and payment was successful
-        if (refund && order.payments && order.payments.length > 0) {
-            const payment = order.payments[0];
-            if (payment && payment.status === "SUCCESS") {
-                await prisma.payment.update({
-                    where: { id: payment.id },
-                    data: { status: "REFUNDED" },
-                });
-
-                if (id) {
-                    await prisma.order.update({
-                        where: { id: id as string },
-                        data: { paymentStatus: "REFUNDED" },
-                    });
-                }
-            }
-        }
+            return cancelled;
+        });
 
         return sendSuccess(res, updatedOrder, "Order cancelled successfully");
     } catch (error) {
@@ -1485,64 +1602,179 @@ export const markPaymentAsPaid = async (req: Request, res: Response, next: NextF
 export const processRefund = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
-        const { amount, reason, method } = req.body;
+        const { amount, reason, adminNote } = req.body as { amount?: number | string; reason?: string; adminNote?: string };
 
-        if (!reason) {
-            throw new ValidationError("Refund reason is required");
+        const razorKeyId = process.env.RAZOR_LIVE_ID;
+        const razorKeySecret = process.env.RAZOR_LIVE_SECRET_KEY;
+        if (!razorKeyId || !razorKeySecret) {
+            throw new AppError("Razorpay is not configured", 500);
         }
 
         const order = await prisma.order.findUnique({
             where: { id: id as string },
             include: {
                 payments: {
-                    where: { status: "SUCCESS" },
+                    where: { status: { in: ["SUCCESS", "REFUNDED"] } },
+                    orderBy: { createdAt: "desc" },
+                    take: 1,
+                },
+                refunds: {
+                    orderBy: { requestedAt: "desc" },
                 },
             },
         });
-
-        if (!order) {
-            throw new NotFoundError("Order not found");
+        if (!order) throw new NotFoundError("Order not found");
+        if (order.status !== "CANCELLED") throw new ValidationError("Only cancelled orders can be refunded");
+        if (order.paymentMethod !== "ONLINE" || order.paymentStatus === "FAILED") {
+            throw new ValidationError("Refund is only allowed for successful prepaid orders");
         }
-
-        if (!order.payments || order.payments.length === 0) {
-            throw new ValidationError("No successful payment found for this order");
+        if (order.refundStatus === "PROCESSING" || order.refundStatus === "PROCESSED") {
+            throw new ValidationError("Refund is already being processed or completed");
         }
 
         const payment = order.payments[0];
-        if (!payment) {
-            throw new ValidationError("Payment not found");
+        if (!payment) throw new ValidationError("No successful payment found for this order");
+
+        const paymentDetails = (payment.paymentDetails || {}) as Record<string, any>;
+        const gatewayPaymentId = payment.gatewayPaymentId || paymentDetails.razorpayPaymentId || payment.phonePeTransactionId;
+        if (!gatewayPaymentId) {
+            throw new ValidationError("Gateway payment reference is missing for this order");
         }
 
-        const refundAmount = amount ? parseFloat(amount) : Number(payment.amount);
-
-        if (refundAmount > Number(payment.amount)) {
-            throw new ValidationError("Refund amount cannot exceed payment amount");
+        const totalPaid = Number(payment.amount || 0);
+        const alreadyRefunded = Number(payment.refundedAmount || 0);
+        const maxRefundable = Math.max(0, totalPaid - alreadyRefunded);
+        if (maxRefundable <= 0) {
+            throw new ValidationError("Refund already completed for this payment");
         }
 
-        // Update payment status
-        await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: "REFUNDED" },
+        const requestedAmount = amount !== undefined ? Number(amount) : Number(order.refundEligibleAmount || maxRefundable);
+        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+            throw new ValidationError("Refund amount must be greater than zero");
+        }
+        if (requestedAmount > maxRefundable) {
+            throw new ValidationError(`Refund amount cannot exceed refundable amount (${maxRefundable})`);
+        }
+
+        const processingRefund = await prisma.$transaction(async (tx) => {
+            await tx.order.update({
+                where: { id: order.id },
+                data: {
+                    refundStatus: "PROCESSING",
+                    refundFailureReason: null,
+                },
+            });
+
+            return tx.refund.create({
+                data: {
+                    orderId: order.id,
+                    paymentId: payment.id,
+                    gateway: "RAZORPAY",
+                    amount: requestedAmount,
+                    status: "PROCESSING",
+                    reason: reason?.trim() || null,
+                    adminNote: adminNote?.trim() || null,
+                    requestedByAdminId: req.user?.id || null,
+                },
+            });
         });
 
-        // Update order payment status
-        const updatedOrder = await prisma.order.update({
-            where: { id: id as string },
-            data: { paymentStatus: "REFUNDED" },
-            include: {
-                user: true,
-                items: {
-                    include: {
-                        product: true,
-                        variant: true,
+        const auth = Buffer.from(`${razorKeyId}:${razorKeySecret}`).toString("base64");
+        const razorResponse = await fetch(`https://api.razorpay.com/v1/payments/${gatewayPaymentId}/refund`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Basic ${auth}`,
+            },
+            body: JSON.stringify({
+                amount: Math.round(requestedAmount * 100),
+                notes: {
+                    orderId: order.id,
+                    reason: reason || "Customer cancellation refund",
+                    adminNote: adminNote || "",
+                },
+            }),
+        });
+
+        const razorData = await razorResponse.json() as Record<string, any>;
+        if (!razorResponse.ok || !razorData?.id) {
+            const failureReason = razorData?.error?.description || razorData?.error?.reason || "Razorpay refund API failed";
+            await prisma.$transaction(async (tx) => {
+                await tx.refund.update({
+                    where: { id: processingRefund.id },
+                    data: {
+                        status: "FAILED",
+                        failureReason,
+                        gatewayPayload: razorData,
+                    },
+                });
+                await tx.order.update({
+                    where: { id: order.id },
+                    data: {
+                        refundStatus: "FAILED",
+                        refundFailureReason: failureReason,
+                    },
+                });
+            });
+            throw new ValidationError(failureReason);
+        }
+
+        const newRefundedAmount = alreadyRefunded + requestedAmount;
+        const isFullRefund = newRefundedAmount >= totalPaid;
+
+        const updatedOrder = await prisma.$transaction(async (tx) => {
+            await tx.refund.update({
+                where: { id: processingRefund.id },
+                data: {
+                    status: "PROCESSED",
+                    gatewayRefundId: String(razorData.id),
+                    processedAt: new Date(),
+                    gatewayPayload: razorData,
+                },
+            });
+
+            await tx.payment.update({
+                where: { id: payment.id },
+                data: {
+                    refundedAmount: newRefundedAmount,
+                    status: isFullRefund ? "REFUNDED" : payment.status,
+                },
+            });
+
+            await tx.orderStatusHistory.create({
+                data: {
+                    orderId: order.id,
+                    status: "CANCELLED",
+                    comment: `Refund processed via Razorpay. RefundId: ${String(razorData.id)}`,
+                },
+            });
+
+            return tx.order.update({
+                where: { id: order.id },
+                data: {
+                    refundStatus: "PROCESSED",
+                    refundProcessedAt: new Date(),
+                    refundFailureReason: null,
+                    paymentStatus: isFullRefund ? "REFUNDED" : order.paymentStatus,
+                },
+                include: {
+                    user: true,
+                    items: {
+                        include: {
+                            product: true,
+                            variant: true,
+                        },
+                    },
+                    address: true,
+                    payments: true,
+                    refunds: {
+                        orderBy: { requestedAt: "desc" },
                     },
                 },
-                address: true,
-                payments: true,
-            },
+            });
         });
 
-        return sendSuccess(res, updatedOrder, "Refund processed successfully");
+        return sendSuccess(res, updatedOrder, "Refund processed successfully"); 
     } catch (error) {
         next(error);
     }

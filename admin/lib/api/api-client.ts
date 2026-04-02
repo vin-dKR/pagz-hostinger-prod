@@ -20,6 +20,13 @@ export interface ApiResponse<T> {
     message?: string;
 }
 
+function createApiClientError(message: string, statusCode = 0, errors?: Record<string, string[]>): Error & ApiError {
+    const err = new Error(message) as Error & ApiError;
+    err.statusCode = statusCode;
+    err.errors = errors;
+    return err;
+}
+
 /**
  * Decode JWT token to get payload (without verification)
  */
@@ -198,11 +205,7 @@ async function fetchAPI<T>(
 
         if (!response.ok) {
             const errorMessage = data.message || data.error || 'An error occurred';
-            const error: ApiError = {
-                message: errorMessage,
-                statusCode: response.status,
-                errors: data.errors,
-            };
+            const error = createApiClientError(errorMessage, response.status, data.errors);
 
             // Handle 401 Unauthorized errors
             if (response.status === 401) {
@@ -274,18 +277,12 @@ async function fetchAPI<T>(
     } catch (error) {
         // Handle network errors
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
-            throw {
-                message: 'Network error. Please check if the API server is running.',
-                statusCode: 0,
-            } as ApiError;
+            throw createApiClientError('Network error. Please check if the API server is running.', 0);
         }
 
         // Handle AbortError (timeout, cancelled requests)
         if (error instanceof Error && error.name === 'AbortError') {
-            throw {
-                message: 'Request timeout. Please try again.',
-                statusCode: 0,
-            } as ApiError;
+            throw createApiClientError('Request timeout. Please try again.', 0);
         }
 
         // Re-throw if it's already an ApiError
@@ -294,10 +291,10 @@ async function fetchAPI<T>(
         }
 
         // Wrap unknown errors
-        throw {
-            message: error instanceof Error ? error.message : 'An unexpected error occurred',
-            statusCode: 0,
-        } as ApiError;
+        throw createApiClientError(
+            error instanceof Error ? error.message : 'An unexpected error occurred',
+            0
+        );
     }
 }
 
@@ -417,11 +414,7 @@ export async function uploadFile<T>(
 
         if (!response.ok) {
             const errorMessage = data.message || data.error || 'An error occurred';
-            const error: ApiError = {
-                message: errorMessage,
-                statusCode: response.status,
-                errors: data.errors,
-            };
+            const error = createApiClientError(errorMessage, response.status, data.errors);
 
             // Handle 401 Unauthorized errors (same as fetchAPI)
             if (response.status === 401) {
@@ -478,27 +471,21 @@ export async function uploadFile<T>(
         return data;
     } catch (error) {
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
-            throw {
-                message: 'Network error. Please check if the API server is running.',
-                statusCode: 0,
-            } as ApiError;
+            throw createApiClientError('Network error. Please check if the API server is running.', 0);
         }
 
         if (error instanceof Error && error.name === 'AbortError') {
-            throw {
-                message: 'Upload timeout. Please try again.',
-                statusCode: 0,
-            } as ApiError;
+            throw createApiClientError('Upload timeout. Please try again.', 0);
         }
 
         if (error && typeof error === 'object' && 'statusCode' in error) {
         throw error as ApiError;
         }
 
-        throw {
-            message: error instanceof Error ? error.message : 'An unexpected error occurred during file upload',
-            statusCode: 0,
-        } as ApiError;
+        throw createApiClientError(
+            error instanceof Error ? error.message : 'An unexpected error occurred during file upload',
+            0
+        );
     }
 }
 

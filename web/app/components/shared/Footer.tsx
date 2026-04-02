@@ -105,7 +105,7 @@ export default function Footer() {
                                 </p>
                                 <div className="flex items-center gap-1.5 md:gap-2">
                                     <a
-                                        href="https://www.facebook.com/profile.php?id=61565966005738"
+                                        href="https://www.facebook.com/profile.php?id=61582167934434"
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
@@ -126,28 +126,7 @@ export default function Footer() {
                                     </a>
 
                                     <a
-                                        href="https://x.com/printiphyindia"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
-                                        aria-label="X"
-                                    >
-                                        <div className="absolute inset-0 bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                                        <svg
-                                            width="12"
-                                            height="12"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            className="relative z-10 text-gray-600 group-hover:text-gray-900 group-hover:scale-110 transition-all duration-200 md:w-3.5 md:h-3.5"
-                                        >
-                                            <path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path>
-                                        </svg>
-                                    </a>
-
-                                    <a
-                                        href="https://www.instagram.com/printiphyindia"
+                                        href="https://www.instagram.com/pagz.in"
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
@@ -169,50 +148,6 @@ export default function Footer() {
                                         </svg>
                                     </a>
 
-                                    <a
-                                        href="https://www.linkedin.com/company/printiphy/"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
-                                        aria-label="LinkedIn"
-                                    >
-                                        <div className="absolute inset-0 bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                                        <svg
-                                            width="12"
-                                            height="12"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            className="relative z-10 text-gray-600 group-hover:text-gray-900 group-hover:scale-110 transition-all duration-200 md:w-3.5 md:h-3.5"
-                                        >
-                                            <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path>
-                                            <rect x="2" y="9" width="4" height="12"></rect>
-                                            <circle cx="4" cy="4" r="2"></circle>
-                                        </svg>
-                                    </a>
-
-                                    <a
-                                        href="https://www.youtube.com/@printiphyIndia"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-gray-300 flex items-center justify-center group overflow-hidden"
-                                        aria-label="YouTube"
-                                    >
-                                        <div className="absolute inset-0 bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                                        <svg
-                                            width="12"
-                                            height="12"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            className="relative z-10 text-gray-600 group-hover:text-gray-900 group-hover:scale-110 transition-all duration-200 md:w-3.5 md:h-3.5"
-                                        >
-                                            <path d="M10 15l5-3-5-3v6z"></path>
-                                            <path d="M21.8 8s-.2-1.4-.8-2c-.8-.8-1.7-.8-2.1-.9C15.9 5 12 5 12 5h0s-3.9 0-6.9.1c-.4.1-1.3.1-2.1.9-.6.6-.8 2-.8 2S2 9.6 2 11.2v1.5C2 14.4 2.2 16 2.2 16s.2 1.4.8 2c.8.8 1.8.8 2.3.9 1.7.2 6.7.2 6.7.2s3.9 0 6.9-.1c.4-.1 1.3-.1 2.1-.9.6-.6.8-2 .8-2s.2-1.6.2-3.2v-1.5C22 9.6 21.8 8 21.8 8z"></path>
-                                        </svg>
-                                    </a>
                                 </div>
                             </div>
 
@@ -281,8 +216,6 @@ export default function Footer() {
                                                     info@pagz.in
                                                 </a>
                                             </p>
-                                            <p className="pt-2 font-medium text-gray-900">Company Name</p>
-                                            <p>HRNG PRINTS PVT LTD</p>
                                         </div>
                                     </div>
                                 </div>

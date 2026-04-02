@@ -18,10 +18,18 @@ export interface ApiResponse<T> {
     message?: string;
 }
 
+function createApiClientError(message: string, statusCode = 0, errors?: Record<string, string[]>): Error & ApiError {
+    const err = new Error(message) as Error & ApiError;
+    err.statusCode = statusCode;
+    err.errors = errors;
+    return err;
+}
+
 import { getCookie, setCookie, removeCookie } from './cookies';
 import { supabase } from './supabase';
 
 const AUTH_TOKEN_COOKIE = 'auth_token';
+const LEGACY_AUTH_TOKEN_COOKIE = 'refreshToken';
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -29,7 +37,17 @@ let refreshPromise: Promise<string | null> | null = null;
  * Get authentication token from cookies
  */
 export function getAuthToken(): string | null {
-    return getCookie(AUTH_TOKEN_COOKIE);
+    const token = getCookie(AUTH_TOKEN_COOKIE);
+    if (token) return token;
+
+    // Backward compatibility: some sessions still store bearer token in refreshToken cookie.
+    const legacyToken = getCookie(LEGACY_AUTH_TOKEN_COOKIE);
+    if (legacyToken) {
+        setCookie(AUTH_TOKEN_COOKIE, legacyToken, 7);
+        return legacyToken;
+    }
+
+    return null;
 }
 
 /**
@@ -39,8 +57,11 @@ export function setAuthToken(token: string | undefined): void {
     if (token) {
         // Store token in cookie with 7 day expiration
         setCookie(AUTH_TOKEN_COOKIE, token, 7);
+        // Keep legacy cookie in sync so old sessions don't lose auth unexpectedly.
+        setCookie(LEGACY_AUTH_TOKEN_COOKIE, token, 7);
     } else {
         removeCookie(AUTH_TOKEN_COOKIE);
+        removeCookie(LEGACY_AUTH_TOKEN_COOKIE);
     }
 }
 
@@ -194,11 +215,11 @@ async function fetchAPI<T>(
 
         if (!response.ok) {
             // Handle API error responses
-            const error: ApiError = {
-                message: data.message || data.error || 'An error occurred',
-                statusCode: response.status,
-                errors: data.errors,
-            };
+            const error = createApiClientError(
+                data.message || data.error || 'An error occurred',
+                response.status,
+                data.errors
+            );
 
             // Handle 401 Unauthorized errors
             if (response.status === 401) {
@@ -244,14 +265,11 @@ async function fetchAPI<T>(
     } catch (error) {
         // Handle network errors
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
-            throw {
-                message: 'Network error. Please check if the API server is running.',
-                statusCode: 0,
-            } as ApiError;
+            throw createApiClientError('Network error. Please check if the API server is running.', 0);
         }
 
         // Re-throw API errors
-        throw error as ApiError;
+        throw error as Error & ApiError;
     }
 }
 
@@ -370,11 +388,11 @@ export async function uploadFile<T>(
         }
 
         if (!response.ok) {
-            const error: ApiError = {
-                message: data.message || data.error || 'An error occurred',
-                statusCode: response.status,
-                errors: data.errors,
-            };
+            const error = createApiClientError(
+                data.message || data.error || 'An error occurred',
+                response.status,
+                data.errors
+            );
 
             // Handle 401 Unauthorized errors
             if (response.status === 401) {
@@ -407,12 +425,9 @@ export async function uploadFile<T>(
         return data;
     } catch (error) {
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
-            throw {
-                message: 'Network error. Please check if the API server is running.',
-                statusCode: 0,
-            } as ApiError;
+            throw createApiClientError('Network error. Please check if the API server is running.', 0);
         }
-        throw error as ApiError;
+        throw error as Error & ApiError;
     }
 }
 

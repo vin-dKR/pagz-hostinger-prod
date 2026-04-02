@@ -15,6 +15,7 @@ export type OrderStatus =
 
 export type PaymentMethod = 'ONLINE' | 'OFFLINE';
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
+export type RefundStatus = 'NOT_REQUIRED' | 'PENDING' | 'PROCESSING' | 'PROCESSED' | 'FAILED' | 'MANUAL_REVIEW';
 
 export interface OrderItemAddon {
     id: string;
@@ -81,6 +82,13 @@ export interface Order {
     status: OrderStatus;
     paymentMethod: PaymentMethod;
     paymentStatus: PaymentStatus;
+    refundStatus?: RefundStatus;
+    refundEligibleAmount?: number;
+    refundProcessedAt?: string;
+    refundFailureReason?: string;
+    cancelledAt?: string;
+    cancelledBy?: 'CUSTOMER' | 'ADMIN' | 'SYSTEM';
+    cancellationReason?: string;
     phonePeOrderId?: string;
     couponId?: string;
     createdAt: string;
@@ -95,6 +103,17 @@ export interface Order {
         country: string;
     };
     statusHistory?: OrderStatusHistory[];
+    refunds?: Array<{
+        id: string;
+        gateway?: string;
+        gatewayRefundId?: string;
+        amount: number;
+        status: 'PROCESSING' | 'PROCESSED' | 'FAILED' | 'MANUAL_REVIEW';
+        reason?: string;
+        requestedAt: string;
+        processedAt?: string;
+        failureReason?: string;
+    }>;
 }
 
 export interface CreateOrderData {
@@ -139,6 +158,13 @@ export async function getOrder(id: string): Promise<ApiResponse<Order>> {
  */
 export async function createOrder(data: CreateOrderData): Promise<ApiResponse<Order>> {
     return post<Order>('/customer/orders', data);
+}
+
+export async function cancelOrder(
+    orderId: string,
+    data: { reason: string; comment?: string }
+): Promise<ApiResponse<{ order: Order; refundStatus: RefundStatus; timelineMessage: string }>> {
+    return post<{ order: Order; refundStatus: RefundStatus; timelineMessage: string }>(`/customer/orders/${orderId}/cancel`, data);
 }
 
 /**

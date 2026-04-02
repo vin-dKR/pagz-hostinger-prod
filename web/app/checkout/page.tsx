@@ -13,7 +13,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useCheckout } from "@/hooks/checkout/useCheckout";
 import { useCart } from "@/contexts/CartContext";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
-import { createPhonePeOrder } from "@/lib/api/payments";
+import { createRazorpayOrder, verifyRazorpayPayment } from "@/lib/api/payments";
 import CheckoutFilesReview from "../components/CheckoutFilesReview";
 import { toastWarning, toastError } from "@/lib/utils/toast";
 
@@ -42,8 +42,26 @@ function CheckoutPageContent() {
         error,
     } = useCheckout();
 
-    const { removeItem } = useCart();
+    const { removeItem, refetch: refetchCart } = useCart();
     const [isPaying, setIsPaying] = useState(false);
+    const [isSyncingReorder, setIsSyncingReorder] = useState(false);
+    const [isCompletingPayment, setIsCompletingPayment] = useState(false);
+
+    const itemsParam = searchParams.get('items');
+
+    const loadRazorpayScript = (): Promise<boolean> => {
+        if (typeof window === "undefined") return Promise.resolve(false);
+        if ((window as any).Razorpay) return Promise.resolve(true);
+
+        return new Promise((resolve) => {
+            const script = document.createElement("script");
+            script.src = "https://checkout.razorpay.com/v1/checkout.js";
+            script.async = true;
+            script.onload = () => resolve(true);
+            script.onerror = () => resolve(false);
+            document.body.appendChild(script);
+        });
+    };
 
     // Check if this is a buyNow flow (has buy-now-temp item)
     const isBuyNowFlow = useMemo(() => {
@@ -55,22 +73,42 @@ function CheckoutPageContent() {
         // Only check after loading is complete
         if (loading) return;
         
-        const hasItemsParam = searchParams.get('items');
+        const hasItemsParam = itemsParam;
         const hasBuyNowData = typeof window !== 'undefined' && sessionStorage.getItem('buyNow');
         
         // If no items param, no buyNow data, and no cart items, redirect to cart
         // This prevents direct access to checkout without proper context
-        if (!hasItemsParam && !hasBuyNowData && allCartItems.length === 0 && !isBuyNowFlow) {
+        if (!hasItemsParam && !hasBuyNowData && allCartItems.length === 0 && !isBuyNowFlow && !isCompletingPayment) {
             router.push('/cart');
         }
-    }, [loading, allCartItems.length, searchParams, router, isBuyNowFlow]);
+    }, [loading, allCartItems.length, itemsParam, router, isBuyNowFlow, isCompletingPayment]);
 
     // Get selected item IDs from URL params
     const selectedItemIds = useMemo(() => {
-        const itemsParam = searchParams.get('items');
         if (!itemsParam) return null;
         return new Set(itemsParam.split(',').filter(Boolean));
-    }, [searchParams]);
+    }, [itemsParam]);
+
+    // Reorder flow lands on checkout with ?items=. Force-refresh cart context before empty-state checks.
+    useEffect(() => {
+        if (!itemsParam) return;
+        let cancelled = false;
+        const syncCart = async () => {
+            setIsSyncingReorder(true);
+            try {
+                await refetchCart();
+            } finally {
+                if (!cancelled) {
+                    setIsSyncingReorder(false);
+                }
+            }
+        };
+
+        void syncCart();
+        return () => {
+            cancelled = true;
+        };
+    }, [itemsParam, refetchCart]);
 
     // Filter cart items to only show selected items
     // If buyNow flow, ignore URL params and show all items (buyNow item)
@@ -184,6 +222,10 @@ function CheckoutPageContent() {
             toastWarning("Your cart is empty.");
             return;
         }
+        if (calculatedTotal < 1) {
+            toastWarning("Minimum payable amount is ₹1.00. Please increase your order total.");
+            return;
+        }
 
         try {
             setIsPaying(true);
@@ -196,8 +238,8 @@ function CheckoutPageContent() {
                 sessionStorage.setItem('pendingCartItemIds', JSON.stringify(cartItemIds));
             }
 
-            // Create PhonePe order (returns redirect URL)
-            const response = await createPhonePeOrder({
+            // Create Razorpay order
+            const response = await createRazorpayOrder({
                 items: cartItems.map((item: any) => {
                     // Extract addon IDs from cart item
                     let addonIds: string[] = [];
@@ -228,13 +270,73 @@ function CheckoutPageContent() {
                 throw new Error(response.error || "Failed to initiate payment");
             }
 
-            // Clear buyNow data from sessionStorage if it exists
-            if (typeof window !== 'undefined' && sessionStorage.getItem('buyNow')) {
-                sessionStorage.removeItem('buyNow');
+            const sdkLoaded = await loadRazorpayScript();
+            if (!sdkLoaded || !(window as any).Razorpay) {
+                throw new Error("Failed to load Razorpay checkout. Please try again.");
             }
 
-            // Redirect to PhonePe payment page
-            window.location.href = response.data.redirectUrl;
+            const razorpay = new (window as any).Razorpay({
+                key: response.data.keyId,
+                amount: response.data.amount,
+                currency: response.data.currency,
+                name: "PAGZ",
+                description: "Order Payment",
+                order_id: response.data.razorpayOrderId,
+                handler: async (rzpResponse: {
+                    razorpay_order_id: string;
+                    razorpay_payment_id: string;
+                    razorpay_signature: string;
+                }) => {
+                    try {
+                        const verifyResp = await verifyRazorpayPayment({
+                            merchantOrderId: response.data!.merchantOrderId,
+                            razorpayOrderId: rzpResponse.razorpay_order_id,
+                            razorpayPaymentId: rzpResponse.razorpay_payment_id,
+                            razorpaySignature: rzpResponse.razorpay_signature,
+                        });
+
+                        if (!verifyResp.success || !verifyResp.data?.verified || !verifyResp.data.orderId) {
+                            throw new Error(verifyResp.error || verifyResp.data?.message || "Payment verification failed");
+                        }
+
+                        setIsCompletingPayment(true);
+                        router.replace(`/orders/${verifyResp.data.orderId}`);
+
+                        try {
+                            const pendingIds = sessionStorage.getItem("pendingCartItemIds");
+                            if (pendingIds) {
+                                const ids: string[] = JSON.parse(pendingIds);
+                                await Promise.all(ids.map((id) => removeItem(id)));
+                                sessionStorage.removeItem("pendingCartItemIds");
+                            }
+                        } catch {
+                            // Do not fail payment flow due to cart cleanup issue
+                        }
+
+                        if (typeof window !== "undefined" && sessionStorage.getItem("buyNow")) {
+                            sessionStorage.removeItem("buyNow");
+                        }
+                    } catch (verifyErr) {
+                        const verifyMessage = verifyErr instanceof Error
+                            ? verifyErr.message
+                            : "Failed to verify payment. Please contact support if amount was deducted.";
+                        toastError(verifyMessage);
+                    } finally {
+                        setIsPaying(false);
+                    }
+                },
+                modal: {
+                    ondismiss: () => {
+                        setIsPaying(false);
+                        toastWarning("Payment cancelled.");
+                    },
+                },
+                theme: {
+                    color: "#008ECC",
+                },
+            });
+
+            razorpay.open();
         } catch (err) {
             console.error("Payment error", err);
             const message = err instanceof Error ? err.message : "Payment failed. Please try again.";
@@ -249,7 +351,7 @@ function CheckoutPageContent() {
         { label: "Checkout", href: "/checkout" },
     ];
 
-    if (loading) {
+    if (loading || isSyncingReorder) {
         return (
             <div className="min-h-screen py-8 flex items-center justify-center">
                 <BarsSpinner />
@@ -277,7 +379,7 @@ function CheckoutPageContent() {
                     <div className="bg-white rounded-lg p-12 text-center">
                         <p className="text-gray-600 text-lg mb-4">Your cart is empty</p>
                         <a
-                            href="/products"
+                            href="/services"
                             className="inline-block px-6 py-3 bg-[#008ECC] text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
                         >
                             Continue Shopping

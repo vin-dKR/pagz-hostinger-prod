@@ -273,7 +273,7 @@ function CartPageContent() {
             const updateResponse = await toastPromise(
                 updateCartItem(itemId, {
                     quantity: cartItem.quantity, // Include quantity to satisfy backend validation
-                    customDesignUrl: allUrls.join(','),
+                    customDesignUrl: allUrls,
                 }),
                 {
                     loading: 'Updating cart item...',
@@ -374,7 +374,7 @@ function CartPageContent() {
                                         Looks like you haven't added anything to your cart yet. Start shopping to add items.
                                     </p>
                                     <Link
-                                        href="/products"
+                                        href="/services"
                                         className="inline-flex items-center justify-center px-5 sm:px-6 py-2.5 sm:py-3 bg-blue-500 border border-blue-600 text-white rounded-xl hover:bg-blue-600 transition-all duration-200 font-medium text-sm sm:text-base"
                                     >
                                         Continue Shopping

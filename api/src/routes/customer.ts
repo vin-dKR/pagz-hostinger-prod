@@ -3,6 +3,7 @@ import {
     createOrder,
     getMyOrders,
     getOrder,
+    cancelMyOrder,
     trackOrder,
     getOrderInvoicePDF,
 } from "../controllers/orderController.js";
@@ -443,6 +444,7 @@ router.get("/orders", getMyOrders);
  *                   type: string
  */
 router.get("/orders/:id", getOrder);
+router.post("/orders/:id/cancel", cancelMyOrder);
 router.get("/orders/:id/invoice/pdf", getOrderInvoicePDF);
 
 export default router;

@@ -79,28 +79,6 @@ export default function ReturnPolicyPage() {
                         </div>
                     </section>
 
-                    {/* Exchange Process */}
-                    <section>
-                        <div className="flex items-start gap-4 mb-4">
-                            <div className="w-10 h-10 bg-[#008ECC]/10 rounded-xl flex items-center justify-center shrink-0">
-                                <svg className="w-5 h-5 text-[#008ECC]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                </svg>
-                            </div>
-                            <div className="flex-1">
-                                <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-4">Exchange Process</h2>
-                                <div className="space-y-4 text-base sm:text-lg text-gray-600 leading-relaxed">
-                                    <p>
-                                        For exchange / return accepted request(s) (as applicable), once your returned product / item is received and inspected by us, we will send you an email to notify you about receipt of the returned / exchanged product.
-                                    </p>
-                                    <p>
-                                        Further, if the same has been approved after the quality check at our end, your request (i.e. return / exchange) will be processed in accordance with our policies.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
                     {/* Additional Terms */}
                     <section>
                         <div className="flex items-start gap-4 mb-4">

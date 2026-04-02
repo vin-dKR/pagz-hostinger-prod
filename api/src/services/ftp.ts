@@ -323,6 +323,29 @@ export function extractFtpPathFromUrl(urlOrPath: string): string {
     }
 }
 
+function decodePathSafely(value: string): string {
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value;
+    }
+}
+
+function normalizeRemoteDeletePath(remoteFilePath: string): string {
+    const extractedPath = extractFtpPathFromUrl(remoteFilePath);
+    const decodedPath = decodePathSafely(extractedPath).replace(/\\/g, "/");
+    const withoutLeadingSlash = decodedPath.replace(/^\/+/, "");
+
+    // Support values stored as "public_html/orders/..." even when current directory
+    // is already inside FTP_REMOTE_DIR.
+    const publicRootPrefix = `${FTP_REMOTE_DIR.replace(/^\/+|\/+$/g, "")}/`;
+    if (withoutLeadingSlash.startsWith(publicRootPrefix)) {
+        return withoutLeadingSlash.slice(publicRootPrefix.length);
+    }
+
+    return withoutLeadingSlash;
+}
+
 /**
  * Delete a file from FTP server
  * @param remoteFilePath - Full path to the file on FTP server (relative to public_html)
@@ -341,22 +364,53 @@ export async function deleteFromFTP(remoteFilePath: string): Promise<void> {
             await client.cd(FTP_REMOTE_DIR);
         }
         
-        // Remove public_html prefix if present
-        const cleanPath = remoteFilePath.startsWith(FTP_REMOTE_DIR + "/")
-            ? remoteFilePath.substring(FTP_REMOTE_DIR.length + 1)
-            : remoteFilePath;
-        
-        const pathParts = cleanPath.split("/");
-        const fileName = pathParts.pop();
-        const dirPath = pathParts.join("/");
-        
-        if (dirPath) {
-            await client.cd(dirPath);
+        const cleanPath = normalizeRemoteDeletePath(remoteFilePath);
+        if (!cleanPath) {
+            throw new Error("Invalid FTP file path");
         }
-        
-        if (fileName) {
-            await client.remove(fileName);
+
+        const currentDir = await client.pwd();
+        const currentDirName = path.posix.basename(currentDir.replace(/\/+$/, ""));
+        const configuredDirName = path.posix.basename(FTP_REMOTE_DIR.replace(/\/+$/, ""));
+
+        // Try multiple variants to avoid false negatives when path includes
+        // already-entered base folders such as "orders/...".
+        const candidates = Array.from(
+            new Set(
+                [
+                    cleanPath,
+                    currentDirName && cleanPath.startsWith(`${currentDirName}/`)
+                        ? cleanPath.slice(currentDirName.length + 1)
+                        : "",
+                    configuredDirName && cleanPath.startsWith(`${configuredDirName}/`)
+                        ? cleanPath.slice(configuredDirName.length + 1)
+                        : "",
+                ].filter(Boolean)
+            )
+        );
+
+        let lastError: unknown = null;
+        let onlyNotFoundErrors = true;
+        for (const candidate of candidates) {
+            try {
+                await client.remove(candidate);
+                return;
+            } catch (error) {
+                lastError = error;
+                const msg = error instanceof Error ? error.message : String(error);
+                const isNotFound = msg.includes("550") && msg.toLowerCase().includes("no such file");
+                if (!isNotFound) {
+                    onlyNotFoundErrors = false;
+                }
+            }
         }
+
+        // Deleting an already-missing file is effectively idempotent success.
+        if (onlyNotFoundErrors && candidates.length > 0) {
+            return;
+        }
+
+        throw lastError instanceof Error ? lastError : new Error("Unable to delete FTP file");
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error("[FTP] Delete failed:", errorMessage);

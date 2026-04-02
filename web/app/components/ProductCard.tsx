@@ -10,6 +10,8 @@ import { addToCart } from "@/lib/api/cart";
 import { addToWishlist, removeFromWishlist, checkWishlist } from "@/lib/api/wishlist";
 import { useCart } from "@/contexts/CartContext";
 import { toastError, toastPromise } from "@/lib/utils/toast";
+import { redirectToLoginWithReturn } from "@/lib/utils/auth-redirect";
+import { savePendingProductForCartIntent } from "@/lib/utils/pending-cart-intent";
 
 interface ProductCardProps {
     id: string;
@@ -69,7 +71,12 @@ export default function ProductCard({
         }
 
         if (!isAuthenticated) {
-            router.push('/auth/login');
+            try {
+                await savePendingProductForCartIntent({ productId: id, quantity: 1 });
+                redirectToLoginWithReturn(undefined, { intent: "add_to_cart" });
+            } catch (error) {
+                toastError("Unable to save your cart action. Please try again.");
+            }
             return;
         }
 

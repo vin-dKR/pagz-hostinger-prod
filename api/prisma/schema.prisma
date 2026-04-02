@@ -484,6 +484,13 @@ model Order {
   status          OrderStatus   @default(PENDING_REVIEW)
   paymentMethod   PaymentMethod
   paymentStatus   PaymentStatus @default(PENDING)
+  cancelledAt     DateTime?
+  cancelledBy     CancelledBy?
+  cancellationReason String?
+  refundStatus    RefundStatus  @default(NOT_REQUIRED)
+  refundEligibleAmount Decimal? @db.Decimal(10, 2)
+  refundProcessedAt DateTime?
+  refundFailureReason String?
   phonePeOrderId  String?       @unique
   couponId        String? // Applied coupon
   createdAt       DateTime      @default(now())
@@ -493,6 +500,7 @@ model Order {
   address       Address              @relation(fields: [addressId], references: [id])
   items         OrderItem[]
   payments      Payment[]
+  refunds       Refund[]
   statusHistory OrderStatusHistory[]
 
   @@index([userId])
@@ -502,6 +510,7 @@ model Order {
   @@index([userId, status])
   @@index([status, createdAt])
   @@index([phonePeOrderId])
+  @@index([refundStatus])
   @@map("orders")
 }
 
@@ -558,6 +567,10 @@ model Payment {
   status            PaymentStatus @default(PENDING)
   method            PaymentMethod
   paymentInstrument String?       // UPI, CARD, NETBANKING, WALLET
+  gateway           String?
+  gatewayPaymentId  String?
+  gatewayOrderId    String?
+  refundedAmount    Decimal       @default(0) @db.Decimal(10, 2)
   paymentDetails    Json?         // { vpa, cardNetwork, last4, bankName, etc. }
   couponId          String? // Applied coupon
   createdAt         DateTime      @default(now())
@@ -566,6 +579,7 @@ model Payment {
   order  Order   @relation(fields: [orderId], references: [id])
   user   User    @relation(fields: [userId], references: [id])
   coupon Coupon? @relation(fields: [couponId], references: [id])
+  refunds Refund[]
 
   @@index([userId])
   @@index([orderId])
@@ -573,7 +587,37 @@ model Payment {
   @@index([userId, status])
   @@index([phonePeOrderId])
   @@index([phonePeTransactionId])
+  @@index([gatewayPaymentId])
+  @@index([gatewayOrderId])
   @@map("payments")
+}
+
+model Refund {
+  id                 String           @id @default(uuid())
+  orderId            String
+  paymentId          String
+  gateway            RefundGateway
+  gatewayRefundId    String?
+  amount             Decimal          @db.Decimal(10, 2)
+  status             RefundRecordStatus
+  reason             String?
+  adminNote          String?
+  requestedByAdminId String?
+  requestedAt        DateTime         @default(now())
+  processedAt        DateTime?
+  failureReason      String?
+  gatewayPayload     Json?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([gatewayRefundId])
+  @@map("refunds")
 }
 
 // PendingPayment model (stores cart data during PhonePe redirect)
@@ -855,6 +899,32 @@ enum PaymentStatus {
   SUCCESS
   FAILED
   REFUNDED
+}
+
+enum CancelledBy {
+  CUSTOMER
+  ADMIN
+  SYSTEM
+}
+
+enum RefundStatus {
+  NOT_REQUIRED
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  MANUAL_REVIEW
+}
+
+enum RefundGateway {
+  RAZORPAY
+}
+
+enum RefundRecordStatus {
+  PROCESSING
+  PROCESSED
+  FAILED
+  MANUAL_REVIEW
 }
 
 enum DiscountType {

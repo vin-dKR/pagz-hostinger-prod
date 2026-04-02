@@ -12,7 +12,9 @@ import { useRouter } from "next/navigation";
 
 export default function ProfileSidebar() {
     const pathname = usePathname();
-    const isProfilePage = pathname === "/profile";
+    const normalizePath = (path: string) => (path.length > 1 ? path.replace(/\/+$/, "") : path);
+    const normalizedPathname = normalizePath(pathname);
+    const isProfilePage = normalizedPathname === "/profile";
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const { user, logout } = useAuth();
     const router = useRouter();
@@ -33,10 +35,11 @@ export default function ProfileSidebar() {
     ];
 
     const isActive = (href: string) => {
+        const normalizedHref = normalizePath(href);
         if (href === "/profile") {
-            return pathname === "/profile";
+            return normalizedPathname === "/profile";
         }
-        return pathname.startsWith(href);
+        return normalizedPathname.startsWith(normalizedHref);
     };
 
     // Get current active tab label for mobile header

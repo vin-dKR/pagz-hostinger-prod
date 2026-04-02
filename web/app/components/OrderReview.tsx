@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { CartItem, AddonRule } from "@/lib/api/cart";
 import { FileText } from "lucide-react";
 
@@ -58,10 +57,7 @@ export default function OrderReview({ items }: OrderReviewProps) {
 
                 return (
                     <div key={item.id} className="flex gap-3 pb-3 border-b border-gray-100 last:border-0">
-                        <Link
-                            href={`/products/${item.productId}`}
-                            className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-100 shrink-0"
-                        >
+                        <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-100 shrink-0">
                             <Image
                                 src={productImage}
                                 alt={productName}
@@ -69,13 +65,11 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                 height={64}
                                 className="w-full h-full object-cover"
                             />
-                        </Link>
+                        </div>
                         <div className="flex-1 min-w-0">
-                            <Link href={`/products/${item.productId}`}>
-                                <h4 className="font-medium text-gray-900 text-sm hover:text-blue-600 transition-colors truncate">
-                                    {productName}
-                                </h4>
-                            </Link>
+                            <h4 className="font-medium text-gray-900 text-sm truncate">
+                                {productName}
+                            </h4>
                             {variant && (
                                 <p className="text-xs text-gray-600">Size: {variant.name}</p>
                             )}

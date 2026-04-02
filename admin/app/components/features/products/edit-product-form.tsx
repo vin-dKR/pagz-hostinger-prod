@@ -36,6 +36,22 @@ interface EditProductFormProps {
     productId: string;
 }
 
+const UPLOADS_BASE_URL = process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || 'https://pagz.in';
+
+function normalizeImageSrc(src?: string | null): string {
+    if (!src) return '/images/rows/row1.png';
+    if (
+        src.startsWith('http://') ||
+        src.startsWith('https://') ||
+        src.startsWith('data:') ||
+        src.startsWith('blob:')
+    ) {
+        return src;
+    }
+    if (src.startsWith('/')) return src;
+    return `${UPLOADS_BASE_URL}/${src}`;
+}
+
 export function EditProductForm({ productId }: EditProductFormProps) {
     const router = useRouter();
     const { confirm, ConfirmDialog } = useConfirm();
@@ -447,7 +463,7 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                                                 {img.url && (
                                                     <div className="relative w-20 h-20 rounded overflow-hidden border">
                                                         <Image
-                                                            src={img.url}
+                                                            src={normalizeImageSrc(img.url)}
                                                             alt={img.alt || 'Product image'}
                                                             fill
                                                             className="object-cover"
@@ -679,7 +695,7 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                                         {img.url && (
                                             <div className="relative w-20 h-20 rounded overflow-hidden border">
                                                 <Image
-                                                    src={img.url}
+                                                    src={normalizeImageSrc(img.url)}
                                                     alt={img.alt || 'Product image'}
                                                     fill
                                                     className="object-cover"

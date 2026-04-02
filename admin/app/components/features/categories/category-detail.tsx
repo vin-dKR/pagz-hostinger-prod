@@ -73,11 +73,13 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         pageDescription: string;
         featuresText: string;
         fileUploadRequired: boolean;
+        comingSoon: boolean;
     }>({
         pageTitle: '',
         pageDescription: '',
         featuresText: '',
         fileUploadRequired: false,
+        comingSoon: false,
     });
 
     const [childCategoryIds, setChildCategoryIds] = useState<string[]>([]);
@@ -129,6 +131,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                     pageDescription: cfg?.pageDescription || cat.description || '',
                     featuresText: (cfg?.features || []).join('\n'),
                     fileUploadRequired: cfg?.fileUploadRequired ?? false,
+                    comingSoon: cfg?.layoutConfig?.comingSoon ?? false,
                 });
 
                 const children = categories.filter((c) => c.parentId === categoryId);
@@ -216,6 +219,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                 pageDescription: cfg?.pageDescription || cat.description || '',
                 featuresText: (cfg?.features || []).join('\n'),
                 fileUploadRequired: cfg?.fileUploadRequired ?? false,
+                comingSoon: cfg?.layoutConfig?.comingSoon ?? false,
             });
 
             setChildCategoryIds(childIds);
@@ -242,6 +246,10 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                     ? configForm.featuresText.split('\n').map((f) => f.trim()).filter(Boolean)
                     : [],
                 fileUploadRequired: configForm.fileUploadRequired,
+                layoutConfig: {
+                    ...(config?.layoutConfig && typeof config.layoutConfig === 'object' ? config.layoutConfig : {}),
+                    comingSoon: configForm.comingSoon,
+                },
             };
 
             const updatedConfig = await upsertCategoryConfigurationApi(category.id, payload);
@@ -528,6 +536,22 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                                         className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                     />
                                     <Label htmlFor="fileUploadRequired">File upload required</Label>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        id="comingSoon"
+                                        type="checkbox"
+                                        checked={configForm.comingSoon}
+                                        onChange={(e) =>
+                                            setConfigForm((prev) => ({
+                                                ...prev,
+                                                comingSoon: e.target.checked,
+                                            }))
+                                        }
+                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <Label htmlFor="comingSoon">Show coming soon page</Label>
                                 </div>
 
                                 <div className="flex justify-end gap-2">

@@ -143,7 +143,10 @@ export interface CategoryConfiguration {
     pageDescription?: string;
     features?: string[] | null;
     breadcrumbConfig?: any;
-    layoutConfig?: any;
+    layoutConfig?: {
+        comingSoon?: boolean;
+        [key: string]: any;
+    } | null;
     fileUploadRequired: boolean;
     fileUploadConfig?: any;
 }
@@ -153,7 +156,10 @@ export interface UpsertCategoryConfigurationData {
     pageDescription?: string;
     features?: string[] | null;
     breadcrumbConfig?: any;
-    layoutConfig?: any;
+    layoutConfig?: {
+        comingSoon?: boolean;
+        [key: string]: any;
+    } | null;
     fileUploadRequired?: boolean;
     fileUploadConfig?: any;
 }

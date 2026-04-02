@@ -109,10 +109,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!token) {
             setLoading(false);
-            if (!cachedUser && !user) {
-                removeUserCookie();
-                setUser(null);
-            }
+            // Token is source of truth for authenticated requests.
+            // If token is missing, always clear cached user to avoid "logged in UI but unauthorized API" state.
+            removeUserCookie();
+            setUser(null);
             isCheckingAuthRef.current = false;
             return;
         }
@@ -246,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const contextValue = useMemo(() => ({
         user,
         loading,
-        isAuthenticated: !!user,
+        isAuthenticated: !!user && !!getAuthToken(),
         login,
         register,
         logout,

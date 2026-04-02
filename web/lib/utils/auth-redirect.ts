@@ -3,6 +3,8 @@
  * Handles redirecting users to login while preserving their current location
  */
 
+export type AuthIntent = "add_to_cart";
+
 /**
  * Validates if a redirect path is safe to use
  * @param path - The path to validate
@@ -25,7 +27,10 @@ function isValidRedirectPath(path: string): boolean {
  * Redirects user to login page while saving current location for return
  * @param currentPath - Optional current path. If not provided, uses window.location
  */
-export function redirectToLoginWithReturn(currentPath?: string): void {
+export function redirectToLoginWithReturn(
+    currentPath?: string,
+    options?: { intent?: AuthIntent }
+): void {
     if (typeof window === "undefined") return;
 
     // Get current path if not provided
@@ -39,8 +44,12 @@ export function redirectToLoginWithReturn(currentPath?: string): void {
         console.warn('[auth-redirect] Invalid redirect path, not saving:', path);
     }
 
-    // Redirect to login
-    window.location.href = "/auth/login";
+    // Redirect to login (with optional intent hint)
+    const loginUrl = new URL("/auth/login", window.location.origin);
+    if (options?.intent) {
+        loginUrl.searchParams.set("intent", options.intent);
+    }
+    window.location.href = `${loginUrl.pathname}${loginUrl.search}`;
 }
 
 /**
@@ -70,4 +79,11 @@ export function getRedirectPath(): string | null {
 export function clearRedirectPath(): void {
     if (typeof window === "undefined") return;
     sessionStorage.removeItem("redirectAfterLogin");
+}
+
+export function getAuthIntentFromSearch(search?: string): AuthIntent | null {
+    if (typeof window === "undefined" && !search) return null;
+    const params = new URLSearchParams(search ?? window.location.search);
+    const intent = params.get("intent");
+    return intent === "add_to_cart" ? "add_to_cart" : null;
 }

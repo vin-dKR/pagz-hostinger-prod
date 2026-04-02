@@ -41,7 +41,7 @@ import {
     User
 } from 'lucide-react';
 import Link from 'next/link';
-import { toastError, toastSuccess, toastWarning } from '@/lib/utils/toast';
+import { toastError, toastSuccess } from '@/lib/utils/toast';
 import Image from 'next/image';
 import { imageLoader } from '@/lib/utils/image-loader';
 import { TemplateDisplay } from './TemplateDisplay';
@@ -478,14 +478,18 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                         Mark as Paid
                                     </Button>
                                 )}
-                                {order.paymentStatus === 'SUCCESS' && (
+                                {order.status === 'CANCELLED'
+                                    && order.paymentMethod === 'ONLINE'
+                                    && (order.paymentStatus === 'SUCCESS' || order.paymentStatus === 'REFUNDED')
+                                    && order.refundStatus !== 'PROCESSING'
+                                    && order.refundStatus !== 'PROCESSED' && (
                                     <Button
                                         variant="outline"
                                         onClick={() => setRefundModalOpen(true)}
                                     >
                                         Refund
                                     </Button>
-                                )}
+                                    )}
                             </div>
                         </CardContent>
                     </Card>
@@ -881,6 +885,15 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                 <p className="text-sm text-gray-600">Amount</p>
                                 <p className="font-bold text-xl">{formatCurrency(order.total)}</p>
                             </div>
+                            {order.refundStatus && (
+                                <div>
+                                    <p className="text-sm text-gray-600">Refund Status</p>
+                                    <p className="font-medium">{order.refundStatus.replace(/_/g, ' ')}</p>
+                                    {order.refundFailureReason && (
+                                        <p className="text-xs text-red-600 mt-1">{order.refundFailureReason}</p>
+                                    )}
+                                </div>
+                            )}
                             {order.payments && order.payments.length > 0 && (
                                 <div>
                                     <p className="text-sm text-gray-600 mb-2">Payment History</p>
@@ -908,6 +921,22 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                     </div>
                                                     <PaymentStatusBadge status={payment.status} />
                                                 </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {order.refunds && order.refunds.length > 0 && (
+                                <div>
+                                    <p className="text-sm text-gray-600 mb-2">Refund History</p>
+                                    <div className="space-y-2">
+                                        {order.refunds.map((refund) => (
+                                            <div key={refund.id} className="p-3 bg-gray-50 rounded">
+                                                <p className="font-medium">{formatCurrency(refund.amount)}</p>
+                                                <p className="text-xs text-gray-500">{refund.status}</p>
+                                                {refund.gatewayRefundId && (
+                                                    <p className="text-xs font-mono text-gray-500">ID: {refund.gatewayRefundId}</p>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -1273,18 +1302,16 @@ function RefundModal({
 }) {
     const [amount, setAmount] = useState(order.total.toString());
     const [reason, setReason] = useState('');
+    const [adminNote, setAdminNote] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleSubmit = async () => {
-        if (!reason.trim()) {
-            toastWarning('Please provide a refund reason');
-            return;
-        }
         try {
             setIsSubmitting(true);
             await processRefund(order.id, {
                 amount: parseFloat(amount),
-                reason,
+                reason: reason.trim() || undefined,
+                adminNote: adminNote.trim() || undefined,
             });
             onRefund();
             toastSuccess('Refund processed successfully');
@@ -1315,19 +1342,27 @@ function RefundModal({
                         <p className="text-xs text-gray-500 mt-1">Order total: {formatCurrency(order.total)}</p>
                     </div>
                     <div>
-                        <Label>Refund Reason *</Label>
+                        <Label>Refund Reason</Label>
                         <Input
                             type="text"
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
-                            placeholder="Reason for refund"
-                            required
+                            placeholder="Reason for refund (optional)"
+                        />
+                    </div>
+                    <div>
+                        <Label>Admin Note</Label>
+                        <Input
+                            type="text"
+                            value={adminNote}
+                            onChange={(e) => setAdminNote(e.target.value)}
+                            placeholder="Internal note (optional)"
                         />
                     </div>
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSubmit} disabled={isSubmitting || !reason.trim()}>
+                    <Button onClick={handleSubmit} disabled={isSubmitting}>
                         {isSubmitting ? 'Processing...' : 'Process Refund'}
                     </Button>
                 </DialogFooter>

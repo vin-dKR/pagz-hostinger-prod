@@ -55,7 +55,10 @@ export interface CategoryConfiguration {
     pageDescription?: string;
     features?: string[];
     breadcrumbConfig?: any;
-    layoutConfig?: any;
+    layoutConfig?: {
+        comingSoon?: boolean;
+        [key: string]: any;
+    } | null;
     fileUploadRequired: boolean;
     fileUploadConfig?: any;
 }

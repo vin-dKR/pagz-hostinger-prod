@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthFormInput from "../../components/auth/AuthFormInput";
 import AuthFormButton from "../../components/auth/AuthFormButton";
@@ -9,14 +10,17 @@ import AuthGuard from "../../components/auth/AuthGuard";
 import { EmailIcon, PasswordIcon } from "../../components/icons"
 import { useAuth } from "../../../contexts/AuthContext";
 
-export default function LoginPage() {
+function LoginPageContent() {
     const { login } = useAuth();
+    const searchParams = useSearchParams();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const intent = searchParams.get("intent");
+    const signupHref = intent ? `/auth/signup?intent=${encodeURIComponent(intent)}` : "/auth/signup";
 
     // Note: Redirect is handled by AuthGuard component after authentication
     // AuthGuard will check for saved redirect path and redirect accordingly
@@ -93,11 +97,19 @@ export default function LoginPage() {
                 {/* Register Link */}
                 <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
                     Don't have an account?{" "}
-                    <Link href="/auth/signup" className="text-blue-600 hover:text-blue-700 font-medium hover:underline">
+                    <Link href={signupHref} className="text-blue-600 hover:text-blue-700 font-medium hover:underline">
                         Register
                     </Link>
                 </div>
             </AuthLayout>
         </AuthGuard>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={null}>
+            <LoginPageContent />
+        </Suspense>
     );
 }

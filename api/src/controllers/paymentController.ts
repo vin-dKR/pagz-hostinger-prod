@@ -4,6 +4,15 @@ import { initiatePhonePePayment, checkPhonePePaymentStatus, verifyPhonePeCallbac
 import { prisma } from "../services/prisma.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
+import crypto from "crypto";
+
+type RazorpayCreateOrderResponse = {
+    id?: string;
+    error?: {
+        description?: string;
+        reason?: string;
+    };
+};
 
 // Create PhonePe order from cart data (redirect-based flow)
 export const createPhonePeOrderFromCart = async (req: Request, res: Response, next: NextFunction) => {
@@ -24,6 +33,9 @@ export const createPhonePeOrderFromCart = async (req: Request, res: Response, ne
 
         if (!amount || Number(amount) <= 0) {
             throw new ValidationError("Valid amount is required");
+        }
+        if (Number(amount) < 1) {
+            throw new ValidationError("Minimum payable amount for Razorpay is ₹1.00");
         }
 
         // Verify address belongs to user
@@ -77,6 +89,388 @@ export const createPhonePeOrderFromCart = async (req: Request, res: Response, ne
             redirectUrl,
             merchantOrderId,
         }, "PhonePe payment initiated successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Create Razorpay order from cart data
+export const createRazorpayOrderFromCart = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            throw new UnauthorizedError("User not authenticated");
+        }
+
+        const { items, addressId, amount, couponCode, shippingCharges } = req.body;
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            throw new ValidationError("Order items are required");
+        }
+        if (!addressId) {
+            throw new ValidationError("Shipping address is required");
+        }
+        if (!amount || Number(amount) <= 0) {
+            throw new ValidationError("Valid amount is required");
+        }
+
+        const razorKeyId = process.env.RAZOR_LIVE_ID;
+        const razorKeySecret = process.env.RAZOR_LIVE_SECRET_KEY;
+        if (!razorKeyId || !razorKeySecret) {
+            return sendError(res, "Razorpay is not configured", 500);
+        }
+
+        const address = await prisma.address.findFirst({
+            where: {
+                id: addressId,
+                userId: req.user.id,
+            },
+        });
+        if (!address) {
+            throw new NotFoundError("Address not found");
+        }
+
+        const merchantOrderId = uuidv4().replace(/-/g, "").slice(0, 32);
+        const amountInPaise = Math.round(Number(amount) * 100);
+
+        await prisma.pendingPayment.create({
+            data: {
+                merchantOrderId,
+                userId: req.user.id,
+                addressId,
+                items: JSON.parse(JSON.stringify(items)),
+                amount: Number(amount),
+                couponCode: couponCode || null,
+                shippingCharges: shippingCharges ? Number(shippingCharges) : null,
+                status: "PENDING",
+                expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+            },
+        });
+
+        const auth = Buffer.from(`${razorKeyId}:${razorKeySecret}`).toString("base64");
+        const razorResponse = await fetch("https://api.razorpay.com/v1/orders", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Basic ${auth}`,
+            },
+            body: JSON.stringify({
+                amount: amountInPaise,
+                currency: "INR",
+                receipt: merchantOrderId,
+                payment_capture: 1,
+                notes: {
+                    merchantOrderId,
+                    userId: req.user.id,
+                },
+            }),
+        });
+
+        const razorData = (await razorResponse.json()) as RazorpayCreateOrderResponse;
+        if (!razorResponse.ok || !razorData?.id) {
+            await prisma.pendingPayment.delete({ where: { merchantOrderId } }).catch(() => undefined);
+            return sendError(
+                res,
+                razorData?.error?.description || razorData?.error?.reason || "Failed to create Razorpay order",
+                400
+            );
+        }
+
+        return sendSuccess(res, {
+            keyId: razorKeyId,
+            merchantOrderId,
+            razorpayOrderId: razorData.id,
+            amount: amountInPaise,
+            currency: "INR",
+        }, "Razorpay order created successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Verify Razorpay payment and create order
+export const verifyRazorpayPayment = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            throw new UnauthorizedError("User not authenticated");
+        }
+
+        const { merchantOrderId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+        if (!merchantOrderId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+            throw new ValidationError("merchantOrderId, razorpayOrderId, razorpayPaymentId and razorpaySignature are required");
+        }
+
+        const razorKeySecret = process.env.RAZOR_LIVE_SECRET_KEY;
+        if (!razorKeySecret) {
+            return sendError(res, "Razorpay is not configured", 500);
+        }
+
+        const expectedSignature = crypto
+            .createHmac("sha256", razorKeySecret)
+            .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+            .digest("hex");
+
+        if (expectedSignature !== razorpaySignature) {
+            return sendSuccess(res, {
+                verified: false,
+                message: "Invalid Razorpay signature",
+            }, "Payment verification failed");
+        }
+
+        const existingOrder = await prisma.order.findFirst({
+            where: {
+                phonePeOrderId: merchantOrderId,
+                userId: req.user.id,
+            },
+        });
+        if (existingOrder) {
+            return sendSuccess(res, { verified: true, orderId: existingOrder.id }, "Payment already verified");
+        }
+
+        const pendingPayment = await prisma.pendingPayment.findUnique({
+            where: { merchantOrderId },
+        });
+        if (!pendingPayment) {
+            throw new NotFoundError("Pending payment not found");
+        }
+        if (pendingPayment.userId !== req.user.id) {
+            throw new UnauthorizedError("Payment does not belong to this user");
+        }
+
+        const items = pendingPayment.items as any[];
+        const addressId = pendingPayment.addressId;
+        const couponCode = pendingPayment.couponCode;
+        const shippingCharges = Number(pendingPayment.shippingCharges || 0);
+
+        const address = await prisma.address.findFirst({
+            where: { id: addressId, userId: req.user.id },
+        });
+        if (!address) {
+            throw new NotFoundError("Address not found");
+        }
+
+        let subtotal = 0;
+        const orderItems: Array<{
+            productId: string;
+            variantId: string | null;
+            quantity: number;
+            price: number;
+            customDesignUrl: string[];
+            customText: string | null;
+            hasAddon: boolean;
+            addons: string[];
+            metadata?: any;
+        }> = [];
+
+        for (const item of items) {
+            const { productId, variantId, quantity, customDesignUrl, customText, metadata } = item;
+            if (!productId || !quantity || quantity < 1) {
+                throw new ValidationError("Invalid order item");
+            }
+
+            const product = await prisma.product.findUnique({
+                where: { id: productId },
+                include: { variants: true, images: true },
+            });
+            if (!product || !product.isActive) {
+                throw new NotFoundError(`Product ${productId} not found`);
+            }
+
+            let itemPrice = Number(product.sellingPrice || product.basePrice);
+            if (variantId) {
+                const variant = product.variants.find((v: { id: string }) => v.id === variantId);
+                if (!variant || !variant.available) {
+                    throw new ValidationError(`Variant ${variantId} not available`);
+                }
+                itemPrice += Number(variant.priceModifier);
+            }
+            if (metadata && Array.isArray(metadata.priceBreakdown)) {
+                const lineTotal = metadata.priceBreakdown.reduce(
+                    (sum: number, entry: any) => sum + Number(entry?.value || 0),
+                    0
+                );
+                if (quantity > 0 && lineTotal > 0) {
+                    itemPrice = lineTotal / quantity;
+                }
+            }
+
+            subtotal += itemPrice * quantity;
+
+            let normalizedUrls: string[] = [];
+            if (customDesignUrl) {
+                if (Array.isArray(customDesignUrl)) {
+                    normalizedUrls = customDesignUrl.filter((url): url is string => typeof url === "string" && url.length > 0);
+                } else if (typeof customDesignUrl === "string" && customDesignUrl.length > 0) {
+                    normalizedUrls = [customDesignUrl];
+                }
+            }
+
+            const selectedAddons: string[] = Array.isArray(item.addons)
+                ? (item.addons as string[]).filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+                : Array.isArray(metadata?.selectedAddons)
+                    ? (metadata.selectedAddons as string[])
+                    : [];
+
+            orderItems.push({
+                productId,
+                variantId: variantId || null,
+                quantity,
+                price: itemPrice,
+                customDesignUrl: normalizedUrls,
+                customText: customText || null,
+                hasAddon: selectedAddons.length > 0,
+                addons: selectedAddons,
+                metadata: metadata || undefined,
+            });
+        }
+
+        let discountAmount = 0;
+        let couponId = null;
+        if (couponCode && couponCode.trim()) {
+            const coupon = await prisma.coupon.findUnique({
+                where: { code: String(couponCode).toUpperCase() },
+            });
+            if (coupon && coupon.isActive) {
+                const now = new Date();
+                if (now >= coupon.validFrom && now <= coupon.validUntil) {
+                    if (!coupon.minPurchaseAmount || subtotal >= Number(coupon.minPurchaseAmount)) {
+                        const usageCount = await prisma.couponUsage.count({ where: { couponId: coupon.id } });
+                        if (coupon.usageLimit === null || usageCount < coupon.usageLimit) {
+                            const userUsageCount = await prisma.couponUsage.count({
+                                where: { couponId: coupon.id, userId: req.user.id },
+                            });
+                            if (userUsageCount < coupon.usageLimitPerUser) {
+                                discountAmount = coupon.discountType === "PERCENTAGE"
+                                    ? (subtotal * Number(coupon.discountValue)) / 100
+                                    : Number(coupon.discountValue);
+                                if (coupon.maxDiscountAmount && discountAmount > Number(coupon.maxDiscountAmount)) {
+                                    discountAmount = Number(coupon.maxDiscountAmount);
+                                }
+                                couponId = coupon.id;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let addonsSubtotal = 0;
+        const allAddonIds = new Set<string>();
+        orderItems.forEach(item => item.addons?.forEach((addonId: string) => allAddonIds.add(addonId)));
+        if (allAddonIds.size > 0) {
+            const addonRules = await prisma.categoryPricingRule.findMany({
+                where: { id: { in: Array.from(allAddonIds) }, ruleType: "ADDON", isActive: true },
+            });
+            const addonMap = new Map(addonRules.map(rule => [rule.id, rule]));
+            orderItems.forEach(item => {
+                const pageCount = item.metadata?.pageCount || 1;
+                const copies = item.metadata?.copies || 1;
+                const effectivePages = pageCount > 1 ? pageCount * copies : null;
+                item.addons.forEach((addonId: string) => {
+                    const addonRule = addonMap.get(addonId);
+                    if (!addonRule) return;
+                    const hasPageRange = addonRule.minQuantity != null || addonRule.maxQuantity != null;
+                    if (hasPageRange && effectivePages != null) {
+                        const inRange =
+                            (addonRule.minQuantity == null || effectivePages >= addonRule.minQuantity) &&
+                            (addonRule.maxQuantity == null || effectivePages <= addonRule.maxQuantity);
+                        if (!inRange) return;
+                    }
+                    const rawPrice = addonRule.priceModifier !== null && addonRule.priceModifier !== undefined
+                        ? Number(addonRule.priceModifier)
+                        : addonRule.basePrice !== null && addonRule.basePrice !== undefined
+                            ? Number(addonRule.basePrice)
+                            : 0;
+                    const multiplier = addonRule.quantityMultiplier
+                        ? (effectivePages != null ? effectivePages : item.quantity)
+                        : 1;
+                    addonsSubtotal += rawPrice * multiplier;
+                });
+            });
+        }
+
+        const total = subtotal + addonsSubtotal - discountAmount + shippingCharges;
+        const order = await prisma.order.create({
+            data: {
+                userId: req.user.id,
+                addressId,
+                subtotal,
+                addonsSubtotal: addonsSubtotal > 0 ? addonsSubtotal : null,
+                discountAmount: discountAmount > 0 ? discountAmount : null,
+                shippingCharges: shippingCharges > 0 ? shippingCharges : null,
+                total,
+                paymentMethod: "ONLINE",
+                paymentStatus: "SUCCESS",
+                refundStatus: "PENDING",
+                refundEligibleAmount: total,
+                couponId,
+                phonePeOrderId: merchantOrderId,
+                status: "PENDING_REVIEW",
+                items: {
+                    create: orderItems.map((oi) => ({
+                        productId: oi.productId,
+                        variantId: oi.variantId,
+                        quantity: oi.quantity,
+                        price: oi.price,
+                        customDesignUrl: oi.customDesignUrl,
+                        customText: oi.customText,
+                        hasAddon: oi.hasAddon,
+                        metadata: oi.metadata ?? undefined,
+                        addons: oi.addons && oi.addons.length > 0
+                            ? { connect: oi.addons.map((id: string) => ({ id })) }
+                            : undefined,
+                    })),
+                },
+                statusHistory: {
+                    create: {
+                        status: "PENDING_REVIEW",
+                        comment: "Order created after successful Razorpay payment",
+                    },
+                },
+            },
+        });
+
+        await prisma.payment.create({
+            data: {
+                orderId: order.id,
+                userId: req.user.id,
+                amount: order.total,
+                discountAmount: discountAmount > 0 ? discountAmount : null,
+                phonePeOrderId: merchantOrderId,
+                phonePeTransactionId: razorpayPaymentId,
+                method: "ONLINE",
+                status: "SUCCESS",
+                gateway: "RAZORPAY",
+                gatewayOrderId: razorpayOrderId,
+                gatewayPaymentId: razorpayPaymentId,
+                refundedAmount: 0,
+                paymentInstrument: "RAZORPAY",
+                paymentDetails: {
+                    gateway: "RAZORPAY",
+                    razorpayOrderId,
+                    razorpayPaymentId,
+                },
+                couponId,
+            },
+        });
+
+        if (couponId) {
+            await prisma.couponUsage.create({
+                data: {
+                    couponId,
+                    userId: req.user.id,
+                    orderId: order.id,
+                },
+            });
+        }
+
+        await prisma.pendingPayment.update({
+            where: { merchantOrderId },
+            data: { status: "COMPLETED" },
+        });
+
+        return sendSuccess(res, {
+            verified: true,
+            orderId: order.id,
+        }, "Payment verified and order created successfully");
     } catch (error) {
         next(error);
     }
@@ -373,6 +767,8 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
                 total,
                 paymentMethod: "ONLINE",
                 paymentStatus: "SUCCESS",
+                refundStatus: "PENDING",
+                refundEligibleAmount: total,
                 couponId,
                 phonePeOrderId: merchantOrderId,
                 status: "PENDING_REVIEW",
@@ -421,6 +817,10 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
                 phonePeTransactionId: statusResult.transactionId || null,
                 method: "ONLINE",
                 status: "SUCCESS",
+                gateway: "PHONEPE",
+                gatewayOrderId: merchantOrderId,
+                gatewayPaymentId: statusResult.transactionId || merchantOrderId,
+                refundedAmount: 0,
                 paymentInstrument: statusResult.paymentInstrument || null,
                 paymentDetails: statusResult.paymentDetails || undefined,
                 couponId,

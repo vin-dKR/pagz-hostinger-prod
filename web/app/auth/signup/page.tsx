@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import AuthLayout from "../../components/auth/AuthLayout";
 import AuthFormInput from "../../components/auth/AuthFormInput";
 import AuthFormButton from "../../components/auth/AuthFormButton";
@@ -9,8 +10,9 @@ import AuthGuard from "../../components/auth/AuthGuard";
 import { UserIcon, EmailIcon, PhoneIcon, PasswordIcon } from "../../components/icons"
 import { useAuth } from "../../../contexts/AuthContext";
 
-export default function SignupPage() {
+function SignupPageContent() {
     const { register } = useAuth();
+    const searchParams = useSearchParams();
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -23,6 +25,8 @@ export default function SignupPage() {
     const [agreeToTerms, setAgreeToTerms] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const intent = searchParams.get("intent");
+    const loginHref = intent ? `/auth/login?intent=${encodeURIComponent(intent)}` : "/auth/login";
 
     // Note: Redirect is handled by AuthGuard component after authentication
     // AuthGuard will check for saved redirect path and redirect accordingly
@@ -62,7 +66,24 @@ export default function SignupPage() {
             // AuthGuard will handle redirect after isAuthenticated becomes true
             // No need to set shouldRedirect flag
         } catch (err: any) {
-            setError(err.message || "Registration failed. Please try again.");
+            const rawMessage = String(err?.message || "").toLowerCase();
+            const isDuplicate =
+                rawMessage.includes("already registered") ||
+                rawMessage.includes("already exists") ||
+                rawMessage.includes("already in use") ||
+                rawMessage.includes("duplicate");
+
+            if (isDuplicate) {
+                if (rawMessage.includes("phone") || rawMessage.includes("mobile")) {
+                    setError("This mobile number is already registered. Please sign in.");
+                } else if (rawMessage.includes("email")) {
+                    setError("This email is already registered. Please sign in.");
+                } else {
+                    setError("This account is already registered. Please sign in.");
+                }
+            } else {
+                setError(err.message || "Registration failed. Please try again.");
+            }
             setLoading(false);
         }
     };
@@ -158,11 +179,19 @@ export default function SignupPage() {
                 {/* Login Link */}
                 <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
                     Already have an account?{" "}
-                    <Link href="/auth/login" className="text-blue-600 hover:text-blue-700 font-medium hover:underline">
+                    <Link href={loginHref} className="text-blue-600 hover:text-blue-700 font-medium hover:underline">
                         Sign In
                     </Link>
                 </div>
             </AuthLayout>
         </AuthGuard>
+    );
+}
+
+export default function SignupPage() {
+    return (
+        <Suspense fallback={null}>
+            <SignupPageContent />
+        </Suspense>
     );
 }

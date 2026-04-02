@@ -107,7 +107,7 @@ export interface AddToCartData {
 
 export interface UpdateCartItemData {
     quantity?: number;
-    customDesignUrl?: string;
+    customDesignUrl?: string | string[];
     customText?: string;
 }
 

@@ -173,7 +173,7 @@ function WishlistPageContent() {
                             </button>
                         ) : (
                             <Link
-                                href="/products"
+                                href="/services"
                                 className="inline-block px-6 py-3 bg-[#008ECC] text-white rounded-lg hover:bg-[#0077B3] transition-colors font-hkgb text-sm"
                             >
                                 Start Shopping
@@ -195,10 +195,7 @@ function WishlistPageContent() {
                                     className="bg-gray-50/50 rounded-2xl border border-gray-100 hover:shadow-md transition-all duration-300 overflow-hidden group relative"
                                 >
                                     {/* Product Image */}
-                                    <Link
-                                        href={`/products/${product.id}`}
-                                        className="block relative aspect-square bg-gray-100"
-                                    >
+                                    <div className="block relative aspect-square bg-gray-100">
                                         {primaryImage ? (
                                             <Image
                                                 src={primaryImage}
@@ -235,17 +232,15 @@ function WishlistPageContent() {
                                             <Heart className="w-3 h-3 inline mr-1 fill-current" />
                                             Saved
                                         </div>
-                                    </Link>
+                                    </div>
 
                                     {/* Product Info */}
                                     <div className="p-4">
 
                                         {/* Product Name */}
-                                        <Link href={`/products/${product.id}`}>
-                                            <h3 className="text-sm font-medium text-gray-900 mb-2 line-clamp-2 hover:text-[#008ECC] transition-colors">
-                                                {product.name}
-                                            </h3>
-                                        </Link>
+                                        <h3 className="text-sm font-medium text-gray-900 mb-2 line-clamp-2">
+                                            {product.name}
+                                        </h3>
 
                                         {/* Category */}
                                         {product.category && (
@@ -273,12 +268,13 @@ function WishlistPageContent() {
 
                                         {/* Actions */}
                                         <div className="flex gap-2">
-                                            <Link
-                                                href={`/products/${product.id}`}
-                                                className="flex-1 px-3 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-center"
+                                            <button
+                                                type="button"
+                                                className="flex-1 px-3 py-2 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed text-sm font-medium text-center"
+                                                disabled
                                             >
                                                 View Details
-                                            </Link>
+                                            </button>
                                             <button
                                                 onClick={(e) => {
                                                     e.preventDefault();

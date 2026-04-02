@@ -35,19 +35,14 @@ import { toastWarning, toastError, toastSuccess, toastPromise } from '@/lib/util
 import { redirectToLoginWithReturn } from '@/lib/utils/auth-redirect';
 import {
     savePendingPurchaseData,
-    getPendingPurchaseData,
     clearPendingPurchaseData,
     prepareFilesForStorage,
-    restoreFilesFromPendingData,
     type PendingPurchaseData
 } from "@/lib/utils/pending-purchase";
 
 interface DynamicServicePageProps {
     params: Promise<{ categorySlug: string }>;
 }
-
-// Services that are coming soon
-const COMING_SOON_SERVICES = ['business-card', 'letter-head'];
 
 export default function DynamicServicePage({ params }: DynamicServicePageProps) {
     const { categorySlug } = use(params);
@@ -58,8 +53,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Check if this service is coming soon
-    const isComingSoon = COMING_SOON_SERVICES.includes(categorySlug);
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [uploadedFileDetails, setUploadedFileDetails] = useState<FileDetail[]>([]);
     const [minQuantityFromFiles, setMinQuantityFromFiles] = useState<number>(1);
@@ -238,143 +231,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
         fetchCategory();
     }, [categorySlug]);
-
-    // Restore pending purchase data when user returns from login
-    useEffect(() => {
-        async function restorePendingPurchase() {
-            if (!isAuthenticated || !category) return;
-
-            const pendingData = getPendingPurchaseData();
-            if (!pendingData || pendingData.categorySlug !== categorySlug) return;
-
-            try {
-                // Restore files (if any)
-                if (pendingData.files && pendingData.files.length > 0) {
-                    try {
-                        const restoredFiles = await restoreFilesFromPendingData(pendingData.files);
-                        const restoredFileDetails: FileDetail[] = [];
-
-                        for (let i = 0; i < pendingData.files.length; i++) {
-                            const fileData = pendingData.files[i];
-                            const file = restoredFiles[i];
-                            if (file && fileData) {
-                                // If file already has s3Key (uploaded before login), preserve it
-                                const hasS3Key = !!fileData.s3Key;
-                                restoredFileDetails.push({
-                                    file,
-                                    type: fileData.type,
-                                    pageCount: fileData.pageCount,
-                                    id: fileData.id,
-                                    s3Key: fileData.s3Key,
-                                    uploadStatus: hasS3Key ? ('uploaded' as const) : ('pending' as const),
-                                });
-                            }
-                        }
-
-                        if (restoredFileDetails.length > 0) {
-                            setUploadedFiles(restoredFiles.filter(f => f !== null));
-                            setUploadedFileDetails(restoredFileDetails);
-                            setUploadedFilesS3(restoredFileDetails);
-                            setPageCount(pendingData.pageCount || 0);
-
-                            // Do not upload pending files if restored page count exceeds active page-controller limit.
-                            if (
-                                typeof pageController.maxPages === 'number' &&
-                                (pendingData.pageCount || 0) > pageController.maxPages
-                            ) {
-                                toastError(
-                                    `Uploaded pages (${pendingData.pageCount || 0}) exceed allowed limit (${pageController.maxPages}) for the current selection.`
-                                );
-                                return;
-                            }
-
-                            // Only upload files to S3 if they don't already have s3Key
-                            const filesToUpload = restoredFileDetails.filter(fd => !fd.s3Key);
-                            if (filesToUpload.length > 0) {
-                                filesToUpload.forEach(async (fileDetail) => {
-                                    try {
-                                        const response = await uploadOrderFilesToS3([fileDetail.file]);
-                                        if (response.success && response.data?.files?.[0]?.key) {
-                                            const key = response.data.files[0].key;
-                                            setUploadedFileDetails(prev =>
-                                                prev.map(fd =>
-                                                    fd.id === fileDetail.id
-                                                        ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
-                                                        : fd
-                                                )
-                                            );
-                                            setUploadedFilesS3(prev =>
-                                                prev.map(fd =>
-                                                    fd.id === fileDetail.id
-                                                        ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: key }
-                                                        : fd
-                                                )
-                                            );
-                                        }
-                                    } catch (error) {
-                                        console.error(`Failed to upload file ${fileDetail.file.name}:`, error);
-                                        setUploadedFileDetails(prev =>
-                                            prev.map(fd =>
-                                                fd.id === fileDetail.id
-                                                    ? { ...fd, uploadStatus: 'error' as const }
-                                                    : fd
-                                            )
-                                        );
-                                    }
-                                });
-                            }
-                        }
-                    } catch (fileError) {
-                        console.error('Failed to restore files:', fileError);
-                        // Continue with template restoration even if file restoration fails
-                    }
-                }
-
-                // Restore selections
-                if (pendingData.specifications) setSelectedSpecifications(pendingData.specifications);
-                // Note: selectedAddonIds is computed automatically from selectedSpecifications via useMemo
-
-                // Restore template data (check both direct properties and metadata)
-                const templateId = pendingData.templateId || pendingData.metadata?.templateId;
-                const templateFormData = pendingData.templateFormData || pendingData.metadata?.templateFormData;
-                const templateFormImages = pendingData.templateFormImages || pendingData.metadata?.templateFormImages;
-
-                if (templateId) {
-                    setSelectedTemplateId(templateId);
-                }
-                if (templateFormData) {
-                    setTemplateFormData(templateFormData);
-                }
-                if (templateFormImages) {
-                    setTemplateFormImages(templateFormImages);
-                }
-                // No need to restore it directly - it will be computed when specifications are restored
-                if (pendingData.quantity) setQuantity(pendingData.quantity);
-                if (pendingData.copies) setCopies(pendingData.copies);
-                if (pendingData.pageCount) setPageCount(pendingData.pageCount);
-                if (pendingData.fileHasPassword !== undefined) setFileHasPassword(!!pendingData.fileHasPassword);
-                if (pendingData.filePassword !== undefined) setFilePassword(String(pendingData.filePassword || ''));
-                if (pendingData.metadata?.fileHasPassword !== undefined) setFileHasPassword(!!pendingData.metadata.fileHasPassword);
-                if (pendingData.metadata?.filePassword !== undefined) setFilePassword(String(pendingData.metadata.filePassword || ''));
-                // Restore password submitted state - if password exists, assume it was submitted
-                if (pendingData.filePassword || pendingData.metadata?.filePassword) {
-                    setIsPasswordSubmitted(true);
-                }
-
-                // Clear pending data
-                clearPendingPurchaseData();
-
-                // Show success message
-                toastSuccess('Your selections have been restored. Click Buy Now or Add to Cart to continue.');
-            } catch (error) {
-                console.error('Failed to restore pending purchase:', error);
-                toastError('Failed to restore your selections. Please try again.');
-                clearPendingPurchaseData();
-            }
-        }
-
-        restorePendingPurchase();
-    }, [isAuthenticated, category, categorySlug]);
 
     const calculatePrice = useCallback(async () => {
         if (!category) return;
@@ -847,7 +703,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 };
 
                 await savePendingPurchaseData(purchaseData);
-                redirectToLoginWithReturn(window.location.pathname + window.location.search);
+                redirectToLoginWithReturn(window.location.pathname + window.location.search, {
+                    intent: 'add_to_cart',
+                });
             } catch (error) {
                 console.error('Failed to save pending purchase data:', error);
                 toastError('Failed to save your selections. Please try again.');
@@ -1119,7 +977,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 };
 
                 await savePendingPurchaseData(purchaseData);
-                redirectToLoginWithReturn(window.location.pathname + window.location.search);
+                redirectToLoginWithReturn(window.location.pathname + window.location.search, {
+                    intent: 'add_to_cart',
+                });
             } catch (error) {
                 console.error('Failed to save pending purchase data:', error);
                 toastError('Failed to save your selections. Please try again.');
@@ -1353,10 +1213,13 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         }
     };
 
-    // Show coming soon page immediately if it's a coming soon service (before loading check)
-    if (isComingSoon) {
-        const serviceName = categorySlug === 'business-card' ? 'Business Card' : categorySlug === 'letter-head' ? 'Letter Head' : 'Service';
-        return (
+    const isComingSoon = Boolean(category?.configuration?.layoutConfig?.comingSoon);
+
+    // Keep hook order stable: build this UI first, return it after all hooks below are declared.
+    const comingSoonContent = !loading && category && isComingSoon ? (
+        (() => {
+            const serviceName = category.name || 'Service';
+            return (
             <div className="min-h-screen bg-white">
                 <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
                     <div className="text-center">
@@ -1438,8 +1301,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     </div>
                 </div>
             </div>
-        );
-    }
+            );
+        })()
+    ) : null;
 
     // Check if category is a parent category (has children)
     const isParentCategory = useMemo(() => {
@@ -1456,6 +1320,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             .filter(isSpecificationVisible)
             .sort((a, b) => a.displayOrder - b.displayOrder);
     }, [category, selectedSpecifications]);
+
+    if (comingSoonContent) {
+        return comingSoonContent;
+    }
 
     // If category is loaded and is a parent, render subcategory grid
     if (!loading && category && isParentCategory) {
