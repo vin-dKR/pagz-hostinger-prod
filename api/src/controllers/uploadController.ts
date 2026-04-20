@@ -141,24 +141,35 @@ export const uploadReviewImages = async (req: Request, res: Response, next: Next
             throw new ValidationError("No files uploaded");
         }
 
-        // Validate file count (max 5 images per review)
+        // Validate file count (max 5 files per review)
         if (files.length > 5) {
-            throw new ValidationError("Maximum 5 images allowed per review");
+            throw new ValidationError("Maximum 5 files allowed per review");
         }
 
-        // Validate file types (only images)
-        const allowedMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-        const maxFileSize = 5 * 1024 * 1024; // 5MB
+        // Validate file types (images or videos)
+        const allowedMimeTypes = [
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+            "image/webp",
+            "video/mp4",
+            "video/webm",
+            "video/quicktime",
+        ];
+        const maxImageSize = 5 * 1024 * 1024; // 5MB
+        const maxVideoSize = 50 * 1024 * 1024; // 50MB
 
         for (const file of files) {
             if (!allowedMimeTypes.includes(file.mimetype)) {
                 throw new ValidationError(
-                    `Invalid file type: ${file.mimetype}. Only JPG, PNG, and WebP images are allowed.`
+                    `Invalid file type: ${file.mimetype}. Only JPG, PNG, WebP images or MP4, WebM, MOV videos are allowed.`
                 );
             }
+            const isVideo = file.mimetype.startsWith("video/");
+            const maxFileSize = isVideo ? maxVideoSize : maxImageSize;
             if (file.size > maxFileSize) {
                 throw new ValidationError(
-                    `File ${file.originalname} is too large. Maximum file size is 5MB.`
+                    `File ${file.originalname} is too large. Maximum file size is ${isVideo ? "50MB" : "5MB"} for ${isVideo ? "videos" : "images"}.`
                 );
             }
         }

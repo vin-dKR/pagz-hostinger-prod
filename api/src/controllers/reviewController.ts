@@ -178,6 +178,7 @@ export const createReview = async (req: Request, res: Response, next: NextFuncti
         const review = await prisma.review.create({
             data: {
                 productId,
+                categoryId: product.categoryId,
                 userId: req.user.id,
                 rating,
                 title: title || null,
@@ -1740,6 +1741,68 @@ export const createCategoryReview = async (req: Request, res: Response, next: Ne
         });
 
         return sendSuccess(res, review, "Review created successfully. It will be visible after admin approval.", 201);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Check if the current customer is eligible to review a category
+export const canReviewCategory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            throw new UnauthorizedError("User not authenticated");
+        }
+
+        const categoryId = Array.isArray(req.params.categoryId)
+            ? req.params.categoryId[0]
+            : req.params.categoryId;
+
+        if (!categoryId) {
+            throw new ValidationError("Category ID is required");
+        }
+
+        const category = await prisma.category.findUnique({
+            where: { id: categoryId },
+        });
+
+        if (!category) {
+            throw new NotFoundError("Category not found");
+        }
+
+        const hasPurchased = !!(await prisma.orderItem.findFirst({
+            where: {
+                order: {
+                    userId: req.user.id,
+                    paymentStatus: "SUCCESS",
+                },
+                product: { categoryId },
+            },
+        }));
+
+        const existingReview = await prisma.review.findUnique({
+            where: {
+                categoryId_userId: {
+                    categoryId,
+                    userId: req.user.id,
+                },
+            },
+            select: { id: true },
+        });
+
+        const alreadyReviewed = !!existingReview;
+        const eligible = hasPurchased && !alreadyReviewed;
+        const reason = !hasPurchased
+            ? "not_purchased"
+            : alreadyReviewed
+                ? "already_reviewed"
+                : null;
+
+        return sendSuccess(res, {
+            eligible,
+            reason,
+            alreadyReviewed,
+            hasPurchased,
+        });
     } catch (error) {
         next(error);
     }

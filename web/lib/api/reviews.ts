@@ -197,3 +197,19 @@ export async function createCategoryReview(
     return post<CategoryReview>(`/reviews/category/${categoryId}`, data);
 }
 
+export interface CanReviewResponse {
+    eligible: boolean;
+    reason: 'not_purchased' | 'already_reviewed' | null;
+    alreadyReviewed: boolean;
+    hasPurchased: boolean;
+}
+
+/**
+ * Check whether the current user can post a review for a given category.
+ */
+export async function canReviewCategory(
+    categoryId: string,
+): Promise<ApiResponse<CanReviewResponse>> {
+    return get<CanReviewResponse>(`/reviews/category/${categoryId}/can-review`);
+}
+
