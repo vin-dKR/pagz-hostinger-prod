@@ -18,6 +18,7 @@
         "db:generate": "prisma generate --schema=prisma/schema.prisma",
         "db:seed": "prisma db seed",
         "db:studio": "prisma studio",
+        "seed:shipping": "bun scripts/seed-shipping-methods.ts",
         "seed:reviews": "bun scripts/seed-reviews.ts",
         "postinstall": "npm run build"
     },

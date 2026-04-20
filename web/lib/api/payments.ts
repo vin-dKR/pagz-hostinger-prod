@@ -27,6 +27,7 @@ export interface CreatePhonePeOrderRequest {
     amount: number;
     couponCode?: string;
     shippingCharges?: number;
+    shippingMethodId?: string | null;
 }
 
 export interface CreatePhonePeOrderResponse {

@@ -16,6 +16,8 @@ interface BillingSummaryProps {
     onPay?: () => Promise<void> | void;
     isPaying?: boolean;
     hideCouponAndShipping?: boolean; // Hide coupon and shipping (for cart page)
+    disabled?: boolean; // Externally disable the Pay button
+    disabledMessage?: string; // Helper text shown when externally disabled
 }
 
 export default function BillingSummary({
@@ -30,6 +32,8 @@ export default function BillingSummary({
     onPay,
     isPaying = false,
     hideCouponAndShipping = false,
+    disabled = false,
+    disabledMessage,
 }: BillingSummaryProps) {
     const [orderComment, setOrderComment] = useState("");
     const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -124,18 +128,24 @@ export default function BillingSummary({
 
                     {/* Pay Button */}
                     <button
-                        disabled={!agreedToTerms || isPaying || !onPay}
+                        disabled={!agreedToTerms || isPaying || !onPay || disabled}
                         onClick={() => {
-                            if (!onPay || !agreedToTerms) return;
+                            if (!onPay || !agreedToTerms || disabled) return;
                             void onPay();
                         }}
-                        className={`w-full font-hkgb font-bold px-4 sm:px-6 py-3 sm:py-4 rounded-lg text-sm sm:text-base text-white transition-colors ${agreedToTerms
+                        className={`w-full font-hkgb font-bold px-4 sm:px-6 py-3 sm:py-4 rounded-lg text-sm sm:text-base text-white transition-colors ${agreedToTerms && !disabled
                             ? "bg-[#008ECC] hover:bg-[#007CB2]"
                             : "bg-gray-400 cursor-not-allowed"
                             }`}
                     >
                         {isPaying ? "Processing..." : `Pay ₹${grandTotal.toFixed(2)}`}
                     </button>
+
+                    {disabled && disabledMessage && (
+                        <p className="mt-2 text-center text-xs sm:text-sm text-red-600">
+                            {disabledMessage}
+                        </p>
+                    )}
 
                     {/* Security Badge */}
                     <div className="mt-4 sm:mt-6 flex items-center justify-center gap-2 text-xs sm:text-sm text-gray-600">

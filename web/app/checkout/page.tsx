@@ -2,6 +2,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { Truck, Zap, Package, Plane, Ship, Rocket } from "lucide-react";
 import Breadcrumbs from "../components/Breadcrumbs";
 import BillingAddressForm from "../components/BillingAddressForm";
 import ShippingMethod from "../components/ShippingMethod";
@@ -14,6 +16,7 @@ import { useCheckout } from "@/hooks/checkout/useCheckout";
 import { useCart } from "@/contexts/CartContext";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
 import { createRazorpayOrder, verifyRazorpayPayment } from "@/lib/api/payments";
+import { getShippingMethods } from "@/lib/api/shipping";
 import CheckoutFilesReview from "../components/CheckoutFilesReview";
 import { toastWarning, toastError } from "@/lib/utils/toast";
 
@@ -170,42 +173,90 @@ function CheckoutPageContent() {
 
     const itemCount = cartItems.length;
 
+    // Fetch shipping methods from API
+    const {
+        data: shippingMethodsResponse,
+        isLoading: isShippingLoading,
+        isError: isShippingError,
+        refetch: refetchShippingMethods,
+    } = useQuery({
+        queryKey: ['shipping-methods'],
+        queryFn: getShippingMethods,
+        staleTime: 60_000,
+    });
+
+    const shippingMethods = useMemo(
+        () => shippingMethodsResponse?.data?.methods ?? [],
+        [shippingMethodsResponse]
+    );
+
     // Track selected shipping method
-    const [selectedShippingId, setSelectedShippingId] = useState<string>("standard");
+    const [selectedShippingId, setSelectedShippingId] = useState<string | null>(null);
 
+    // Map icon string to lucide icon component; null/empty/unknown => render nothing
+    const renderIcon = (iconName?: string | null, iconColor?: string | null) => {
+        const style = iconColor ? { color: iconColor } : undefined;
+        const className = iconColor ? "" : "text-blue-600";
+        const key = (iconName || "").toLowerCase();
+        switch (key) {
+            case "truck":
+                return <Truck size={40} className={className} style={style} />;
+            case "zap":
+                return <Zap size={40} className={className} style={style} />;
+            case "package":
+                return <Package size={40} className={className} style={style} />;
+            case "plane":
+                return <Plane size={40} className={className} style={style} />;
+            case "ship":
+                return <Ship size={40} className={className} style={style} />;
+            case "rocket":
+                return <Rocket size={40} className={className} style={style} />;
+            default:
+                return null;
+        }
+    };
 
-    const shippingOptions = [
-        {
-            id: "standard",
-            name: "Standard Delivery",
-            price: deliveryFee || 0,
-            description: "5 - 7 business days",
-            icon: (
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
-                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
-                </svg>
-            ),
-        },
-        {
-            id: "express",
-            name: "Express Delivery",
-            price: (deliveryFee || 0) + 50,
-            description: "2 - 3 business days",
-            icon: (
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                </svg>
-            ),
-        },
-    ];
+    // Derive shipping options to pass into ShippingMethod component
+    const shippingOptions = useMemo(() => {
+        return shippingMethods.map((method) => ({
+            id: method.id,
+            name: method.name,
+            price: Number(method.price) || 0,
+            description: method.description || method.estimatedDays || "",
+            icon: renderIcon(method.icon, method.iconColor),
+        }));
+    }, [shippingMethods]);
 
-    // Calculate selected shipping fee
+    // Default selection: isDefault method, else first, else null.
+    // Also re-select default if current selection is no longer in the list.
+    useEffect(() => {
+        if (shippingMethods.length === 0) {
+            if (selectedShippingId !== null) {
+                setSelectedShippingId(null);
+            }
+            return;
+        }
+
+        const stillValid = selectedShippingId
+            ? shippingMethods.some((m) => m.id === selectedShippingId)
+            : false;
+
+        if (!stillValid) {
+            const defaultMethod = shippingMethods.find((m) => m.isDefault);
+            const nextId = defaultMethod?.id ?? shippingMethods[0]?.id ?? null;
+            setSelectedShippingId(nextId);
+        }
+    }, [shippingMethods, selectedShippingId]);
+
+    // Calculate selected shipping fee from the selected method
     const selectedShippingFee = useMemo(() => {
-        const selectedOption = shippingOptions.find(option => option.id === selectedShippingId);
-        return selectedOption?.price || deliveryFee;
-    }, [selectedShippingId, shippingOptions, deliveryFee]);
+        if (!selectedShippingId) return 0;
+        const selectedMethod = shippingMethods.find((m) => m.id === selectedShippingId);
+        return selectedMethod ? Number(selectedMethod.price) || 0 : 0;
+    }, [selectedShippingId, shippingMethods]);
+
+    const hasNoShippingMethods = !isShippingLoading && !isShippingError && shippingMethods.length === 0;
+    const requiresShippingSelection = shippingOptions.length > 0 && !selectedShippingId;
 
     // Recalculate total with selected shipping (for selected items only)
     const calculatedTotal = useMemo(() => {
@@ -222,6 +273,17 @@ function CheckoutPageContent() {
             toastWarning("Your cart is empty.");
             return;
         }
+
+        if (hasNoShippingMethods) {
+            toastWarning("No shipping methods available right now. Please contact support.");
+            return;
+        }
+
+        if (requiresShippingSelection) {
+            toastWarning("Please select a shipping method.");
+            return;
+        }
+
         if (calculatedTotal < 1) {
             toastWarning("Minimum payable amount is ₹1.00. Please increase your order total.");
             return;
@@ -264,6 +326,7 @@ function CheckoutPageContent() {
                 amount: calculatedTotal,
                 couponCode: appliedCoupon?.coupon?.code,
                 shippingCharges: selectedShippingFee,
+                shippingMethodId: selectedShippingId,
             });
 
             if (!response.success || !response.data) {
@@ -412,11 +475,40 @@ function CheckoutPageContent() {
                         )}
 
                         {/* Shipping Method */}
-                        <ShippingMethod
-                            options={shippingOptions}
-                            selectedId={selectedShippingId}
-                            onSelect={setSelectedShippingId}
-                        />
+                        {isShippingError ? (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between gap-4">
+                                <p className="text-red-600 text-sm">
+                                    Failed to load shipping methods. Please try again.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => void refetchShippingMethods()}
+                                    className="text-sm font-medium text-red-700 hover:text-red-800 underline"
+                                >
+                                    Retry
+                                </button>
+                            </div>
+                        ) : isShippingLoading ? (
+                            <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
+                                <h2 className="text-xl font-hkgb font-bold text-gray-900 mb-6">Shipping Method</h2>
+                                <div className="space-y-3">
+                                    <div className="h-16 rounded-lg bg-gray-100 animate-pulse" />
+                                    <div className="h-16 rounded-lg bg-gray-100 animate-pulse" />
+                                </div>
+                            </div>
+                        ) : hasNoShippingMethods ? (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                <p className="text-red-600 text-sm">
+                                    No shipping methods available right now. Please contact support.
+                                </p>
+                            </div>
+                        ) : (
+                            <ShippingMethod
+                                options={shippingOptions}
+                                selectedId={selectedShippingId ?? undefined}
+                                onSelect={setSelectedShippingId}
+                            />
+                        )}
 
                     </div>
 
@@ -473,6 +565,14 @@ function CheckoutPageContent() {
                             itemCount={itemCount}
                             onPay={handlePay}
                             isPaying={isPaying}
+                            disabled={hasNoShippingMethods || requiresShippingSelection}
+                            disabledMessage={
+                                hasNoShippingMethods
+                                    ? "No shipping methods available right now. Please contact support."
+                                    : requiresShippingSelection
+                                        ? "Select a shipping method"
+                                        : undefined
+                            }
                         />
                     </div>
                 </div>
