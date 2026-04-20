@@ -20,6 +20,7 @@ export interface Coupon {
     usageLimit?: number;
     usageLimitPerUser: number;
     firstOrderOnly?: boolean;
+    secondOrderOnly?: boolean;
     validFrom: string;
     validUntil: string;
     isActive: boolean;
@@ -39,6 +40,7 @@ export interface CreateCouponData {
     usageLimit?: number;
     usageLimitPerUser?: number;
     firstOrderOnly?: boolean;
+    secondOrderOnly?: boolean;
     validFrom: string;
     validUntil: string;
     isActive?: boolean;
@@ -64,6 +66,7 @@ export async function getCoupons(): Promise<Coupon[]> {
     return response.data.map((coupon) => ({
         ...coupon,
         firstOrderOnly: coupon.firstOrderOnly ?? false,
+        secondOrderOnly: coupon.secondOrderOnly ?? false,
     }));
 }
 
@@ -80,6 +83,7 @@ export async function getCoupon(id: string): Promise<Coupon> {
     return {
         ...response.data,
         firstOrderOnly: response.data.firstOrderOnly ?? false,
+        secondOrderOnly: response.data.secondOrderOnly ?? false,
     };
 }
 
@@ -96,6 +100,7 @@ export async function createCoupon(data: CreateCouponData): Promise<Coupon> {
     return {
         ...response.data,
         firstOrderOnly: response.data.firstOrderOnly ?? data.firstOrderOnly ?? false,
+        secondOrderOnly: response.data.secondOrderOnly ?? data.secondOrderOnly ?? false,
     };
 }
 
@@ -112,10 +117,13 @@ export async function updateCoupon(data: UpdateCouponData): Promise<Coupon> {
 
     return {
         ...response.data,
-        // Preserve submitted value when older backend responses don't include this field yet.
+        // Preserve submitted value when older backend responses don't include these fields yet.
         firstOrderOnly:
             response.data.firstOrderOnly ??
             (typeof updateData.firstOrderOnly === 'boolean' ? updateData.firstOrderOnly : false),
+        secondOrderOnly:
+            response.data.secondOrderOnly ??
+            (typeof updateData.secondOrderOnly === 'boolean' ? updateData.secondOrderOnly : false),
     };
 }
 

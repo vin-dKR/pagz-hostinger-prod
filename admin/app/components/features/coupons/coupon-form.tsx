@@ -50,6 +50,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
         usageLimit: initialData?.usageLimit || undefined,
         usageLimitPerUser: initialData?.usageLimitPerUser || 1,
         firstOrderOnly: initialData?.firstOrderOnly ?? false,
+        secondOrderOnly: initialData?.secondOrderOnly ?? false,
         validFrom: initialData?.validFrom
             ? new Date(initialData.validFrom).toISOString().slice(0, 16)
             : new Date().toISOString().slice(0, 16),
@@ -374,6 +375,8 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                                 setFormData({
                                     ...formData,
                                     firstOrderOnly: e.target.checked,
+                                    // Mutually exclusive with secondOrderOnly
+                                    secondOrderOnly: e.target.checked ? false : formData.secondOrderOnly,
                                     usageLimitPerUser: e.target.checked ? 1 : formData.usageLimitPerUser,
                                 })
                             }
@@ -383,6 +386,28 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                     </div>
                     <p className="text-xs text-gray-500">
                         When enabled, coupon is valid only for users with no previous non-cancelled orders.
+                    </p>
+
+                    <div className="flex items-center space-x-2 pt-1">
+                        <input
+                            type="checkbox"
+                            id="secondOrderOnly"
+                            checked={!!formData.secondOrderOnly}
+                            onChange={(e) =>
+                                setFormData({
+                                    ...formData,
+                                    secondOrderOnly: e.target.checked,
+                                    // Mutually exclusive with firstOrderOnly
+                                    firstOrderOnly: e.target.checked ? false : formData.firstOrderOnly,
+                                    usageLimitPerUser: e.target.checked ? 1 : formData.usageLimitPerUser,
+                                })
+                            }
+                            className="rounded border-gray-300"
+                        />
+                        <Label htmlFor="secondOrderOnly">Second purchase only</Label>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                        When enabled, coupon is valid only for users with exactly one previous non-cancelled order.
                     </p>
                 </CardContent>
             </Card>
