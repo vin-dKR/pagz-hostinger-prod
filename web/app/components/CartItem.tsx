@@ -92,31 +92,36 @@ export default function CartItem({
     
     // Get product image with category fallback
     const productImage = useMemo(() => {
-        // First try product images
-        if (product?.images && product.images.length > 0) {
-            const primaryImage = product.images.find(img => img.isPrimary);
-            if (primaryImage?.url) return primaryImage.url;
-            if (product.images[0]?.url) return product.images[0].url;
-        }
-        
-        // Fallback to category images (category may not be in type but exists in runtime)
-        const productWithCategory = product as any;
-        if (productWithCategory?.category) {
-            const category = productWithCategory.category;
-            // Check if category has images array
-            if (category.images && Array.isArray(category.images) && category.images.length > 0) {
-                const primaryCategoryImage = category.images.find((img: any) => img.isPrimary);
-                if (primaryCategoryImage?.url) return primaryCategoryImage.url;
-                if (category.images[0]?.url) return category.images[0].url;
+        const pickUrl = (): string => {
+            // First try product images
+            if (product?.images && product.images.length > 0) {
+                const primaryImage = product.images.find(img => img.isPrimary);
+                if (primaryImage?.url) return primaryImage.url;
+                if (product.images[0]?.url) return product.images[0].url;
             }
-            // Fallback to legacy category image field
-            if (category.image) {
-                return category.image;
+
+            // Fallback to category images (category may not be in type but exists in runtime)
+            const productWithCategory = product as any;
+            if (productWithCategory?.category) {
+                const category = productWithCategory.category;
+                if (category.images && Array.isArray(category.images) && category.images.length > 0) {
+                    const primaryCategoryImage = category.images.find((img: any) => img.isPrimary);
+                    if (primaryCategoryImage?.url) return primaryCategoryImage.url;
+                    if (category.images[0]?.url) return category.images[0].url;
+                }
+                if (category.image) {
+                    return category.image;
+                }
             }
-        }
-        
-        // Default placeholder
-        return '/images/placeholder.png';
+
+            // Default placeholder
+            return '/images/placeholder.png';
+        };
+
+        const raw = pickUrl();
+        // Root-relative placeholder stays as-is; relative DB paths get prefixed;
+        // full http(s) URLs pass through unchanged.
+        return raw.startsWith('/') ? raw : getPublicS3Url(raw);
     }, [product]);
     
     // Determine display image: template form images > uploaded files > product image

@@ -178,6 +178,7 @@ export const createReview = async (req: Request, res: Response, next: NextFuncti
         const review = await prisma.review.create({
             data: {
                 productId,
+                categoryId: product.categoryId,
                 userId: req.user.id,
                 rating,
                 title: title || null,
@@ -258,23 +259,25 @@ export const updateReview = async (req: Request, res: Response, next: NextFuncti
             },
         });
 
-        // Recalculate product rating
-        const allReviews = await prisma.review.findMany({
-            where: {
-                productId: review.productId,
-                isApproved: true,
-            },
-            select: { rating: true },
-        });
+        // Recalculate product rating (only for product-scoped reviews)
+        if (review.productId) {
+            const allReviews = await prisma.review.findMany({
+                where: {
+                    productId: review.productId,
+                    isApproved: true,
+                },
+                select: { rating: true },
+            });
 
-        const avgRating = allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length;
+            const avgRating = allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length;
 
-        await prisma.product.update({
-            where: { id: review.productId },
-            data: {
-                rating: avgRating,
-            },
-        });
+            await prisma.product.update({
+                where: { id: review.productId },
+                data: {
+                    rating: avgRating,
+                },
+            });
+        }
 
         return sendSuccess(res, updatedReview, "Review updated successfully");
     } catch (error) {
@@ -309,26 +312,28 @@ export const deleteReview = async (req: Request, res: Response, next: NextFuncti
             where: { id: reviewId },
         });
 
-        // Recalculate product rating
-        const allReviews = await prisma.review.findMany({
-            where: {
-                productId: review.productId,
-                isApproved: true,
-            },
-            select: { rating: true },
-        });
+        // Recalculate product rating (only for product-scoped reviews)
+        if (review.productId) {
+            const allReviews = await prisma.review.findMany({
+                where: {
+                    productId: review.productId,
+                    isApproved: true,
+                },
+                select: { rating: true },
+            });
 
-        const avgRating = allReviews.length > 0
-            ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
-            : null;
+            const avgRating = allReviews.length > 0
+                ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
+                : null;
 
-        await prisma.product.update({
-            where: { id: review.productId },
-            data: {
-                rating: avgRating,
-                totalReviews: allReviews.length,
-            },
-        });
+            await prisma.product.update({
+                where: { id: review.productId },
+                data: {
+                    rating: avgRating,
+                    totalReviews: allReviews.length,
+                },
+            });
+        }
 
         return sendSuccess(res, null, "Review deleted successfully");
     } catch (error) {
@@ -590,6 +595,9 @@ export const getAdminReviews = async (req: Request, res: Response, next: NextFun
         const isApproved = req.query.isApproved !== undefined
             ? req.query.isApproved === 'true'
             : undefined;
+        const categoryId = Array.isArray(req.query.categoryId)
+            ? (req.query.categoryId[0] as string)
+            : (req.query.categoryId as string | undefined);
         const skip = (page - 1) * limit;
 
         const where: any = {};
@@ -600,6 +608,10 @@ export const getAdminReviews = async (req: Request, res: Response, next: NextFun
 
         if (isApproved !== undefined) {
             where.isApproved = isApproved;
+        }
+
+        if (categoryId) {
+            where.categoryId = categoryId;
         }
 
         if (search) {
@@ -637,6 +649,13 @@ export const getAdminReviews = async (req: Request, res: Response, next: NextFun
                         select: {
                             id: true,
                             name: true,
+                        },
+                    },
+                    category: {
+                        select: {
+                            id: true,
+                            name: true,
+                            slug: true,
                         },
                     },
                 },
@@ -1025,26 +1044,28 @@ export const deleteAdminReview = async (req: Request, res: Response, next: NextF
             where: { id },
         });
 
-        // Recalculate product rating
-        const allReviews = await prisma.review.findMany({
-            where: {
-                productId: review.productId,
-                isApproved: true,
-            },
-            select: { rating: true },
-        });
+        // Recalculate product rating (only for product-scoped reviews)
+        if (review.productId) {
+            const allReviews = await prisma.review.findMany({
+                where: {
+                    productId: review.productId,
+                    isApproved: true,
+                },
+                select: { rating: true },
+            });
 
-        const avgRating = allReviews.length > 0
-            ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
-            : null;
+            const avgRating = allReviews.length > 0
+                ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
+                : null;
 
-        await prisma.product.update({
-            where: { id: review.productId },
-            data: {
-                rating: avgRating,
-                totalReviews: allReviews.length,
-            },
-        });
+            await prisma.product.update({
+                where: { id: review.productId },
+                data: {
+                    rating: avgRating,
+                    totalReviews: allReviews.length,
+                },
+            });
+        }
 
         return sendSuccess(res, null, "Review deleted successfully");
     } catch (error) {
@@ -1053,7 +1074,10 @@ export const deleteAdminReview = async (req: Request, res: Response, next: NextF
 };
 
 // Helper function to recalculate product rating
-async function recalculateProductRating(productId: string) {
+async function recalculateProductRating(productId: string | null) {
+    if (!productId) {
+        return { avgRating: null, totalReviews: 0 };
+    }
     const allReviews = await prisma.review.findMany({
         where: {
             productId,
@@ -1274,10 +1298,12 @@ export const getReviewStatistics = async (req: Request, res: Response, next: Nex
         // Get product names for most reviewed products
         const mostReviewedProductsWithNames = await Promise.all(
             mostReviewedProducts.map(async (item) => {
-                const product = await prisma.product.findUnique({
-                    where: { id: item.productId },
-                    select: { id: true, name: true },
-                });
+                const product = item.productId
+                    ? await prisma.product.findUnique({
+                        where: { id: item.productId },
+                        select: { id: true, name: true },
+                    })
+                    : null;
                 return {
                     productId: item.productId,
                     productName: product?.name || "Unknown",
@@ -1483,6 +1509,340 @@ export const editAdminReview = async (req: Request, res: Response, next: NextFun
         }
 
         return sendSuccess(res, updatedReview, "Review updated successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Get category reviews
+export const getCategoryReviews = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const categoryId = Array.isArray(req.params.categoryId)
+            ? req.params.categoryId[0]
+            : req.params.categoryId;
+
+        if (!categoryId) {
+            throw new ValidationError("Category ID is required");
+        }
+
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+        const skip = (page - 1) * limit;
+        const sortBy = (req.query.sortBy as string) || "createdAt"; // createdAt, rating, helpful
+        const order = (req.query.order as string) || "desc";
+
+        // Verify category exists
+        const category = await prisma.category.findUnique({
+            where: { id: categoryId },
+        });
+
+        if (!category) {
+            throw new NotFoundError("Category not found");
+        }
+
+        // Additional filters
+        const rating = req.query.rating ? parseInt(req.query.rating as string) : undefined;
+        const verifiedOnly = req.query.verified === 'true';
+        const withImagesOnly = req.query.withImages === 'true';
+
+        const where: any = {
+            categoryId,
+            isApproved: true,
+        };
+
+        if (rating) {
+            where.rating = rating;
+        }
+
+        if (verifiedOnly) {
+            where.isVerifiedPurchase = true;
+        }
+
+        if (withImagesOnly) {
+            where.images = { isEmpty: false };
+        }
+
+        const orderBy: any = {};
+        if (sortBy === "helpful") {
+            orderBy.isHelpful = order === "asc" ? "asc" : "desc";
+        } else if (sortBy === "rating") {
+            orderBy.rating = order === "asc" ? "asc" : "desc";
+        } else {
+            orderBy.createdAt = order === "asc" ? "asc" : "desc";
+        }
+
+        const [reviews, total] = await Promise.all([
+            prisma.review.findMany({
+                where,
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                        },
+                    },
+                    helpfulVotes: req.user ? {
+                        where: { userId: req.user.id },
+                    } : false,
+                },
+                skip,
+                take: limit,
+                orderBy,
+            }),
+            prisma.review.count({ where }),
+        ]);
+
+        // Calculate rating distribution
+        const ratingDistribution = await prisma.review.groupBy({
+            by: ["rating"],
+            where: {
+                categoryId,
+                isApproved: true,
+            },
+            _count: true,
+        });
+
+        // Calculate verified purchase percentage
+        const verifiedCount = await prisma.review.count({
+            where: {
+                categoryId,
+                isApproved: true,
+                isVerifiedPurchase: true,
+            },
+        });
+
+        const verifiedPercentage = total > 0 ? Math.round((verifiedCount / total) * 100) : 0;
+
+        // Calculate overall rating (avg across approved reviews for this category)
+        const overallAggregate = await prisma.review.aggregate({
+            where: {
+                categoryId,
+                isApproved: true,
+            },
+            _avg: { rating: true },
+        });
+
+        const overallRating = total > 0 && overallAggregate._avg.rating !== null && overallAggregate._avg.rating !== undefined
+            ? Math.round(overallAggregate._avg.rating * 100) / 100
+            : null;
+
+        return sendSuccess(res, {
+            reviews,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
+            ratingDistribution: ratingDistribution.reduce((acc, item) => {
+                acc[item.rating] = item._count;
+                return acc;
+            }, {} as Record<number, number>),
+            verifiedPercentage,
+            overallRating,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Create category review
+export const createCategoryReview = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            throw new UnauthorizedError("User not authenticated");
+        }
+
+        const categoryId = Array.isArray(req.params.categoryId)
+            ? req.params.categoryId[0]
+            : req.params.categoryId;
+
+        if (!categoryId) {
+            throw new ValidationError("Category ID is required");
+        }
+
+        const { rating, title, comment, images = [], productId } = req.body;
+
+        if (!rating || rating < 1 || rating > 5) {
+            throw new ValidationError("Rating must be between 1 and 5");
+        }
+
+        // Verify category exists
+        const category = await prisma.category.findUnique({
+            where: { id: categoryId },
+        });
+
+        if (!category) {
+            throw new NotFoundError("Category not found");
+        }
+
+        // Check if user already reviewed this category
+        const existingReview = await prisma.review.findUnique({
+            where: {
+                categoryId_userId: {
+                    categoryId,
+                    userId: req.user.id,
+                },
+            },
+        });
+
+        if (existingReview) {
+            throw new ValidationError("You have already reviewed this category");
+        }
+
+        // Check if user has purchased any product in this category
+        const hasPurchased = await prisma.orderItem.findFirst({
+            where: {
+                order: {
+                    userId: req.user.id,
+                    paymentStatus: "SUCCESS",
+                },
+                product: {
+                    categoryId,
+                },
+            },
+        });
+
+        // Validate optional productId belongs to the category
+        let validatedProductId: string | null = null;
+        if (productId) {
+            const product = await prisma.product.findUnique({
+                where: { id: productId },
+            });
+            if (product && product.categoryId === categoryId) {
+                validatedProductId = productId;
+            } else {
+                validatedProductId = null;
+            }
+        }
+
+        const review = await prisma.review.create({
+            data: {
+                categoryId,
+                productId: validatedProductId,
+                userId: req.user.id,
+                rating,
+                title: title || null,
+                comment: comment || null,
+                images: images ?? [],
+                isVerifiedPurchase: !!hasPurchased,
+                isApproved: false,
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+            },
+        });
+
+        return sendSuccess(res, review, "Review created successfully. It will be visible after admin approval.", 201);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Check if the current customer is eligible to review a category
+export const canReviewCategory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            throw new UnauthorizedError("User not authenticated");
+        }
+
+        const categoryId = Array.isArray(req.params.categoryId)
+            ? req.params.categoryId[0]
+            : req.params.categoryId;
+
+        if (!categoryId) {
+            throw new ValidationError("Category ID is required");
+        }
+
+        const category = await prisma.category.findUnique({
+            where: { id: categoryId },
+        });
+
+        if (!category) {
+            throw new NotFoundError("Category not found");
+        }
+
+        const hasPurchased = !!(await prisma.orderItem.findFirst({
+            where: {
+                order: {
+                    userId: req.user.id,
+                    paymentStatus: "SUCCESS",
+                },
+                product: { categoryId },
+            },
+        }));
+
+        const existingReview = await prisma.review.findUnique({
+            where: {
+                categoryId_userId: {
+                    categoryId,
+                    userId: req.user.id,
+                },
+            },
+            select: { id: true },
+        });
+
+        const alreadyReviewed = !!existingReview;
+        const eligible = hasPurchased && !alreadyReviewed;
+        const reason = !hasPurchased
+            ? "not_purchased"
+            : alreadyReviewed
+                ? "already_reviewed"
+                : null;
+
+        return sendSuccess(res, {
+            eligible,
+            reason,
+            alreadyReviewed,
+            hasPurchased,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Get testimonials (public, global top-rated approved reviews)
+export const getTestimonials = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const limitParam = parseInt(req.query.limit as string);
+        const limit = Math.min(
+            Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 12,
+            50,
+        );
+
+        const testimonials = await prisma.review.findMany({
+            where: { isApproved: true },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                    },
+                },
+                category: {
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                    },
+                },
+            },
+            orderBy: [
+                { rating: "desc" },
+                { isHelpful: "desc" },
+                { createdAt: "desc" },
+            ],
+            take: limit,
+        });
+
+        return sendSuccess(res, { testimonials });
     } catch (error) {
         next(error);
     }

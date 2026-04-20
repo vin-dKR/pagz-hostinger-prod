@@ -11,6 +11,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { PageLoading } from '@/app/components/ui/loading';
 import { getUserWishlistAndCart } from '@/lib/api/users.service';
 import { formatDate, formatCurrency } from '@/lib/utils/format';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 import { Heart, ShoppingCart, Eye } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/app/components/ui/tabs';
@@ -76,7 +77,7 @@ export function UserWishlistCart({ userId }: UserWishlistCartProps) {
                                         <div className="flex items-start gap-4">
                                             {item.product?.images?.[0] && (
                                                 <img
-                                                    src={item.product.images[0].url}
+                                                    src={getPublicFileUrl(item.product.images[0].url)}
                                                     alt={item.product.name}
                                                     className="w-20 h-20 object-cover rounded"
                                                 />
@@ -126,7 +127,7 @@ export function UserWishlistCart({ userId }: UserWishlistCartProps) {
                                         <div key={item.id} className="p-4 flex items-center gap-4">
                                             {item.product?.images?.[0] && (
                                                 <img
-                                                    src={item.product.images[0].url}
+                                                    src={getPublicFileUrl(item.product.images[0].url)}
                                                     alt={item.product.name}
                                                     className="w-16 h-16 object-cover rounded"
                                                 />

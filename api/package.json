@@ -19,6 +19,7 @@
         "db:seed": "prisma db seed",
         "db:studio": "prisma studio",
         "seed:shipping": "bun scripts/seed-shipping-methods.ts",
+        "seed:reviews": "bun scripts/seed-reviews.ts",
         "postinstall": "npm run build"
     },
     "engines": {
@@ -62,9 +63,12 @@
         "@vercel/node": "^3.0.0",
         "bun-types": "latest",
         "eslint": "^9.39.1",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-only-warn": "^1.2.1",
         "prisma": "^7.3.0",
         "swagger-jsdoc": "^6.2.8",
         "tsup": "^8.5.1",
-        "typescript": "5.9.2"
+        "typescript": "5.9.2",
+        "typescript-eslint": "^8.58.2"
     }
 }

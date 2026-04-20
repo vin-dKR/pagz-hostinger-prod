@@ -14,6 +14,7 @@ import { Alert } from '@/app/components/ui/alert';
 import { PageLoading } from '@/app/components/ui/loading';
 import { getProduct, type Product } from '@/lib/api/products.service';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 import { ArrowLeft, Edit } from 'lucide-react';
 import Link from 'next/link';
 
@@ -121,7 +122,7 @@ export function ProductDetail({ productId, initialProduct }: { productId: string
                             {selectedImage ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
-                                    src={selectedImage}
+                                    src={getPublicFileUrl(selectedImage)}
                                     alt={product.name}
                                     className="h-full w-full object-contain p-2"
                                 />
@@ -144,7 +145,7 @@ export function ProductDetail({ productId, initialProduct }: { productId: string
                                         >
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                             <img
-                                                src={img.url}
+                                                src={getPublicFileUrl(img.url)}
                                                 alt={img.alt || product.name}
                                                 className="h-full w-full object-cover"
                                             />

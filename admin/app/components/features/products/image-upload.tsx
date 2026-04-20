@@ -15,6 +15,7 @@ import { uploadProductImageApi, uploadProductImagesApi, deleteProductImageApi, t
 import Image from 'next/image';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 
 interface ImageUploadProps {
     productId: string;
@@ -210,7 +211,7 @@ export function ProductImageUpload({ productId, images, onImagesChange }: ImageU
                             <div key={image.id} className="relative group">
                                 <div className="relative aspect-square overflow-hidden rounded-md border">
                                     <Image
-                                        src={image.url?.startsWith('http') ? image.url : `${process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || 'https://pagz.in'}/${image.url}`}
+                                        src={getPublicFileUrl(image.url || '')}
                                         alt={image.alt || 'Product image'}
                                         fill
                                         className="object-cover"

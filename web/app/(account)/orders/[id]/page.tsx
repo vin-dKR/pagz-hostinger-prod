@@ -22,6 +22,7 @@ import { toastSuccess, toastError } from "@/lib/utils/toast";
 import { TemplateDataDisplay } from "@/app/components/orders/TemplateDataDisplay";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
 import { Button } from "@/app/components/ui/button";
+import OrderItemReviewButton from "@/app/components/reviews/OrderItemReviewButton";
 
 interface OrderItem {
     id: string;
@@ -31,6 +32,7 @@ interface OrderItem {
     price: number;
     size?: string;
     color?: string;
+    categoryId?: string; // For "Write a Review" button
     categoryImage?: string; // Category image URL
     customDesignUrl?: string[]; // Array of S3 URLs
     variant?: string;
@@ -238,13 +240,18 @@ function transformOrder(order: Order): OrderDetails {
                     categoryImage = category.image;
                 }
             }
-            
+
+            // Resolve category ID for the "Write a Review" button.
+            const categoryId: string | undefined =
+                category?.id ?? (item.product as any)?.categoryId;
+
             return {
                 id: item.id,
                 productId: item.productId,
                 name: item.product?.name || "Unknown Product",
                 quantity: item.quantity,
                 price: Number(item.price),
+                categoryId,
                 categoryImage,
                 customDesignUrl: item.customDesignUrl,
                 variant: item.variant?.name,
@@ -603,6 +610,13 @@ function OrderDetailsPageContent({
                                                     formImages={item.templateFormImages}
                                                     productId={item.productId}
                                                 />
+
+                                                {item.categoryId && (
+                                                    <OrderItemReviewButton
+                                                        categoryId={item.categoryId}
+                                                        productId={item.productId}
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                     </div>

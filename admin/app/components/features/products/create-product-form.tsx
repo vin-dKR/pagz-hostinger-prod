@@ -16,6 +16,7 @@ import { Alert } from '@/app/components/ui/alert';
 import { createProduct, type CreateProductData, uploadProductImageApi } from '@/lib/api/products.service';
 import { X } from 'lucide-react';
 import Image from 'next/image';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 
 type WizardStep =
     | 1 // Basic info
@@ -731,7 +732,7 @@ export function CreateProductForm() {
                                     {img.url && (
                                         <div className="relative w-20 h-20 rounded overflow-hidden border">
                                             <Image
-                                                src={img.url}
+                                                src={getPublicFileUrl(img.url)}
                                                 alt={img.alt || 'Product image'}
                                                 fill
                                                 className="object-cover"
