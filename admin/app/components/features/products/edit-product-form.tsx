@@ -31,25 +31,19 @@ import Image from 'next/image';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import Link from 'next/link';
 import { toastPromise } from '@/lib/utils/toast';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 
 interface EditProductFormProps {
     productId: string;
 }
 
-const UPLOADS_BASE_URL = process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || 'https://pagz.in';
-
 function normalizeImageSrc(src?: string | null): string {
     if (!src) return '/images/rows/row1.png';
-    if (
-        src.startsWith('http://') ||
-        src.startsWith('https://') ||
-        src.startsWith('data:') ||
-        src.startsWith('blob:')
-    ) {
+    if (src.startsWith('data:') || src.startsWith('blob:')) {
         return src;
     }
     if (src.startsWith('/')) return src;
-    return `${UPLOADS_BASE_URL}/${src}`;
+    return getPublicFileUrl(src);
 }
 
 export function EditProductForm({ productId }: EditProductFormProps) {

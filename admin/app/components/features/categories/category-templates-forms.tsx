@@ -23,6 +23,7 @@ import {
 } from '@/lib/api/categoryTemplates.service';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastSuccess } from '@/lib/utils/toast';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 import { Plus, Edit, Trash2, FileText, X, GripVertical } from 'lucide-react';
 
 interface CategoryTemplatesFormsProps {
@@ -325,7 +326,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                             <CardHeader>
                                 {template.previewImageUrl && (
                                     <img
-                                        src={template.previewImageUrl}
+                                        src={getPublicFileUrl(template.previewImageUrl)}
                                         alt={template.name}
                                         className="mb-4 h-32 w-full rounded-lg object-cover"
                                     />

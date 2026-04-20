@@ -27,6 +27,7 @@ import {
 } from '@/lib/api/products.service';
 import { getCategories, type Category, type PaginatedCategories } from '@/lib/api/categories.service';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 import { Edit, Trash2, Eye } from 'lucide-react';
 import Link from 'next/link';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
@@ -288,10 +289,11 @@ export function ProductsList() {
                                                 <div className="flex items-center gap-3">
                                                     {product.images && product.images.length > 0 ? (
                                                         <img
-                                                            src={
+                                                            src={getPublicFileUrl(
                                                                 product.images.find((img) => img.isPrimary)?.url ||
-                                                                product.images[0]?.url
-                                                            }
+                                                                product.images[0]?.url ||
+                                                                ''
+                                                            )}
                                                             alt={product.name}
                                                             className="h-12 w-12 rounded-md object-cover border"
                                                         />

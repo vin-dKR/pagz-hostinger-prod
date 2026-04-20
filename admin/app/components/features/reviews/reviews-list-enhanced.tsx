@@ -35,6 +35,7 @@ import {
     type ReviewStatistics,
 } from '@/lib/api/reviews.service';
 import { formatDate } from '@/lib/utils/format';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 import {
     Check,
     X,
@@ -716,7 +717,7 @@ export function ReviewsListEnhanced() {
                                                         <div className="flex items-center gap-1">
                                                             <div className="relative w-10 h-10 rounded border overflow-hidden">
                                                                 <img
-                                                                    src={review.images[0]}
+                                                                    src={getPublicFileUrl(review.images[0] || '')}
                                                                     alt="Review"
                                                                     className="w-full h-full object-cover"
                                                                 />

@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import type { DashboardOverviewResponse } from '@/lib/api/dashboard.service';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 
 interface TopProductsProps {
     topProducts: DashboardOverviewResponse['topProducts'];
@@ -36,7 +37,7 @@ export function TopProducts({ topProducts, loading }: TopProductsProps) {
                                 <div className="flex items-center gap-3">
                                     {product.imageUrl ? (
                                         <img
-                                            src={product.imageUrl}
+                                            src={getPublicFileUrl(product.imageUrl)}
                                             alt={product.name}
                                             className="h-8 w-8 rounded object-cover"
                                         />
