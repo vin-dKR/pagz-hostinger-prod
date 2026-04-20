@@ -785,6 +785,7 @@ model Coupon {
   usageLimit        Int? // Total usage limit (null = unlimited)
   usageLimitPerUser Int                @default(1) // Per user usage limit
   firstOrderOnly    Boolean            @default(false)
+  secondOrderOnly   Boolean            @default(false)
   validFrom         DateTime
   validUntil        DateTime
   isActive          Boolean            @default(true)

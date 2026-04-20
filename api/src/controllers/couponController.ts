@@ -80,16 +80,19 @@ export const validateCoupon = async (req: Request, res: Response, next: NextFunc
             throw new ValidationError("You have already used this coupon");
         }
 
-        // First-order-only coupons can only be used if user has no prior non-cancelled/non-rejected orders.
-        if (coupon.firstOrderOnly) {
+        // First- / second-order-only coupons gate by prior non-cancelled/non-rejected order count.
+        if (coupon.firstOrderOnly || coupon.secondOrderOnly) {
             const priorOrderCount = await prisma.order.count({
                 where: {
                     userId: req.user.id,
                     status: { notIn: ["CANCELLED", "REJECTED"] },
                 },
             });
-            if (priorOrderCount > 0) {
+            if (coupon.firstOrderOnly && priorOrderCount > 0) {
                 throw new ValidationError("This coupon is valid only for first purchase");
+            }
+            if (coupon.secondOrderOnly && priorOrderCount !== 1) {
+                throw new ValidationError("This coupon is valid only for second purchase");
             }
         }
 
@@ -246,6 +249,7 @@ export const getAvailableCoupons = async (req: Request, res: Response, next: Nex
                 usageLimit: true,
                 usageLimitPerUser: true,
                 firstOrderOnly: true,
+                secondOrderOnly: true,
                 _count: {
                     select: {
                         offerProducts: true,
@@ -299,6 +303,7 @@ export const getCouponById = async (req: Request, res: Response, next: NextFunct
                 usageLimit: true,
                 usageLimitPerUser: true,
                 firstOrderOnly: true,
+                secondOrderOnly: true,
                 createdAt: true,
                 updatedAt: true,
                 _count: {
@@ -927,6 +932,7 @@ export const createAdminCoupon = async (req: Request, res: Response, next: NextF
             usageLimit,
             usageLimitPerUser,
             firstOrderOnly,
+            secondOrderOnly,
             validFrom,
             validUntil,
             isActive,
@@ -960,6 +966,7 @@ export const createAdminCoupon = async (req: Request, res: Response, next: NextF
                 usageLimit: usageLimit ? Number(usageLimit) : null,
                 usageLimitPerUser: usageLimitPerUser ? Number(usageLimitPerUser) : 1,
                 firstOrderOnly: Boolean(firstOrderOnly),
+                secondOrderOnly: Boolean(secondOrderOnly),
                 validFrom: new Date(validFrom),
                 validUntil: new Date(validUntil),
                 isActive: isActive !== undefined ? isActive : true,
@@ -1136,6 +1143,7 @@ export const updateAdminCoupon = async (req: Request, res: Response, next: NextF
             usageLimit,
             usageLimitPerUser,
             firstOrderOnly,
+            secondOrderOnly,
             validFrom,
             validUntil,
             isActive,
@@ -1166,6 +1174,7 @@ export const updateAdminCoupon = async (req: Request, res: Response, next: NextF
         if (usageLimit !== undefined) updateData.usageLimit = usageLimit ? Number(usageLimit) : null;
         if (usageLimitPerUser !== undefined) updateData.usageLimitPerUser = Number(usageLimitPerUser);
         if (firstOrderOnly !== undefined) updateData.firstOrderOnly = Boolean(firstOrderOnly);
+        if (secondOrderOnly !== undefined) updateData.secondOrderOnly = Boolean(secondOrderOnly);
         if (validFrom !== undefined) updateData.validFrom = new Date(validFrom);
         if (validUntil !== undefined) updateData.validUntil = new Date(validUntil);
         if (isActive !== undefined) updateData.isActive = isActive;

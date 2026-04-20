@@ -194,6 +194,11 @@ export default function DiscountCodeSection({
                                                         First order only
                                                     </div>
                                                 )}
+                                                {coupon.secondOrderOnly && (
+                                                    <div className="text-xs text-amber-700 mt-1 font-medium">
+                                                        Second order only
+                                                    </div>
+                                                )}
                                                 {coupon.minPurchaseAmount && (
                                                     <div className="text-xs text-gray-400 mt-1">
                                                         Min. purchase: ₹{Number(coupon.minPurchaseAmount).toLocaleString()}
