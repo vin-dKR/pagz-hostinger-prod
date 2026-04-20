@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogClose } from '@/app/components/ui/dialog';
 import { ArrowLeft, Upload } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import ProductDocumentUpload, { FileDetail } from '@/app/components/products/ProductDocumentUpload';
+import { usePageController } from '@/lib/hooks/use-page-controller';
 
 interface TemplatePageProps { 
     params: Promise<{ categorySlug: string }>;
@@ -32,6 +33,19 @@ export default function TemplatePage({ params }: TemplatePageProps) {
     const [fileHasPassword, setFileHasPassword] = useState(false);
     const [filePassword, setFilePassword] = useState('');
     const [isPasswordSubmitted, setIsPasswordSubmitted] = useState(false);
+
+    // Page-controller rules: templates have no specification selection,
+    // so empty specs => only category-wide (null slug) rules match.
+    const {
+        hasRules: hasPageControllerRules,
+        maxPages: pageControllerMaxPages,
+        errorMessage: pageControllerError,
+    } = usePageController({
+        categorySlug,
+        selectedSpecifications: {},
+        pageCount: pendingUploadPageCount,
+        enabled: showUploadDialog,
+    });
 
     // Use TanStack Query for data fetching with caching
     const { 
@@ -407,6 +421,10 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                 maxSizeMB={50}
                                 uploadedFilesS3={uploadedFilesS3}
                                 setUploadedFilesS3={setUploadedFilesS3}
+                                maxPages={pageControllerMaxPages}
+                                currentPageCount={pendingUploadPageCount}
+                                pageControllerError={pageControllerError}
+                                hasPageControllerRules={hasPageControllerRules}
                             />
                             {uploadedFilesS3 && uploadedFilesS3.length >= 1 && (
                                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
@@ -501,7 +519,7 @@ export default function TemplatePage({ params }: TemplatePageProps) {
                                 </Button>
                                 <Button
                                     onClick={handleContinueFromUpload}
-                                    disabled={!canContinueFromUpload}
+                                    disabled={!canContinueFromUpload || !!pageControllerError}
                                 >
                                     Continue
                                 </Button>

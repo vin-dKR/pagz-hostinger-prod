@@ -21,6 +21,7 @@ import Image from 'next/image';
 import { Trash2, Star, StarOff, GripVertical } from 'lucide-react';
 import { toastPromise } from '@/lib/utils/toast';
 import { useConfirm } from '@/lib/hooks/use-confirm';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 
 interface CategoryImagesProps {
     categoryId: string;
@@ -315,7 +316,7 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
                                     >
                                         <div className="relative aspect-square w-full bg-gray-100">
                                             <Image
-                                                src={image.url?.startsWith('http') ? image.url : `${process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || 'https://pagz.in'}/${image.url}`}
+                                                src={getPublicFileUrl(image.url || '')}
                                                 alt={image.alt || 'Category image'}
                                                 fill
                                                 className="object-cover"

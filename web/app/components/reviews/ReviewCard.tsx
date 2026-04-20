@@ -3,8 +3,11 @@
 import { useState } from "react";
 import Image from "next/image";
 import { imageLoader } from "@/lib/utils/image-loader";
-import { Star, ThumbsUp, Image as ImageIcon, BadgeCheck, X } from "lucide-react";
+import { Star, ThumbsUp, BadgeCheck, X, PlayCircle } from "lucide-react";
 import { Review } from "@/lib/api/reviews";
+
+const VIDEO_EXT_RE = /\.(mp4|webm|mov|quicktime)(\?|$)/i;
+const isVideoUrl = (url: string) => VIDEO_EXT_RE.test(url);
 // Format date helper
 function formatDate(date: string | Date): string {
     const d = typeof date === 'string' ? new Date(date) : date;
@@ -30,6 +33,7 @@ interface ReviewCardProps {
     onHelpfulClick?: (reviewId: string, isHelpful: boolean) => void;
     hasVoted?: boolean;
     userVote?: boolean;
+    isHelpfulPending?: boolean;
 }
 
 export default function ReviewCard({
@@ -37,6 +41,7 @@ export default function ReviewCard({
     onHelpfulClick,
     hasVoted = false,
     userVote = false,
+    isHelpfulPending = false,
 }: ReviewCardProps) {
     const [imageViewer, setImageViewer] = useState<{ images: string[]; index: number } | null>(null);
     const [isExpanded, setIsExpanded] = useState(false);
@@ -52,8 +57,9 @@ export default function ReviewCard({
     };
 
     const handleHelpfulClick = () => {
-        if (onHelpfulClick && !hasVoted) {
-            onHelpfulClick(review.id, !userVote);
+        if (onHelpfulClick && !isHelpfulPending) {
+            // Toggle: if already voted helpful, click again removes the vote; otherwise set helpful.
+            onHelpfulClick(review.id, !(hasVoted && userVote));
         }
     };
 
@@ -133,36 +139,53 @@ export default function ReviewCard({
                     </button>
                 )}
 
-                {/* Review Images */}
+                {/* Review Images — small Amazon-style thumbnails */}
                 {review.images && review.images.length > 0 && (
                     <div className="mb-4">
-                        <div className="grid grid-cols-3 gap-2">
-                            {review.images.slice(0, 3).map((image, index) => (
-                                <button
-                                    key={index}
-                                    onClick={() => handleImageClick(index)}
-                                    className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 hover:border-blue-300 transition-colors group"
-                                >
-                                    <Image
-                                        src={image}
-                                        alt={`Review image ${index + 1}`}
-                                        fill
-                                        className="object-cover"
-                                        sizes="(max-width: 768px) 33vw, 150px"
-                                        loader={imageLoader}
-                                    />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                                        <ImageIcon size={20} className="text-white opacity-0 group-hover:opacity-100" />
-                                    </div>
-                                    {index === 2 && review.images!.length > 3 && (
-                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                            <span className="text-white font-medium text-sm">
-                                                +{review.images.length - 3}
-                                            </span>
-                                        </div>
-                                    )}
-                                </button>
-                            ))}
+                        <div className="flex flex-wrap gap-2">
+                            {review.images.slice(0, 6).map((media, index) => {
+                                const video = isVideoUrl(media);
+                                const isLastVisible = index === 5 && review.images!.length > 6;
+                                return (
+                                    <button
+                                        key={index}
+                                        onClick={() => handleImageClick(index)}
+                                        className="relative h-16 w-16 shrink-0 rounded-md overflow-hidden border border-gray-200 hover:border-blue-300 transition-colors group bg-gray-100"
+                                        aria-label={video ? `Play review video ${index + 1}` : `View review image ${index + 1}`}
+                                    >
+                                        {video ? (
+                                            <>
+                                                <video
+                                                    src={media}
+                                                    className="absolute inset-0 w-full h-full object-cover"
+                                                    muted
+                                                    playsInline
+                                                    preload="metadata"
+                                                />
+                                                <div className="absolute inset-0 flex items-center justify-center bg-black/25 group-hover:bg-black/35 transition-colors">
+                                                    <PlayCircle size={20} className="text-white drop-shadow" />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <Image
+                                                src={media}
+                                                alt={`Review media ${index + 1}`}
+                                                fill
+                                                className="object-cover"
+                                                sizes="64px"
+                                                loader={imageLoader}
+                                            />
+                                        )}
+                                        {isLastVisible && (
+                                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                                <span className="text-white font-medium text-xs">
+                                                    +{review.images.length - 6}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
@@ -171,13 +194,11 @@ export default function ReviewCard({
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                     <button
                         onClick={handleHelpfulClick}
-                        disabled={hasVoted}
+                        disabled={isHelpfulPending}
                         className={`flex items-center gap-1.5 text-sm transition-colors ${hasVoted && userVote
                             ? "text-blue-600 font-medium"
-                            : hasVoted
-                                ? "text-gray-400 cursor-not-allowed"
-                                : "text-gray-600 hover:text-blue-600 cursor-pointer"
-                            }`}
+                            : "text-gray-600 hover:text-blue-600 cursor-pointer"
+                            } ${isHelpfulPending ? "opacity-60 cursor-wait" : ""}`}
                     >
                         <ThumbsUp
                             size={16}
@@ -205,15 +226,31 @@ export default function ReviewCard({
                         </button>
 
                         <div className="relative w-full max-w-4xl max-h-[90vh] aspect-square mx-auto">
-                            <Image
-                                src={imageViewer.images[imageViewer.index] || ""}
-                                alt={`Review image ${imageViewer.index + 1}`}
-                                fill
-                                loader={imageLoader}
-                                className="object-contain rounded-lg"
-                                sizes="100vw"
-                                onClick={(e) => e.stopPropagation()}
-                            />
+                            {(() => {
+                                const src = imageViewer.images[imageViewer.index] || "";
+                                if (isVideoUrl(src)) {
+                                    return (
+                                        <video
+                                            src={src}
+                                            controls
+                                            autoPlay
+                                            className="absolute inset-0 w-full h-full object-contain rounded-lg bg-black"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    );
+                                }
+                                return (
+                                    <Image
+                                        src={src}
+                                        alt={`Review media ${imageViewer.index + 1}`}
+                                        fill
+                                        loader={imageLoader}
+                                        className="object-contain rounded-lg"
+                                        sizes="100vw"
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                );
+                            })()}
                         </div>
 
                         {imageViewer.images.length > 1 && (

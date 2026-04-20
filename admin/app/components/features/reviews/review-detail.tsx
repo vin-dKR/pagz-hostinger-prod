@@ -23,6 +23,7 @@ import {
 import { getProduct, type Product } from '@/lib/api/products.service';
 import { getUser, type User } from '@/lib/api/users.service';
 import { formatDate, formatDateTime } from '@/lib/utils/format';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 import {
     ArrowLeft,
     Star,
@@ -31,6 +32,7 @@ import {
     Trash2,
     Edit,
     Package,
+    FolderTree,
     User as UserIcon,
     Mail,
     Phone,
@@ -401,7 +403,7 @@ export function ReviewDetail({ reviewId, initialReview }: ReviewDetailProps) {
                                                     className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 hover:border-blue-300 transition-colors group"
                                                 >
                                                     <img
-                                                        src={image}
+                                                        src={getPublicFileUrl(image)}
                                                         alt={`Review image ${index + 1}`}
                                                         className="w-full h-full object-cover"
                                                     />
@@ -474,7 +476,7 @@ export function ReviewDetail({ reviewId, initialReview }: ReviewDetailProps) {
                                     {product.images && product.images.length > 0 && product.images[0] && (
                                         <div className="relative w-full aspect-square rounded-lg overflow-hidden border">
                                             <img
-                                                src={product.images[0].url}
+                                                src={getPublicFileUrl(product.images[0].url)}
                                                 alt={product.name}
                                                 className="w-full h-full object-cover"
                                             />
@@ -499,6 +501,34 @@ export function ReviewDetail({ reviewId, initialReview }: ReviewDetailProps) {
                                         <Button variant="outline" className="w-full">
                                             <ExternalLink className="h-4 w-4 mr-2" />
                                             View Product
+                                        </Button>
+                                    </Link>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* Category Information Card */}
+                        {review.category && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <FolderTree className="h-5 w-5" />
+                                        Category Information
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <div>
+                                        <h3 className="font-semibold text-lg mb-1">
+                                            {review.category.name}
+                                        </h3>
+                                        <div className="text-sm text-gray-600">
+                                            Slug: <span className="font-mono">{review.category.slug}</span>
+                                        </div>
+                                    </div>
+                                    <Link href={`/categories/${review.category.id}`}>
+                                        <Button variant="outline" className="w-full">
+                                            <ExternalLink className="h-4 w-4 mr-2" />
+                                            View Category
                                         </Button>
                                     </Link>
                                 </CardContent>
@@ -611,7 +641,7 @@ export function ReviewDetail({ reviewId, initialReview }: ReviewDetailProps) {
                             <X size={24} />
                         </button>
                         <img
-                            src={imageViewer.images[imageViewer.index]}
+                            src={getPublicFileUrl(imageViewer.images[imageViewer.index] || '')}
                             alt={`Review image ${imageViewer.index + 1}`}
                             className="max-w-full max-h-[90vh] object-contain mx-auto rounded-lg"
                             onClick={(e) => e.stopPropagation()}

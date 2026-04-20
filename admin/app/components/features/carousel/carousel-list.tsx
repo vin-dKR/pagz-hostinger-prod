@@ -22,6 +22,7 @@ import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
 import Image from 'next/image';
 import Link from 'next/link';
+import { getPublicFileUrl } from '@/lib/utils/fileUrl';
 import {
     DndContext,
     closestCenter,
@@ -81,7 +82,7 @@ function SortableItem({ carousel, onEdit, onDelete, onToggleActive }: SortableIt
                 </div>
                 <div className="shrink-0">
                     <Image
-                        src={carousel.imageUrl}
+                        src={getPublicFileUrl(carousel.imageUrl)}
                         alt={carousel.alt || 'Carousel image'}
                         width={120}
                         height={80}

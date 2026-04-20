@@ -20,6 +20,7 @@ import {
     type CategoryAddon,
 } from '@/lib/api/categories';
 import { SubcategoryGrid } from '@/app/components/services/SubcategoryGrid';
+import CategoryReviewsSection from '@/app/components/reviews/CategoryReviewsSection';
 import {
     getAvailableOptions as getAvailableOptionsUtil,
     isSpecificationVisible as isSpecificationVisibleUtil,
@@ -1750,6 +1751,8 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     </div>
                 )}
             </ProductPageTemplate>
+
+            {category?.id && <CategoryReviewsSection categoryId={category.id} />}
         </div>
     );
 }
