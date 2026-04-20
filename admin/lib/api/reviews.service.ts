@@ -8,6 +8,7 @@ import { get, put, del, post } from './api-client';
 export interface Review {
     id: string;
     productId: string;
+    categoryId?: string;
     userId: string;
     rating: number;
     title?: string;
@@ -21,6 +22,11 @@ export interface Review {
     product?: {
         id: string;
         name: string;
+    };
+    category?: {
+        id: string;
+        name: string;
+        slug: string;
     };
     user?: {
         id: string;
@@ -52,6 +58,7 @@ export interface ReviewQueryParams {
     rating?: number;
     isApproved?: boolean;
     productId?: string;
+    categoryId?: string;
     userId?: string;
     dateFrom?: string;
     dateTo?: string;
@@ -86,6 +93,12 @@ export async function getReviews(
     if (params?.search) queryString.append('search', params.search);
     if (params?.rating) queryString.append('rating', params.rating.toString());
     if (params?.isApproved !== undefined) queryString.append('isApproved', params.isApproved.toString());
+    if (params?.categoryId) queryString.append('categoryId', params.categoryId);
+    if (params?.productId) queryString.append('productId', params.productId);
+    if (params?.userId) queryString.append('userId', params.userId);
+    if (params?.isVerifiedPurchase !== undefined) queryString.append('isVerifiedPurchase', params.isVerifiedPurchase.toString());
+    if (params?.dateFrom) queryString.append('dateFrom', params.dateFrom);
+    if (params?.dateTo) queryString.append('dateTo', params.dateTo);
 
     const response = await get<PaginatedResponse<Review>>(
         `/admin/reviews?${queryString.toString()}`

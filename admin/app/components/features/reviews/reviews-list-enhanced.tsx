@@ -47,7 +47,9 @@ import {
     Eye,
     User,
     Package,
+    FolderTree,
 } from 'lucide-react';
+import { getCategories, type Category } from '@/lib/api/categories.service';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { toastError, toastPromise, toastSuccess } from '@/lib/utils/toast';
 import { useConfirm } from '@/lib/hooks/use-confirm';
@@ -71,13 +73,24 @@ export function ReviewsListEnhanced() {
         page: 1,
         limit: 20,
     });
+    const [categories, setCategories] = useState<Category[]>([]);
     const debouncedSearch = useDebouncedValue(searchInput, 400);
     const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
     const { confirm, ConfirmDialog } = useConfirm();
 
     useEffect(() => {
         loadStatistics();
+        loadCategories();
     }, []);
+
+    const loadCategories = async () => {
+        try {
+            const data = await getCategories({ page: 1, limit: 200 });
+            setCategories(data.items);
+        } catch (err) {
+            console.error('Failed to load categories:', err);
+        }
+    };
 
     useEffect(() => {
         loadReviews();
@@ -421,7 +434,7 @@ export function ReviewsListEnhanced() {
                             {/* Filters Panel */}
                             {showFilters && (
                                 <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200 space-y-3">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                                 Approval Status
@@ -487,11 +500,34 @@ export function ReviewsListEnhanced() {
                                                 <option value="false">Non-Verified Only</option>
                                             </select>
                                         </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Category
+                                            </label>
+                                            <select
+                                                value={filters.categoryId || ''}
+                                                onChange={(e) =>
+                                                    updateFilters({
+                                                        categoryId: e.target.value || undefined,
+                                                    })
+                                                }
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                            >
+                                                <option value="">All Categories</option>
+                                                {categories.map((category) => (
+                                                    <option key={category.id} value={category.id}>
+                                                        {category.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
 
                                     {(filters.isApproved !== undefined ||
                                         filters.rating ||
-                                        filters.isVerifiedPurchase) && (
+                                        filters.isVerifiedPurchase ||
+                                        filters.categoryId) && (
                                             <Button
                                                 variant="outline"
                                                 size="sm"
@@ -604,6 +640,7 @@ export function ReviewsListEnhanced() {
                                                 </button>
                                             </TableHead>
                                             <TableHead>Product</TableHead>
+                                            <TableHead>Category</TableHead>
                                             <TableHead>User</TableHead>
                                             <TableHead>Rating</TableHead>
                                             <TableHead>Title/Comment</TableHead>
@@ -631,7 +668,13 @@ export function ReviewsListEnhanced() {
                                                 <TableCell className="font-medium">
                                                     <div className="flex items-center gap-2">
                                                         <Package className="h-4 w-4 text-gray-400" />
-                                                        {review.product?.name || 'N/A'}
+                                                        {review.product?.name || '—'}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="font-medium">
+                                                    <div className="flex items-center gap-2">
+                                                        <FolderTree className="h-4 w-4 text-gray-400" />
+                                                        {review.category?.name ?? '—'}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>

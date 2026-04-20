@@ -31,6 +31,7 @@ import {
     Trash2,
     Edit,
     Package,
+    FolderTree,
     User as UserIcon,
     Mail,
     Phone,
@@ -499,6 +500,34 @@ export function ReviewDetail({ reviewId, initialReview }: ReviewDetailProps) {
                                         <Button variant="outline" className="w-full">
                                             <ExternalLink className="h-4 w-4 mr-2" />
                                             View Product
+                                        </Button>
+                                    </Link>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* Category Information Card */}
+                        {review.category && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <FolderTree className="h-5 w-5" />
+                                        Category Information
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <div>
+                                        <h3 className="font-semibold text-lg mb-1">
+                                            {review.category.name}
+                                        </h3>
+                                        <div className="text-sm text-gray-600">
+                                            Slug: <span className="font-mono">{review.category.slug}</span>
+                                        </div>
+                                    </div>
+                                    <Link href={`/categories/${review.category.id}`}>
+                                        <Button variant="outline" className="w-full">
+                                            <ExternalLink className="h-4 w-4 mr-2" />
+                                            View Category
                                         </Button>
                                     </Link>
                                 </CardContent>

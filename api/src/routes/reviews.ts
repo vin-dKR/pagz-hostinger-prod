@@ -6,6 +6,9 @@ import {
     deleteReview,
     voteReviewHelpful,
     removeHelpfulVote,
+    getCategoryReviews,
+    createCategoryReview,
+    getTestimonials,
 } from "../controllers/reviewController.js";
 import { customerAuth } from "../middleware/auth.js";
 
@@ -18,10 +21,13 @@ const router: IRouter = Router();
  */
 
 // Public routes
+router.get("/testimonials", getTestimonials);
+router.get("/category/:categoryId", getCategoryReviews);
 router.get("/product/:productId", getProductReviews);
 
 // Protected routes
 router.use(customerAuth);
+router.post("/category/:categoryId", createCategoryReview);
 router.post("/product/:productId", createReview);
 router.put("/:reviewId", updateReview);
 router.delete("/:reviewId", deleteReview);

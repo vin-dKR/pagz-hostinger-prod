@@ -58,6 +58,29 @@ export interface CreateReviewData {
     images?: string[];
 }
 
+export interface Testimonial {
+    id: string;
+    rating: number;
+    title?: string | null;
+    comment?: string | null;
+    createdAt: string;
+    user?: { id: string; name?: string | null };
+    category?: { id: string; name: string; slug: string };
+}
+
+export interface CategoryReview extends Review {
+    categoryId?: string;
+    category?: { id: string; name: string; slug: string };
+}
+
+export interface CategoryReviewListResponse extends ReviewListResponse {
+    overallRating: number | null;
+}
+
+export interface CreateCategoryReviewData extends CreateReviewData {
+    productId?: string;
+}
+
 export interface UpdateReviewData {
     rating?: number;
     title?: string;
@@ -130,5 +153,47 @@ export async function removeHelpfulVote(
     reviewId: string
 ): Promise<ApiResponse<{ helpfulCount: number }>> {
     return del<{ helpfulCount: number }>(`/reviews/${reviewId}/helpful`);
+}
+
+/**
+ * Get public testimonials (top-rated approved reviews, global feed)
+ */
+export async function getTestimonials(
+    limit: number = 12
+): Promise<ApiResponse<{ testimonials: Testimonial[] }>> {
+    return get<{ testimonials: Testimonial[] }>(`/reviews/testimonials?limit=${limit}`);
+}
+
+/**
+ * Get category reviews
+ */
+export async function getCategoryReviews(
+    categoryId: string,
+    params?: ReviewListParams
+): Promise<ApiResponse<CategoryReviewListResponse>> {
+    const queryParams = new URLSearchParams();
+
+    if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+                queryParams.append(key, String(value));
+            }
+        });
+    }
+
+    const queryString = queryParams.toString();
+    return get<CategoryReviewListResponse>(
+        `/reviews/category/${categoryId}${queryString ? `?${queryString}` : ''}`
+    );
+}
+
+/**
+ * Create a category review
+ */
+export async function createCategoryReview(
+    categoryId: string,
+    data: CreateCategoryReviewData
+): Promise<ApiResponse<CategoryReview>> {
+    return post<CategoryReview>(`/reviews/category/${categoryId}`, data);
 }
 

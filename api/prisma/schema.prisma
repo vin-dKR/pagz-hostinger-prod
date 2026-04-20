@@ -97,6 +97,7 @@ model Category {
   carousels      Carousel[]
   templates      CategoryTemplate[]
   pageControllerRules CategoryPageControllerRule[]
+  reviews        Review[]
 
   @@index([parentId])
   @@index([isActive])
@@ -695,10 +696,11 @@ model WishlistItem {
   @@map("wishlist_items")
 }
 
-// Review model
+// Review model (supports product OR category scope; categoryId is primary going forward)
 model Review {
   id                 String   @id @default(uuid())
-  productId          String
+  productId          String? // Nullable — legacy product-scoped reviews
+  categoryId         String? // Nullable — category-scoped reviews (new)
   userId             String
   rating             Int // 1-5 stars
   title              String?
@@ -710,15 +712,19 @@ model Review {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  product      Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product      Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  category     Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   helpfulVotes ReviewHelpfulVote[]
 
   @@unique([productId, userId]) // One review per user per product
+  @@unique([categoryId, userId]) // One review per user per category
   @@index([productId])
+  @@index([categoryId])
   @@index([userId])
   @@index([isApproved])
   @@index([productId, isApproved])
+  @@index([categoryId, isApproved])
   @@index([rating])
   @@index([createdAt])
   @@map("reviews")
