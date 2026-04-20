@@ -22,9 +22,13 @@ import {
     type FormField,
 } from '@/lib/api/categoryTemplates.service';
 import { useConfirm } from '@/lib/hooks/use-confirm';
-import { toastSuccess } from '@/lib/utils/toast';
+import { toastSuccess, toastError, toastLoading, toastDismiss } from '@/lib/utils/toast';
 import { getPublicFileUrl } from '@/lib/utils/fileUrl';
-import { Plus, Edit, Trash2, FileText, X, GripVertical } from 'lucide-react';
+import { uploadFileToFTP, FTP_FOLDERS } from '@/lib/api/ftp';
+import { Plus, Edit, Trash2, FileText, X, GripVertical, Upload, ImageIcon } from 'lucide-react';
+
+const TEMPLATE_PREVIEW_MAX_MB = 10;
+const TEMPLATE_PREVIEW_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 interface CategoryTemplatesFormsProps {
     categoryId: string;
@@ -51,6 +55,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
     const [templateModalOpen, setTemplateModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<CategoryTemplate | null>(null);
     const [savingTemplate, setSavingTemplate] = useState(false);
+    const [uploadingPreview, setUploadingPreview] = useState(false);
     const [templateForm, setTemplateForm] = useState<{
         name: string;
         description: string;
@@ -125,6 +130,31 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
             resetTemplateForm();
         }
         setTemplateModalOpen(true);
+    };
+
+    const handlePreviewUpload = async (file: File) => {
+        if (!TEMPLATE_PREVIEW_MIME.includes(file.type)) {
+            toastError('Unsupported image type. Use JPG, PNG, WebP, or GIF.');
+            return;
+        }
+        if (file.size > TEMPLATE_PREVIEW_MAX_MB * 1024 * 1024) {
+            toastError(`Image exceeds ${TEMPLATE_PREVIEW_MAX_MB}MB limit.`);
+            return;
+        }
+
+        const toastId = toastLoading('Uploading preview image...');
+        try {
+            setUploadingPreview(true);
+            const result = await uploadFileToFTP(file, FTP_FOLDERS.TEMPLATES);
+            setTemplateForm((prev) => ({ ...prev, previewImageUrl: result.path }));
+            toastDismiss(toastId);
+            toastSuccess('Preview image uploaded');
+        } catch (err) {
+            toastDismiss(toastId);
+            toastError(err instanceof Error ? err.message : 'Upload failed');
+        } finally {
+            setUploadingPreview(false);
+        }
     };
 
     const handleSaveTemplate = async (e: FormEvent) => {
@@ -409,15 +439,66 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                         </div>
 
                         <div>
-                            <Label htmlFor="template-image">Preview Image URL</Label>
-                            <Input
-                                id="template-image"
-                                value={templateForm.previewImageUrl}
-                                onChange={(e) =>
-                                    setTemplateForm({ ...templateForm, previewImageUrl: e.target.value })
-                                }
-                                placeholder="https://example.com/image.jpg"
-                            />
+                            <Label>Preview Image</Label>
+                            {templateForm.previewImageUrl ? (
+                                <div className="mt-1 flex items-start gap-3">
+                                    <img
+                                        src={getPublicFileUrl(templateForm.previewImageUrl)}
+                                        alt="Template preview"
+                                        className="h-24 w-24 rounded-md border object-cover bg-gray-50"
+                                    />
+                                    <div className="flex flex-col gap-2">
+                                        <label
+                                            className={`inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-gray-50 ${uploadingPreview ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                                        >
+                                            <input
+                                                type="file"
+                                                accept={TEMPLATE_PREVIEW_MIME.join(',')}
+                                                disabled={uploadingPreview}
+                                                onChange={(e) => {
+                                                    const f = e.target.files?.[0];
+                                                    if (f) void handlePreviewUpload(f);
+                                                    e.target.value = '';
+                                                }}
+                                                className="hidden"
+                                            />
+                                            <Upload className="h-3 w-3" />
+                                            {uploadingPreview ? 'Uploading…' : 'Replace'}
+                                        </label>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            disabled={uploadingPreview}
+                                            onClick={() =>
+                                                setTemplateForm({ ...templateForm, previewImageUrl: '' })
+                                            }
+                                            className="text-red-600 hover:text-red-700"
+                                        >
+                                            <X className="h-3 w-3 mr-1" /> Remove
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <label className="mt-1 flex h-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-gray-300 bg-gray-50 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                                    <input
+                                        type="file"
+                                        accept={TEMPLATE_PREVIEW_MIME.join(',')}
+                                        disabled={uploadingPreview}
+                                        onChange={(e) => {
+                                            const f = e.target.files?.[0];
+                                            if (f) void handlePreviewUpload(f);
+                                            e.target.value = '';
+                                        }}
+                                        className="hidden"
+                                    />
+                                    <ImageIcon className="h-5 w-5" />
+                                    <span>{uploadingPreview ? 'Uploading…' : 'Click to upload preview image'}</span>
+                                    <span className="text-[10px] text-gray-400">
+                                        JPG, PNG, WebP, GIF · max {TEMPLATE_PREVIEW_MAX_MB}MB
+                                    </span>
+                                </label>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
