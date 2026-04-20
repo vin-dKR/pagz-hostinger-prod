@@ -58,7 +58,27 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             throw new NotFoundError("Address not found");
         }
 
-        const { couponCode, shippingCharges = 0 } = req.body;
+        const { couponCode, shippingCharges = 0, shippingMethodId } = req.body;
+
+        // Resolve shipping method (server-authoritative price when method id is provided)
+        let resolvedShippingMethodId: string | null = null;
+        let serverShippingCharges: number | null = null;
+        if (typeof shippingMethodId === "string" && shippingMethodId.trim().length > 0) {
+            const method = await prisma.shippingMethod.findUnique({
+                where: { id: shippingMethodId },
+            });
+
+            if (!method) {
+                throw new ValidationError("Invalid shipping method");
+            }
+
+            if (!method.isActive) {
+                throw new ValidationError("Selected shipping method is no longer available");
+            }
+
+            resolvedShippingMethodId = method.id;
+            serverShippingCharges = Number(method.price);
+        }
 
         // Calculate subtotal and validate items
         // OPTIMIZATION: Fetch all products in parallel instead of sequentially
@@ -303,8 +323,12 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             });
         }
 
-        // Calculate final total (subtotal + addonsSubtotal - discount + shipping)
-        const finalShippingCharges = Number(shippingCharges) || 0;
+        // Calculate final total (subtotal + addonsSubtotal - discount + shipping).
+        // When a shippingMethodId resolves, the method price is authoritative; the
+        // client-supplied shippingCharges is only kept as a legacy fallback.
+        const finalShippingCharges = serverShippingCharges !== null
+            ? serverShippingCharges
+            : Number(shippingCharges) || 0;
         const total = subtotal + addonsSubtotal - discountAmount + finalShippingCharges;
 
         // Create order
@@ -316,6 +340,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 addonsSubtotal: addonsSubtotal > 0 ? addonsSubtotal : null,
                 discountAmount: discountAmount > 0 ? discountAmount : null,
                 shippingCharges: finalShippingCharges > 0 ? finalShippingCharges : null,
+                shippingMethodId: resolvedShippingMethodId,
                 total,
                 paymentMethod,
                 couponId,
@@ -514,6 +539,15 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
                 payments: true,
                 refunds: {
                     orderBy: { requestedAt: "desc" },
+                },
+                shippingMethod: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        price: true,
+                        estimatedDays: true,
+                    },
                 },
             },
         });
@@ -1025,6 +1059,15 @@ export const getAdminOrder = async (req: Request, res: Response, next: NextFunct
                 payments: true,
                 refunds: {
                     orderBy: { requestedAt: "desc" },
+                },
+                shippingMethod: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        price: true,
+                        estimatedDays: true,
+                    },
                 },
             },
         });

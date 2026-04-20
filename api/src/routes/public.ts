@@ -23,6 +23,7 @@ import {
     getOfferProducts,
 } from "../controllers/offerController.js";
 import { getCarousels } from "../controllers/carouselController.js";
+import { getPublicShippingMethods } from "../controllers/shippingMethodController.js";
 
 const router: IRouter = Router();
 
@@ -57,6 +58,12 @@ router.get("/offers/:id/products", getOfferProducts);
  * Routes for fetching homepage carousel items
  */
 router.get("/carousels", getCarousels);
+
+/**
+ * Public Shipping Methods Routes
+ * Routes for fetching active shipping methods at checkout
+ */
+router.get("/shipping-methods", getPublicShippingMethods);
 
 export default router;
 

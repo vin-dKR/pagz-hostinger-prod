@@ -133,6 +133,15 @@ import {
     deleteCarousel,
     reorderCarousels,
 } from "../controllers/carouselController.js";
+// Shipping Method Management (admin only)
+import {
+    getAdminShippingMethods,
+    getAdminShippingMethod,
+    createShippingMethod,
+    updateShippingMethod,
+    deleteShippingMethod,
+    reorderShippingMethods,
+} from "../controllers/shippingMethodController.js";
 import {
     getCategoryTemplates,
     getCategoryTemplate,
@@ -346,5 +355,14 @@ router.post("/carousels", createCarousel);
 router.put("/carousels/:id", updateCarousel);
 router.delete("/carousels/:id", deleteCarousel);
 router.post("/carousels/reorder", reorderCarousels);
+
+// Shipping Method Management (admin only)
+// NOTE: /reorder must come before /:id so Express doesn't treat "reorder" as an id
+router.get("/shipping-methods", getAdminShippingMethods);
+router.post("/shipping-methods/reorder", reorderShippingMethods);
+router.get("/shipping-methods/:id", getAdminShippingMethod);
+router.post("/shipping-methods", createShippingMethod);
+router.put("/shipping-methods/:id", updateShippingMethod);
+router.delete("/shipping-methods/:id", deleteShippingMethod);
 
 export default router;

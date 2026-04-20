@@ -17,6 +17,7 @@ import {
     LogOut,
     Users,
     Ticket,
+    Truck,
     CreditCard,
     Star,
     ChevronLeft,
@@ -36,6 +37,7 @@ const navigation = [
     { name: 'Carousel', href: '/carousels', icon: ImageIcon },
     { name: 'Users', href: '/users', icon: Users },
     { name: 'Coupons', href: '/coupons', icon: Ticket },
+    { name: 'Shipping', href: '/shipping-methods', icon: Truck },
     { name: 'Payments', href: '/payments', icon: CreditCard },
     { name: 'Reviews', href: '/reviews', icon: Star },
 ]
