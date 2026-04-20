@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { imageLoader } from "@/lib/utils/image-loader";
-import { Star, ThumbsUp, Image as ImageIcon, BadgeCheck, X, PlayCircle } from "lucide-react";
+import { Star, ThumbsUp, BadgeCheck, X, PlayCircle } from "lucide-react";
 import { Review } from "@/lib/api/reviews";
 
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|quicktime)(\?|$)/i;
@@ -139,17 +139,19 @@ export default function ReviewCard({
                     </button>
                 )}
 
-                {/* Review Images */}
+                {/* Review Images — small Amazon-style thumbnails */}
                 {review.images && review.images.length > 0 && (
                     <div className="mb-4">
-                        <div className="grid grid-cols-3 gap-2">
-                            {review.images.slice(0, 3).map((media, index) => {
+                        <div className="flex flex-wrap gap-2">
+                            {review.images.slice(0, 6).map((media, index) => {
                                 const video = isVideoUrl(media);
+                                const isLastVisible = index === 5 && review.images!.length > 6;
                                 return (
                                     <button
                                         key={index}
                                         onClick={() => handleImageClick(index)}
-                                        className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 hover:border-blue-300 transition-colors group bg-gray-100"
+                                        className="relative h-16 w-16 shrink-0 rounded-md overflow-hidden border border-gray-200 hover:border-blue-300 transition-colors group bg-gray-100"
+                                        aria-label={video ? `Play review video ${index + 1}` : `View review image ${index + 1}`}
                                     >
                                         {video ? (
                                             <>
@@ -160,29 +162,24 @@ export default function ReviewCard({
                                                     playsInline
                                                     preload="metadata"
                                                 />
-                                                <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
-                                                    <PlayCircle size={32} className="text-white drop-shadow" />
+                                                <div className="absolute inset-0 flex items-center justify-center bg-black/25 group-hover:bg-black/35 transition-colors">
+                                                    <PlayCircle size={20} className="text-white drop-shadow" />
                                                 </div>
                                             </>
                                         ) : (
-                                            <>
-                                                <Image
-                                                    src={media}
-                                                    alt={`Review media ${index + 1}`}
-                                                    fill
-                                                    className="object-cover"
-                                                    sizes="(max-width: 768px) 33vw, 150px"
-                                                    loader={imageLoader}
-                                                />
-                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                                                    <ImageIcon size={20} className="text-white opacity-0 group-hover:opacity-100" />
-                                                </div>
-                                            </>
+                                            <Image
+                                                src={media}
+                                                alt={`Review media ${index + 1}`}
+                                                fill
+                                                className="object-cover"
+                                                sizes="64px"
+                                                loader={imageLoader}
+                                            />
                                         )}
-                                        {index === 2 && review.images!.length > 3 && (
+                                        {isLastVisible && (
                                             <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                                <span className="text-white font-medium text-sm">
-                                                    +{review.images.length - 3}
+                                                <span className="text-white font-medium text-xs">
+                                                    +{review.images.length - 6}
                                                 </span>
                                             </div>
                                         )}
