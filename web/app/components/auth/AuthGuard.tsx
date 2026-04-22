@@ -9,6 +9,7 @@ import {
     getRedirectPath,
 } from "../../../lib/utils/auth-redirect";
 import { processPendingAddToCartIntent } from "../../../lib/utils/pending-cart-intent";
+import { hasPendingPurchaseData } from "../../../lib/utils/pending-purchase";
 import { toastError } from "../../../lib/utils/toast";
 
 /**
@@ -34,27 +35,29 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                     const redirectPath = getRedirectPath();
                     const authIntent = getAuthIntentFromSearch();
 
-                    if (authIntent === "add_to_cart") {
+                    // Trigger cart merge whenever pending-purchase data exists,
+                    // not just when the URL carries ?intent=add_to_cart. This
+                    // covers users who signed up / logged in via a link that
+                    // dropped the intent param (e.g. clicking "Register" on
+                    // a stale tab, or landing on /auth/signup directly).
+                    const shouldProcessPending =
+                        authIntent === "add_to_cart" || hasPendingPurchaseData();
+
+                    if (shouldProcessPending) {
                         const result = await processPendingAddToCartIntent();
                         if (result.handled) {
                             clearRedirectPath();
                             if (result.success) {
                                 // Prefer the originally requested destination
-                                // (e.g. `/checkout?items=...` when the user
-                                // clicked Checkout from the guest cart).
-                                // Fall back to `/cart` so returning users
-                                // still see their merged item.
-                                //
-                                // Full reload avoids stale cart context
-                                // initialised pre-token.
+                                // (e.g. `/checkout` when the user clicked
+                                // Checkout from the guest cart). Fall back to
+                                // `/cart` so returning users still see their
+                                // merged item. Full reload avoids stale cart
+                                // context initialised pre-token.
                                 window.location.href = redirectPath || "/cart";
                             } else {
                                 toastError(result.error || "Failed to restore your cart item.");
-                                if (redirectPath) {
-                                    window.location.href = redirectPath;
-                                } else {
-                                    router.replace("/");
-                                }
+                                window.location.href = redirectPath || "/cart";
                             }
                             return;
                         }
