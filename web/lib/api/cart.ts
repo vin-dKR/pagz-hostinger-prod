@@ -109,6 +109,13 @@ export interface UpdateCartItemData {
     quantity?: number;
     customDesignUrl?: string | string[];
     customText?: string;
+    /**
+     * Explicit addon ids to set on the cart item. Omit to preserve existing
+     * addons. Pass [] to clear them.
+     */
+    addons?: string[];
+    hasAddon?: boolean;
+    metadata?: CartItem["metadata"];
 }
 
 /**

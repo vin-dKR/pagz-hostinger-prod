@@ -5,6 +5,29 @@ import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/erro
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { deleteFromFTP, extractFtpPathFromUrl } from "../services/ftp.js";
 import { getParamAsString } from "../utils/db-utils.js";
+import {
+    computeAddonLineTotal,
+    getAddonUnitPrice,
+    normalizeAddonIds,
+    type AddonPricingRule,
+} from "../utils/addon-pricing.js";
+
+/**
+ * Shape of the `addons` include used for cart reads. Centralised so the cart
+ * GET response, the add-to-cart response, and any future read path stay in
+ * sync and always surface the fields the UI needs for display/pricing.
+ */
+const CART_ADDON_SELECT = {
+    id: true,
+    categoryId: true,
+    ruleType: true,
+    specificationValues: true,
+    basePrice: true,
+    priceModifier: true,
+    quantityMultiplier: true,
+    minQuantity: true,
+    maxQuantity: true,
+} as const;
 
 function normalizeDesignUrls(value: unknown): string[] {
     if (!value) return [];
@@ -82,18 +105,8 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                                 priceModifier: true,
                             },
                         },
-                        // @ts-ignore - updated in Prisma schema to be a relation
                         addons: {
-                            select: {
-                                id: true,
-                                categoryId: true,
-                                ruleType: true,
-                                basePrice: true,
-                                priceModifier: true,
-                                quantityMultiplier: true,
-                                minQuantity: true,
-                                maxQuantity: true,
-                            },
+                            select: CART_ADDON_SELECT,
                         },
                     },
                 },
@@ -104,14 +117,42 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
         if (!cart) {
             cart = await prisma.cart.create({
                 data: { userId: req.user.id },
-                include: {
+                select: {
+                    id: true,
+                    userId: true,
+                    createdAt: true,
+                    updatedAt: true,
                     items: {
-                        include: {
+                        select: {
+                            id: true,
+                            cartId: true,
+                            productId: true,
+                            variantId: true,
+                            quantity: true,
+                            customDesignUrl: true,
+                            customText: true,
+                            hasAddon: true,
+                            metadata: true,
                             product: {
-                                include: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    basePrice: true,
+                                    sellingPrice: true,
                                     category: {
-                                        include: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            slug: true,
+                                            image: true,
                                             images: {
+                                                select: {
+                                                    id: true,
+                                                    url: true,
+                                                    alt: true,
+                                                    isPrimary: true,
+                                                    displayOrder: true,
+                                                },
                                                 orderBy: [
                                                     { isPrimary: 'desc' },
                                                     { displayOrder: 'asc' },
@@ -122,9 +163,16 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                                     images: true,
                                 },
                             },
-                            variant: true,
-                            // @ts-ignore - updated in Prisma schema to be a relation
-                            addons: true,
+                            variant: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    priceModifier: true,
+                                },
+                            },
+                            addons: {
+                                select: CART_ADDON_SELECT,
+                            },
                         },
                     },
                 },
@@ -164,48 +212,28 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                 ? unitBasePrice * effectivePages 
                 : unitBasePrice * item.quantity;
 
+            // Addon pricing — honour half-page adjustments by feeding the effective
+            // pages into the shared util (so cart UI matches server-side checkout).
             let addonUnitPrice = 0;
             let addonTotal = 0;
- 
+
             if (item.addons && item.addons.length > 0) {
-                for (const addon of item.addons as any[]) {
-                    const rawAddonPrice =
-                        addon.priceModifier !== null && addon.priceModifier !== undefined
-                            ? Number(addon.priceModifier)
-                            : addon.basePrice !== null && addon.basePrice !== undefined
-                                ? Number(addon.basePrice)
-                                : 0;
+                const pricingLine = {
+                    quantity: item.quantity,
+                    addons: (item.addons as AddonPricingRule[]).map((a) => a.id),
+                    metadata: {
+                        // Use half-page-adjusted page count when applicable so
+                        // the addon math mirrors the base price calculation.
+                        pageCount: pageCount && pageCount > 0
+                            ? (hasHalfPage ? effectivePageCount : pageCount)
+                            : null,
+                        copies,
+                    },
+                };
 
-                    addonUnitPrice += rawAddonPrice;
-
-                    // Calculate addon price based on page ranges and quantity multiplier
-                    // Use effective pages (considering half-page) for addon calculations
-                    let addonPrice = 0;
-                    if (pageCount && pageCount > 0) {
-                        // Check if effectivePages is in addon's page range
-                        const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
-                        if (hasPageRange) {
-                            const inRange =
-                                (addon.minQuantity == null || effectivePages >= addon.minQuantity) &&
-                                (addon.maxQuantity == null || effectivePages <= addon.maxQuantity);
-                            if (!inRange) {
-                                continue; // Skip this addon if not in range
-                            }
-                        }
-                        
-                        // Calculate addon price using effective pages (already accounts for half-page)
-                        if (addon.quantityMultiplier) {
-                            addonPrice = rawAddonPrice * effectivePages;
-                        } else {
-                            addonPrice = rawAddonPrice;
-                        }
-                    } else {
-                        // No page count, use quantity multiplier if enabled
-                        const multiplier = addon.quantityMultiplier ? item.quantity : 1;
-                        addonPrice = rawAddonPrice * multiplier;
-                    }
-                    
-                    addonTotal += addonPrice;
+                for (const addon of item.addons as AddonPricingRule[]) {
+                    addonUnitPrice += getAddonUnitPrice(addon);
+                    addonTotal += computeAddonLineTotal(addon, pricingLine);
                 }
             }
 
@@ -325,6 +353,14 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
             });
         }
 
+        // Normalise incoming addon payload. When the client omits the field
+        // entirely we leave any existing addons untouched; when the client
+        // passes an explicit array (even []) we take it as the authoritative
+        // new state for this line. This matches how users think about
+        // "re-configure and add-to-cart again" vs "bump quantity".
+        const addonsProvided = Array.isArray(addons);
+        const normalizedAddonIds = addonsProvided ? normalizeAddonIds(addons) : [];
+
         // Check if item already exists in cart
         const existingItem = await prisma.cartItem.findUnique({
             where: {
@@ -335,71 +371,51 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                 },
             },
             include: {
-                // @ts-ignore - updated in Prisma schema to be a relation
-                addons: true,
+                addons: { select: { id: true } },
             },
         });
 
         let cartItem;
         if (existingItem) {
-            // Normalize existing customDesignUrl to array (handles legacy comma-separated values too)
+            // Merge uploaded files — new urls take precedence when supplied,
+            // otherwise keep what the user already uploaded.
             const existingUrls = normalizeDesignUrls(existingItem.customDesignUrl);
-
-            // Normalize new customDesignUrl to array
             const newUrls = normalizeDesignUrls(customDesignUrl);
-
-            // Merge or replace URLs (if new URLs provided, use them; otherwise keep existing)
             const finalUrls = newUrls.length > 0 ? newUrls : existingUrls;
 
-            // Normalize addons
-            const newAddonIds: string[] = Array.isArray(addons)
-                ? (addons as any[]).filter((id) => typeof id === "string" && id.trim().length > 0) as string[]
-                : [];
+            // Addon reconciliation policy:
+            //  - Field omitted       -> keep current addons exactly.
+            //  - Field === []        -> clear all addons (user dropped them).
+            //  - Field === [...ids]  -> replace with the supplied ids.
             const existingAddonIds: string[] = Array.isArray((existingItem as any).addons)
-                ? ((existingItem as any).addons as any[])
-                    .map((addon) => addon.id)
-                    .filter((id: unknown) => typeof id === "string" && (id as string).trim().length > 0) as string[]
+                ? ((existingItem as any).addons as Array<{ id: string }>).map((a) => a.id)
                 : [];
-            const mergedAddons = Array.from(new Set([...existingAddonIds, ...newAddonIds]));
+            const finalAddonIds = addonsProvided ? normalizedAddonIds : existingAddonIds;
 
-            // Update quantity
             cartItem = await prisma.cartItem.update({
                 where: { id: existingItem.id },
                 data: {
                     quantity: existingItem.quantity + quantity,
                     customDesignUrl: finalUrls,
                     customText: customText || existingItem.customText,
-                    hasAddon: mergedAddons.length > 0 || Boolean(hasAddon),
-                    // @ts-ignore - using relation field as defined in updated Prisma schema
-                    addons:
-                        mergedAddons.length > 0
-                            ? {
-                                set: mergedAddons.map((id) => ({ id })),
-                            }
-                            : {
-                                set: [],
-                            },
+                    hasAddon: finalAddonIds.length > 0 || Boolean(hasAddon),
+                    ...(addonsProvided && {
+                        // `set` handles both "replace" and "clear" semantics.
+                        addons: { set: finalAddonIds.map((id) => ({ id })) },
+                    }),
                     metadata: metadata !== undefined ? metadata : (existingItem as any).metadata,
                 },
                 include: {
                     product: {
-                        include: {
-                            category: true,
-                            images: true,
-                        },
+                        include: { category: true, images: true },
                     },
                     variant: true,
+                    addons: { select: CART_ADDON_SELECT },
                 },
             });
         } else {
-            // Create new cart item
-            // Normalize customDesignUrl to always be an array
+            // Fresh cart item — connect any supplied addons directly.
             const normalizedUrls = normalizeDesignUrls(customDesignUrl);
-
-            // Normalize addons for new item
-            const addonIds: string[] = Array.isArray(addons)
-                ? (addons as any[]).filter((id) => typeof id === "string" && id.trim().length > 0) as string[]
-                : [];
 
             cartItem = await prisma.cartItem.create({
                 data: {
@@ -409,28 +425,22 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                     quantity,
                     customDesignUrl: normalizedUrls,
                     customText: customText || null,
-                    hasAddon: addonIds.length > 0 || Boolean(hasAddon),
-                    // @ts-ignore - using relation field as defined in updated Prisma schema
-                    addons:
-                        addonIds.length > 0
-                            ? {
-                                connect: addonIds.map((id) => ({ id })),
-                            }
-                            : undefined,
+                    hasAddon: normalizedAddonIds.length > 0 || Boolean(hasAddon),
+                    ...(normalizedAddonIds.length > 0 && {
+                        addons: {
+                            connect: normalizedAddonIds.map((id) => ({ id })),
+                        },
+                    }),
                     metadata: metadata !== undefined ? metadata : null,
                 },
                 include: {
                     product: {
-                        include: {
-                            category: true,
-                            images: true,
-                        },
+                        include: { category: true, images: true },
                     },
                     variant: true,
-                    // @ts-ignore - updated in Prisma schema to be a relation
-                    addons: true,
+                    addons: { select: CART_ADDON_SELECT },
                 },
-            } as any);
+            });
         }
 
         return sendSuccess(res, cartItem, "Item added to cart successfully", 201);
@@ -447,7 +457,7 @@ export const updateCartItem = async (req: Request, res: Response, next: NextFunc
         }
 
         const itemId = getParamAsString(req.params.itemId, "Item ID");
-        const { quantity, customDesignUrl, customText } = req.body;
+        const { quantity, customDesignUrl, customText, addons, metadata } = req.body;
 
         if (!quantity || quantity < 1) {
             throw new ValidationError("Quantity must be at least 1");
@@ -477,16 +487,18 @@ export const updateCartItem = async (req: Request, res: Response, next: NextFunc
             throw new ValidationError("Insufficient stock");
         }
 
-        // Normalize existing customDesignUrl to array (handles legacy comma-separated values too)
+        // Merge/replace file urls (new wins, otherwise preserve existing).
         const existingUrls = normalizeDesignUrls(cartItem.customDesignUrl);
+        const newUrls = customDesignUrl !== undefined
+            ? normalizeDesignUrls(customDesignUrl)
+            : existingUrls;
 
-        // Normalize new customDesignUrl to array
-        let newUrls: string[] = [];
-        if (customDesignUrl !== undefined) {
-            newUrls = normalizeDesignUrls(customDesignUrl);
-        } else {
-            newUrls = existingUrls;
-        }
+        // Mirror addToCart semantics: only touch the m2m relation when the
+        // client explicitly includes `addons` in the payload. This lets the
+        // cart page edit addons (e.g. toggle binding) without regressing the
+        // common "just bump quantity" update path.
+        const addonsProvided = Array.isArray(addons);
+        const normalizedAddonIds = addonsProvided ? normalizeAddonIds(addons) : [];
 
         const updatedItem = await prisma.cartItem.update({
             where: { id: itemId },
@@ -494,15 +506,18 @@ export const updateCartItem = async (req: Request, res: Response, next: NextFunc
                 quantity,
                 customDesignUrl: newUrls,
                 customText: customText !== undefined ? customText : cartItem.customText,
+                ...(metadata !== undefined && { metadata }),
+                ...(addonsProvided && {
+                    hasAddon: normalizedAddonIds.length > 0,
+                    addons: { set: normalizedAddonIds.map((id) => ({ id })) },
+                }),
             },
             include: {
                 product: {
-                    include: {
-                        category: true,
-                        images: true,
-                    },
+                    include: { category: true, images: true },
                 },
                 variant: true,
+                addons: { select: CART_ADDON_SELECT },
             },
         });
 

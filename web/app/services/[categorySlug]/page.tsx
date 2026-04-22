@@ -380,9 +380,13 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         }));
     };
 
-    // Compute which addon pricing rules are active for current selection and total pages
+    // Compute which addon pricing rules are active for current selection and total pages.
+    // Spec values are compared as strings because dropdowns produce strings while
+    // the admin UI can persist booleans / numbers in the rule's specificationValues.
     const selectedAddonIds = useMemo(() => {
         if (!availableAddons || availableAddons.length === 0) return [];
+
+        const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 
         // Effective pages = pages × copies when files uploaded
         const effectivePages =
@@ -394,7 +398,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
                 // All rule spec values must match the current selections
                 for (const [slug, val] of Object.entries(ruleSpecs)) {
-                    if (selectedSpecifications[slug] !== val) {
+                    if (normalize(selectedSpecifications[slug]) !== normalize(val)) {
                         return false;
                     }
                 }
@@ -1570,12 +1574,14 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                     [spec.slug]: value,
                                                 };
 
-                                                // Determine if any addon rule matches this selection with current specs
+                                                // Determine if any addon rule matches this selection with current specs.
+                                                // String-normalise comparison to match the memo above.
+                                                const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
                                                 const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
                                                 const matchingAddonRules = availableAddons.filter((rule) => {
                                                     const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
                                                     for (const [slug, val] of Object.entries(ruleSpecs)) {
-                                                        if (nextSpecs[slug] !== val) return false;
+                                                        if (normalize(nextSpecs[slug]) !== normalize(val)) return false;
                                                     }
 
                                                     const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;

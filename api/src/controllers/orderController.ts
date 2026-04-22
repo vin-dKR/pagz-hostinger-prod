@@ -5,6 +5,15 @@ import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../
 import { getPublicFtpUrl, extractFtpPathFromUrl } from "../services/ftp.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
+import {
+    collectAddonIds,
+    computeAddonLineTotal,
+    computeAddonsSubtotal,
+    computeLineAddonsTotal,
+    fetchAddonRuleMap,
+    normalizeAddonIds,
+    type AddonPricingRule,
+} from "../utils/addon-pricing.js";
 
 const CUSTOMER_CANCELLABLE_STATUSES = new Set(["PENDING_REVIEW", "ACCEPTED", "PROCESSING"]);
 const REFUND_TIMELINE_MESSAGE = "Refund will be credited to your bank account within 7 working days.";
@@ -191,10 +200,8 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 subtotal += itemTotal;
             }
 
-            // Normalize addons to array
-            const normalizedAddons: string[] = Array.isArray(addons)
-                ? addons.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-                : [];
+            // Normalize addons to array (deduped, trimmed).
+            const normalizedAddons = normalizeAddonIds(addons);
 
             orderItems.push({
                 productId,
@@ -256,72 +263,10 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             }
         }
 
-        // Calculate addons subtotal from order items
-        let addonsSubtotal = 0;
-        const allAddonIds = new Set<string>();
-        orderItems.forEach(item => {
-            if (item.addons && Array.isArray(item.addons)) {
-                item.addons.forEach((addonId: string) => allAddonIds.add(addonId));
-            }
-        });
-
-        if (allAddonIds.size > 0) {
-            // Fetch all addon rules
-            const addonRules = await prisma.categoryPricingRule.findMany({
-                where: {
-                    id: { in: Array.from(allAddonIds) },
-                    ruleType: 'ADDON',
-                    isActive: true,
-                },
-            });
-
-            // Create a map for O(1) lookup
-            const addonMap = new Map(addonRules.map(rule => [rule.id, rule]));
-
-            // Calculate addons total for each order item
-            orderItems.forEach(item => {
-                if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
-                    // Get page count from metadata if available
-                    const pageCount = item.metadata?.pageCount || 1;
-                    const copies = item.metadata?.copies || 1;
-                    const effectivePages = pageCount > 1 ? pageCount * copies : null;
-                    
-                    item.addons.forEach((addonId: string) => {
-                        const addonRule = addonMap.get(addonId);
-                        if (addonRule) {
-                            // Check page range if addon has minQuantity/maxQuantity
-                            const hasPageRange = addonRule.minQuantity != null || addonRule.maxQuantity != null;
-                            if (hasPageRange && effectivePages != null) {
-                                const inRange = 
-                                    (addonRule.minQuantity == null || effectivePages >= addonRule.minQuantity) &&
-                                    (addonRule.maxQuantity == null || effectivePages <= addonRule.maxQuantity);
-                                if (!inRange) {
-                                    return; // Skip this addon if not in range
-                                }
-                            }
-                            
-                            const rawPrice = addonRule.priceModifier !== null && addonRule.priceModifier !== undefined
-                                ? Number(addonRule.priceModifier)
-                                : addonRule.basePrice !== null && addonRule.basePrice !== undefined
-                                    ? Number(addonRule.basePrice)
-                                    : 0;
-                            
-                            // Calculate multiplier based on quantity multiplier and page count
-                            let multiplier = 1;
-                            if (addonRule.quantityMultiplier) {
-                                if (effectivePages != null) {
-                                    multiplier = effectivePages;
-                                } else {
-                                    multiplier = item.quantity;
-                                }
-                            }
-                            
-                            addonsSubtotal += rawPrice * multiplier;
-                        }
-                    });
-                }
-            });
-        }
+        // Compute addons subtotal using the shared helper so the cart summary,
+        // order creation, and invoice all agree on the number.
+        const addonMap = await fetchAddonRuleMap(collectAddonIds(orderItems));
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMap);
 
         // Calculate final total (subtotal + addonsSubtotal - discount + shipping).
         // When a shippingMethodId resolves, the method price is authoritative; the
@@ -357,10 +302,9 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                         customText: oi.customText,
                         hasAddon: oi.hasAddon,
                         metadata: oi.metadata ?? undefined,
-                        // @ts-ignore - connect addons relation
-                        addons: oi.addons && oi.addons.length > 0
-                            ? { connect: oi.addons.map((id: string) => ({ id })) }
-                            : undefined,
+                        ...(oi.addons && oi.addons.length > 0 && {
+                            addons: { connect: oi.addons.map((id: string) => ({ id })) },
+                        }),
                     })),
                 },
                 statusHistory: {
@@ -2333,21 +2277,25 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
             ? Number(order.subtotal)
             : order.items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
 
+        // Prefer the persisted total on the order so invoices always reflect
+        // what was actually charged; fall back to re-computing from addons.
         const addonsSubtotal = order.addonsSubtotal !== null && order.addonsSubtotal !== undefined
             ? Number(order.addonsSubtotal)
             : order.items.reduce((sum, item) => {
-                const addons = Array.isArray((item as any).addons) ? (item as any).addons : [];
-                const itemAddonsTotal = addons.reduce((addonSum: number, addon: any) => {
-                    const rawPrice =
-                        addon.priceModifier !== null && addon.priceModifier !== undefined
-                            ? Number(addon.priceModifier)
-                            : addon.basePrice !== null && addon.basePrice !== undefined
-                                ? Number(addon.basePrice)
-                                : 0;
-                    const multiplier = addon.quantityMultiplier ? item.quantity : 1;
-                    return addonSum + rawPrice * multiplier;
-                }, 0);
-                return sum + itemAddonsTotal;
+                const addonRules: AddonPricingRule[] = Array.isArray((item as any).addons)
+                    ? (item as any).addons
+                    : [];
+                const addonMap = new Map<string, AddonPricingRule>(
+                    addonRules.map((r) => [r.id, r])
+                );
+                return sum + computeLineAddonsTotal(
+                    {
+                        quantity: item.quantity,
+                        addons: addonRules.map((r) => r.id),
+                        metadata: (item.metadata as any) ?? null,
+                    },
+                    addonMap,
+                );
             }, 0);
 
         const subtotal = baseSubtotal + addonsSubtotal;
@@ -2382,7 +2330,13 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                 country: order.address?.country || 'India',
             },
             items: order.items.map((item: any) => {
-                const addons = Array.isArray(item.addons) ? item.addons : [];
+                const addons: AddonPricingRule[] = Array.isArray(item.addons) ? item.addons : [];
+                const metadata = (item.metadata as any) ?? null;
+                const line = {
+                    quantity: item.quantity,
+                    addons: addons.map((a) => a.id),
+                    metadata,
+                };
                 return {
                     name: item.product?.name || 'Product',
                     variant: item.variant?.name,
@@ -2394,16 +2348,9 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                         const addonName = Object.entries(specValues)
                             .map(([key, value]) => `${key}: ${value}`)
                             .join(', ') || 'Addon';
-                        const rawPrice =
-                            addon.priceModifier !== null && addon.priceModifier !== undefined
-                                ? Number(addon.priceModifier)
-                                : addon.basePrice !== null && addon.basePrice !== undefined
-                                    ? Number(addon.basePrice)
-                                    : 0;
-                        const multiplier = addon.quantityMultiplier ? item.quantity : 1;
                         return {
                             name: addonName,
-                            price: rawPrice * multiplier,
+                            price: computeAddonLineTotal(addon, line),
                         };
                     }) : undefined,
                 };

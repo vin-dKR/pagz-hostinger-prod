@@ -3,6 +3,11 @@
 import Image from "next/image";
 import { CartItem, AddonRule } from "@/lib/api/cart";
 import { FileText } from "lucide-react";
+import {
+    computeAddonLineTotal,
+    derivePriceBreakdown,
+    getAddonLabel,
+} from "@/lib/utils/addon-pricing";
 
 interface OrderReviewProps {
     items: CartItem[];
@@ -19,37 +24,10 @@ export default function OrderReview({ items }: OrderReviewProps) {
                     product?.images?.[0]?.url ||
                     "/images/placeholder.png";
                 const productName = product?.name || "Unknown Product";
-                
-                // Get pricing from backend pricing object if available
-                const pricing = (item as any).pricing;
-                const baseTotal = pricing?.baseTotal ?? 0;
-                const addonTotal = pricing?.addonTotal ?? 0;
-                const total = pricing?.total ?? 0;
-                
-                // Fallback: calculate from product/variant
-                const basePrice = Number(product?.sellingPrice || product?.basePrice || 0);
-                const variantModifier = Number(variant?.priceModifier || 0);
-                const itemBasePrice = basePrice + variantModifier;
-                
-                // Calculate addon total if not in pricing object
-                let calculatedAddonTotal = addonTotal;
-                if (!pricing && item.addons && item.addons.length > 0) {
-                    calculatedAddonTotal = (item.addons as AddonRule[]).reduce((sum, addon) => {
-                        const price =
-                            (addon.priceModifier ?? undefined) !== undefined
-                                ? Number(addon.priceModifier)
-                                : (addon.basePrice ?? undefined) !== undefined
-                                    ? Number(addon.basePrice)
-                                    : 0;
-                        const multiplier = addon.quantityMultiplier ? item.quantity : 1;
-                        return sum + (price * multiplier);
-                    }, 0);
-                }
-                
-                const finalBaseTotal = baseTotal || (itemBasePrice * item.quantity);
-                const finalAddonTotal = calculatedAddonTotal;
-                const finalTotal = total || (finalBaseTotal + finalAddonTotal);
-                
+
+                const { baseTotal: finalBaseTotal, addonTotal: finalAddonTotal, total: finalTotal } =
+                    derivePriceBreakdown(item);
+
                 // Get uploaded files from cart item (S3 URLs already stored)
                 const uploadedFileUrls = Array.isArray(item.customDesignUrl)
                     ? item.customDesignUrl
@@ -117,22 +95,13 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                 {item.addons && item.addons.length > 0 && (
                                     <div className="mt-1 pl-2 border-l-2 border-purple-200">
                                         {(item.addons as AddonRule[]).map((addon, idx) => {
-                                            const specValues = (addon.specificationValues || {}) as Record<string, any>;
-                                            const specDetails = Object.entries(specValues)
-                                                .map(([key, value]) => `${key}: ${value}`)
-                                                .join(', ');
-                                            const price =
-                                                (addon.priceModifier ?? undefined) !== undefined
-                                                    ? Number(addon.priceModifier)
-                                                    : (addon.basePrice ?? undefined) !== undefined
-                                                        ? Number(addon.basePrice)
-                                                        : 0;
-                                            const multiplier = addon.quantityMultiplier ? item.quantity : 1;
-                                            const addonItemTotal = price * multiplier;
+                                            const addonItemTotal = computeAddonLineTotal(addon, {
+                                                quantity: item.quantity,
+                                                metadata: item.metadata,
+                                            });
                                             return (
-                                                <div key={idx} className="text-xs text-purple-700 mb-0.5">
-                                                    {specDetails || `Addon #${idx + 1}`}: ₹{price.toFixed(2)}
-                                                    {multiplier > 1 && ` × ${multiplier} = ₹${addonItemTotal.toFixed(2)}`}
+                                                <div key={addon.id ?? idx} className="text-xs text-purple-700 mb-0.5">
+                                                    {getAddonLabel(addon, idx)}: ₹{addonItemTotal.toFixed(2)}
                                                 </div>
                                             );
                                         })}
