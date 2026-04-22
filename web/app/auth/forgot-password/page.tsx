@@ -7,16 +7,23 @@ import AuthLayout from "../../components/auth/AuthLayout";
 import AuthFormInput from "../../components/auth/AuthFormInput";
 import AuthFormButton from "../../components/auth/AuthFormButton";
 import AuthGuard from "../../components/auth/AuthGuard";
-import { EmailIcon, PasswordIcon } from "../../components/icons";
+import OtpInput from "../../components/auth/OtpInput";
+import { PhoneIcon, PasswordIcon } from "../../components/icons";
 import { forgotPassword, verifyOTP, resetPassword } from "../../../lib/api/auth";
 import { toastPromise } from "../../../lib/utils/toast";
 
-type Step = "email" | "otp" | "password";
+type Step = "phone" | "otp" | "password";
+
+function isValidIndianPhone(raw: string): boolean {
+    const digits = raw.replace(/\D/g, "");
+    const normalized = digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+    return /^[6-9]\d{9}$/.test(normalized);
+}
 
 export default function ForgotPasswordPage() {
     const router = useRouter();
-    const [step, setStep] = useState<Step>("email");
-    const [email, setEmail] = useState("");
+    const [step, setStep] = useState<Step>("phone");
+    const [phone, setPhone] = useState("");
     const [otp, setOtp] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -25,42 +32,30 @@ export default function ForgotPasswordPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleEmailSubmit = async (e: React.FormEvent) => {
+    const handlePhoneSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
 
-        if (!email) {
-            setError("Email is required");
-            return;
-        }
-
-        // Basic email validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            setError("Please enter a valid email address");
+        if (!isValidIndianPhone(phone)) {
+            setError("Enter a valid 10-digit Indian mobile number");
             return;
         }
 
         setLoading(true);
-
         try {
-            const response = await forgotPassword(email);
-
+            const response = await forgotPassword(phone);
             if (response?.success) {
-                // Check if user needs to sign up
-                if (response.data?.requiresSignup) { 
-                    setError(response.data.message || "No account found with this email. Please create an account first.");
+                if (response.data?.requiresSignup) {
+                    setError(response.data.message || "No account found with this mobile. Please sign up.");
                     setLoading(false);
                     return;
                 }
-
-                // Show toast and move to OTP step
                 toastPromise(
                     Promise.resolve(response),
                     {
-                        loading: 'Sending OTP...',
-                        success: 'OTP sent to your email! Please check your inbox.',
-                        error: (err) => err || 'Failed to send OTP. Please try again.',
+                        loading: "Sending OTP...",
+                        success: "OTP sent to your mobile.",
+                        error: (err) => err || "Failed to send OTP.",
                     }
                 );
                 setStep("otp");
@@ -68,7 +63,6 @@ export default function ForgotPasswordPage() {
                 setError(response?.error || "Failed to send OTP. Please try again.");
             }
         } catch (err: any) {
-            console.error('Forgot password error:', err);
             setError(err.message || "Failed to send OTP. Please try again.");
         } finally {
             setLoading(false);
@@ -85,17 +79,15 @@ export default function ForgotPasswordPage() {
         }
 
         setLoading(true);
-
         try {
-            const response = await verifyOTP(email, otp);
-
+            const response = await verifyOTP(phone, otp, "RESET_PASSWORD");
             if (response?.success) {
                 toastPromise(
                     Promise.resolve(response),
                     {
-                        loading: 'Verifying OTP...',
-                        success: 'OTP verified successfully!',
-                        error: (err) => err || 'Failed to verify OTP. Please try again.',
+                        loading: "Verifying OTP...",
+                        success: "OTP verified",
+                        error: (err) => err || "Failed to verify OTP.",
                     }
                 );
                 setStep("password");
@@ -103,7 +95,6 @@ export default function ForgotPasswordPage() {
                 setError(response?.error || "Invalid or expired OTP. Please try again.");
             }
         } catch (err: any) {
-            console.error('Verify OTP error:', err);
             setError(err.message || "Failed to verify OTP. Please try again.");
         } finally {
             setLoading(false);
@@ -118,37 +109,29 @@ export default function ForgotPasswordPage() {
             setError("Please fill in all fields");
             return;
         }
-
         if (password !== confirmPassword) {
             setError("Passwords do not match");
             return;
         }
-
         if (password.length < 6) {
             setError("Password must be at least 6 characters long");
             return;
         }
 
         setLoading(true);
-
         try {
             const response = await toastPromise(
-                resetPassword(email, otp, password),
+                resetPassword(phone, otp, password),
                 {
-                    loading: 'Resetting password...',
-                    success: 'Password reset successfully! Redirecting to login...',
-                    error: (err) => err || 'Failed to reset password. Please try again.',
+                    loading: "Resetting password...",
+                    success: "Password reset successfully! Redirecting to login...",
+                    error: (err) => err || "Failed to reset password.",
                 }
             );
-
             if (response?.success) {
-                // Redirect to login after 2 seconds
-                setTimeout(() => {
-                    router.push("/auth/login");
-                }, 2000);
+                setTimeout(() => router.push("/auth/login"), 2000);
             }
         } catch (err: any) {
-            console.error('Reset password error:', err);
             setError(err.message || "Failed to reset password. Please try again.");
         } finally {
             setLoading(false);
@@ -160,23 +143,23 @@ export default function ForgotPasswordPage() {
             <AuthLayout
                 title="Forgot Password"
                 subtitle={
-                    step === "email" ? "Enter your email to receive OTP" :
-                    step === "otp" ? "Enter the OTP sent to your email" :
+                    step === "phone" ? "Enter your mobile to receive OTP" :
+                    step === "otp" ? `OTP sent to +91 ${phone}` :
                     "Enter your new password"
                 }
                 socialLogin={false}
                 error={error}
             >
-                {step === "email" && (
+                {step === "phone" && (
                     <>
-                        <form onSubmit={handleEmailSubmit} className="space-y-2 sm:space-y-2.5">
+                        <form onSubmit={handlePhoneSubmit} className="space-y-2 sm:space-y-2.5">
                             <AuthFormInput
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="example@gmail.com"
+                                type="tel"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                                placeholder="Mobile Number (10 digits)"
                                 required
-                                icon={<EmailIcon />}
+                                icon={<PhoneIcon />}
                             />
 
                             <AuthFormButton loading={loading}>
@@ -184,7 +167,6 @@ export default function ForgotPasswordPage() {
                             </AuthFormButton>
                         </form>
 
-                        {/* Back to Login Link */}
                         <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
                             Remember your password?{" "}
                             <Link href="/auth/login" className="text-blue-600 hover:text-blue-700 font-medium hover:underline">
@@ -196,35 +178,20 @@ export default function ForgotPasswordPage() {
 
                 {step === "otp" && (
                     <>
-                        <form onSubmit={handleOTPSubmit} className="space-y-2 sm:space-y-2.5">
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    value={otp}
-                                    onChange={(e) => {
-                                        // Only allow numbers and limit to 6 digits
-                                        const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                                        setOtp(value);
-                                    }}
-                                    placeholder="Enter 6-digit OTP"
-                                    required
-                                    maxLength={6}
-                                    className="w-full px-4 py-2 text-center text-2xl tracking-widest font-mono bg-gray-50 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </div>
+                        <form onSubmit={handleOTPSubmit} className="space-y-3 sm:space-y-3.5">
+                            <OtpInput value={otp} onChange={setOtp} disabled={loading} />
 
                             <AuthFormButton loading={loading}>
                                 Verify OTP
                             </AuthFormButton>
                         </form>
 
-                        {/* Resend OTP Link */}
                         <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
                             Didn't receive OTP?{" "}
                             <button
                                 type="button"
                                 onClick={() => {
-                                    setStep("email");
+                                    setStep("phone");
                                     setOtp("");
                                     setError(null);
                                 }}
@@ -268,7 +235,6 @@ export default function ForgotPasswordPage() {
                             </AuthFormButton>
                         </form>
 
-                        {/* Back to Login Link */}
                         <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
                             Remember your password?{" "}
                             <Link href="/auth/login" className="text-blue-600 hover:text-blue-700 font-medium hover:underline">

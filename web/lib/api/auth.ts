@@ -1,27 +1,30 @@
 /**
- * Authentication API functions
+ * Authentication API functions (Phone + OTP via Fast2SMS)
  */
 
 import { post, get, put, del, ApiResponse } from '../api-client';
 
+export type OtpPurpose = 'SIGNUP' | 'RESET_PASSWORD';
+
 export interface LoginCredentials {
-  email: string;
+  phone?: string;
+  email?: string;
   password: string;
 }
 
 export interface RegisterData {
-  email: string;
+  phone: string;
   password: string;
+  otp: string;
   name?: string;
-  phone?: string;
+  email?: string;
 }
 
 export interface User {
   id: string;
-  email: string;
-  name?: string;
-  phone?: string;
-  supabaseId?: string;
+  phone: string;
+  email?: string | null;
+  name?: string | null;
   isAdmin: boolean;
   isSuperAdmin?: boolean;
   createdAt: string;
@@ -32,12 +35,12 @@ export interface User {
 
 export interface AuthResponse {
   user: User;
-  token?: string; // Optional - may not be present if email confirmation is required
+  token: string;
 }
 
 export interface UpdateProfileData {
   name?: string;
-  phone?: string;
+  email?: string | null;
 }
 
 export interface NotificationPreferences {
@@ -49,72 +52,70 @@ export interface NotificationPreferences {
   newsletters?: boolean;
 }
 
+export interface SendOtpResponse {
+  phone: string;
+  expiresInMinutes: number;
+}
+
+export interface ForgotPasswordResponse {
+  phone?: string;
+  requiresSignup?: boolean;
+  message?: string;
+  expiresInMinutes?: number;
+}
+
 /**
- * Register a new user
+ * Send OTP to phone for signup or password reset.
+ */
+export async function sendOtp(phone: string, purpose: OtpPurpose): Promise<ApiResponse<SendOtpResponse>> {
+  return post<SendOtpResponse>('/auth/send-otp', { phone, purpose });
+}
+
+/**
+ * Register a new user (requires OTP from prior send-otp with purpose=SIGNUP).
  */
 export async function register(data: RegisterData): Promise<ApiResponse<AuthResponse>> {
   return post<AuthResponse>('/auth/register', data);
 }
 
 /**
- * Login user
+ * Login with phone (customer) or email (admin) + password.
  */
 export async function login(credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> {
   return post<AuthResponse>('/auth/login', credentials);
 }
 
-/**
- * Get current user profile (requires authentication)
- */
 export async function getProfile(): Promise<ApiResponse<User>> {
   return get<User>('/auth/user/profile');
 }
 
-/**
- * Update user profile (requires authentication)
- */
 export async function updateProfile(data: UpdateProfileData): Promise<ApiResponse<User>> {
   return put<User>('/auth/user/profile', data);
 }
 
-/**
- * Update user password (requires authentication)
- */
 export async function updatePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<void>> {
   return put<void>('/auth/user/password', { currentPassword, newPassword });
 }
 
-/**
- * Update notification preferences (requires authentication)
- */
 export async function updateNotificationPreferences(preferences: NotificationPreferences): Promise<ApiResponse<User>> {
   return put<User>('/auth/user/notifications', { preferences });
 }
 
-/**
- * Delete user account (requires authentication)
- */
 export async function deleteAccount(): Promise<ApiResponse<void>> {
   return del<void>('/auth/user/account');
 }
 
 /**
- * Request password reset (forgot password)
+ * Request password reset OTP via SMS.
  */
-export async function forgotPassword(email: string): Promise<ApiResponse<{ message: string; requiresSignup?: boolean }>> {
-  return post<{ message: string; requiresSignup?: boolean }>('/auth/forgot-password', { email });
+export async function forgotPassword(phone: string): Promise<ApiResponse<ForgotPasswordResponse>> {
+  return post<ForgotPasswordResponse>('/auth/forgot-password', { phone });
 }
 
-/**
- * Verify OTP
- */
-export async function verifyOTP(email: string, otp: string): Promise<ApiResponse<{ message: string }>> {
-  return post<{ message: string }>('/auth/verify-otp', { email, otp });
+export async function verifyOTP(phone: string, otp: string, purpose: OtpPurpose = 'RESET_PASSWORD'): Promise<ApiResponse<{ valid: boolean }>> {
+  return post<{ valid: boolean }>('/auth/verify-otp', { phone, otp, purpose });
 }
 
-/**
- * Reset password with OTP
- */
-export async function resetPassword(email: string, otp: string, password: string): Promise<ApiResponse<{ message: string }>> {
-  return post<{ message: string }>('/auth/reset-password', { email, otp, password });
+export async function resetPassword(phone: string, otp: string, password: string): Promise<ApiResponse<{ message: string }>> {
+  return post<{ message: string }>('/auth/reset-password', { phone, otp, password });
 }

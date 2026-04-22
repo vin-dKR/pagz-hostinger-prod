@@ -10,10 +10,11 @@ datasource db {
 // User (Customer) model
 model User {
   id                      String   @id @default(uuid())
-  email                   String   @unique
+  phone                   String   @unique
+  email                   String?  @unique
+  passwordHash            String?
   name                    String?
-  phone                   String?
-  supabaseId              String?  @unique // Supabase user ID
+  supabaseId              String?  @unique // Legacy Supabase user ID (kept for backward compat)
   isAdmin                 Boolean  @default(false)
   isSuperAdmin            Boolean  @default(false)
   notificationPreferences Json? // JSON field for notification preferences (metadata)
@@ -29,6 +30,7 @@ model User {
   recentlyViewedProducts RecentlyViewedProduct[]
   couponUsages           CouponUsage[]
 
+  @@index([phone])
   @@index([email])
   @@index([isAdmin])
   @@map("users")
@@ -498,7 +500,7 @@ model Order {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  user           User                 @relation(fields: [userId], references: [id])
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   address        Address              @relation(fields: [addressId], references: [id])
   shippingMethod ShippingMethod?      @relation("OrderShippingMethod", fields: [shippingMethodId], references: [id], onDelete: SetNull)
   items          OrderItem[]
@@ -603,8 +605,8 @@ model Payment {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  order  Order   @relation(fields: [orderId], references: [id])
-  user   User    @relation(fields: [userId], references: [id])
+  order  Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   coupon Coupon? @relation(fields: [couponId], references: [id])
   refunds Refund[]
 
@@ -897,18 +899,25 @@ model ProductAddon {
   @@map("product_addons")
 }
 
-// Password Reset OTP model
-model PasswordResetOTP {
-  id        String   @id @default(uuid())
-  email     String
+// Phone OTP model (Fast2SMS)
+model PhoneOTP {
+  id        String     @id @default(uuid())
+  phone     String
   otp       String
+  purpose   OTPPurpose
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
 
-  @@index([email])
-  @@index([email, otp])
+  @@index([phone])
+  @@index([phone, purpose])
+  @@index([phone, otp, purpose])
   @@index([expiresAt])
-  @@map("password_reset_otps")
+  @@map("phone_otps")
+}
+
+enum OTPPurpose {
+  SIGNUP
+  RESET_PASSWORD
 }
 
 // Enums

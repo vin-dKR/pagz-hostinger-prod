@@ -11,6 +11,7 @@ import {
     forgotPassword,
     verifyOTPController,
     resetPassword,
+    sendOtp,
 } from "../controllers/authController.js";
 import { customerAuth } from "../middleware/auth.js";
 
@@ -18,9 +19,9 @@ const router: IRouter = Router();
 
 /**
  * @openapi
- * /api/v1/auth/register:
+ * /api/v1/auth/send-otp:
  *   post:
- *     summary: Register a new customer
+ *     summary: Send OTP to mobile (signup or password reset)
  *     tags:
  *       - Auth
  *     requestBody:
@@ -30,73 +31,60 @@ const router: IRouter = Router();
  *           schema:
  *             type: object
  *             required:
- *               - email
- *               - password
+ *               - phone
  *             properties:
  *               phone:
  *                 type: string
+ *               purpose:
+ *                 type: string
+ *                 enum: [SIGNUP, RESET_PASSWORD]
+ *     responses:
+ *       '200':
+ *         description: OTP sent.
+ */
+router.post("/send-otp", sendOtp);
+
+/**
+ * @openapi
+ * /api/v1/auth/register:
+ *   post:
+ *     summary: Register a new customer (requires OTP)
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *               - password
+ *               - otp
+ *             properties:
+ *               phone:
+ *                 type: string
+ *               otp:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 format: password
  *               name:
  *                 type: string
  *               email:
  *                 type: string
  *                 format: email
- *               password:
- *                 type: string
- *                 format: password
  *     responses:
  *       '201':
  *         description: Customer registered successfully.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - data
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   required:
- *                     - id
- *                     - email
- *                     - name
- *                   properties:
- *                     id:
- *                       type: string
- *                     email:
- *                       type: string
- *                       format: email
- *                     name:
- *                       type: string
- *       '400':
- *         description: Validation or registration error.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - error
- *               properties:
- *                 success:
- *                   type: boolean
- *                 error:
- *                   type: string
- *               example:
-*                  success: false
-*                  error: Invalid email format
-*/
+ */
 router.post("/register", register);
 
 /**
  * @openapi
  * /api/v1/auth/login:
  *   post:
- *     summary: Login a customer
+ *     summary: Login with phone or email + password
  *     tags:
  *       - Auth
  *     requestBody:
@@ -106,9 +94,10 @@ router.post("/register", register);
  *           schema:
  *             type: object
  *             required:
- *               - email
  *               - password
  *             properties:
+ *               phone:
+ *                 type: string
  *               email:
  *                 type: string
  *                 format: email
@@ -118,57 +107,6 @@ router.post("/register", register);
  *     responses:
  *       '200':
  *         description: Login successful.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - data
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   required:
- *                     - user
- *                     - token
- *                   properties:
- *                     token:
- *                       type: string
- *                     user:
- *                       type: object
- *                       required:
- *                         - id
- *                         - email
- *                         - name
- *                       properties:
- *                         id:
- *                           type: string
- *                         email:
- *                           type: string
- *                           format: email
- *                         name:
- *                           type: string
- *       '401':
- *         description: Invalid credentials.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - error
- *               properties:
- *                 success:
- *                   type: boolean
- *                 error:
- *                   type: string
- *               example:
- *                 success: false
- *                 error: Invalid email or password format or others
  */
 router.post("/login", login);
 
@@ -176,7 +114,7 @@ router.post("/login", login);
  * @openapi
  * /api/v1/auth/forgot-password:
  *   post:
- *     summary: Request password reset
+ *     summary: Request password reset OTP via SMS
  *     tags:
  *       - Auth
  *     requestBody:
@@ -186,28 +124,13 @@ router.post("/login", login);
  *           schema:
  *             type: object
  *             required:
- *               - email
+ *               - phone
  *             properties:
- *               email:
+ *               phone:
  *                 type: string
- *                 format: email
  *     responses:
  *       '200':
- *         description: Password reset email sent (if account exists).
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - message
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *       '400':
- *         description: Validation error.
+ *         description: OTP sent if account exists.
  */
 router.post("/forgot-password", forgotPassword);
 
@@ -215,7 +138,7 @@ router.post("/forgot-password", forgotPassword);
  * @openapi
  * /api/v1/auth/verify-otp:
  *   post:
- *     summary: Verify OTP for password reset
+ *     summary: Verify OTP (no consume)
  *     tags:
  *       - Auth
  *     requestBody:
@@ -225,19 +148,19 @@ router.post("/forgot-password", forgotPassword);
  *           schema:
  *             type: object
  *             required:
- *               - email
+ *               - phone
  *               - otp
  *             properties:
- *               email:
+ *               phone:
  *                 type: string
- *                 format: email
  *               otp:
  *                 type: string
+ *               purpose:
+ *                 type: string
+ *                 enum: [SIGNUP, RESET_PASSWORD]
  *     responses:
  *       '200':
- *         description: OTP verified successfully.
- *       '400':
- *         description: Invalid or expired OTP.
+ *         description: OTP valid.
  */
 router.post("/verify-otp", verifyOTPController);
 
@@ -245,7 +168,7 @@ router.post("/verify-otp", verifyOTPController);
  * @openapi
  * /api/v1/auth/reset-password:
  *   post:
- *     summary: Reset password with token
+ *     summary: Reset password with phone OTP
  *     tags:
  *       - Auth
  *     requestBody:
@@ -255,10 +178,13 @@ router.post("/verify-otp", verifyOTPController);
  *           schema:
  *             type: object
  *             required:
- *               - token
+ *               - phone
+ *               - otp
  *               - password
  *             properties:
- *               token:
+ *               phone:
+ *                 type: string
+ *               otp:
  *                 type: string
  *               password:
  *                 type: string
@@ -266,8 +192,6 @@ router.post("/verify-otp", verifyOTPController);
  *     responses:
  *       '200':
  *         description: Password reset successful.
- *       '400':
- *         description: Invalid token or validation error.
  */
 router.post("/reset-password", resetPassword);
 
@@ -283,30 +207,6 @@ router.post("/reset-password", resetPassword);
  *     responses:
  *       '200':
  *         description: Token refreshed successfully.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - data
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   required:
- *                     - user
- *                     - token
- *                   properties:
- *                     token:
- *                       type: string
- *                     user:
- *                       type: object
- *       '401':
- *         description: Unauthorized - invalid or expired token.
  */
 router.post("/refresh", customerAuth, refreshToken);
 
@@ -322,56 +222,6 @@ router.post("/refresh", customerAuth, refreshToken);
  *     responses:
  *       '200':
  *         description: Customer profile returned.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - data
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   required:
- *                     - id
- *                     - email
- *                     - name
- *                     - isAdmin
- *                   properties:
- *                     id:
- *                       type: string
- *                     email:
- *                       type: string
- *                       format: email
- *                     name:
- *                       type: string
- *                     phone:
- *                       type: string
- *                     isAdmin:
- *                       type: boolean
- *                     addresses:
- *                       type: array
- *                       items:
- *                         type: object
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *       '401':
- *         description: Unauthorized.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - error
- *               properties:
- *                 success:
- *                   type: boolean
- *                 error:
- *                   type: string
  */
 router.get("/user/profile", customerAuth, getProfile);
 
@@ -379,7 +229,7 @@ router.get("/user/profile", customerAuth, getProfile);
  * @openapi
  * /api/v1/auth/user/profile:
  *   put:
- *     summary: Update customer profile
+ *     summary: Update customer profile (name, email)
  *     tags:
  *       - Auth
  *     security:
@@ -393,13 +243,12 @@ router.get("/user/profile", customerAuth, getProfile);
  *             properties:
  *               name:
  *                 type: string
- *               phone:
+ *               email:
  *                 type: string
+ *                 format: email
  *     responses:
  *       '200':
  *         description: Profile updated successfully.
- *       '401':
- *         description: Unauthorized.
  */
 router.put("/user/profile", customerAuth, updateProfile);
 
@@ -429,10 +278,6 @@ router.put("/user/profile", customerAuth, updateProfile);
  *     responses:
  *       '200':
  *         description: Password updated successfully.
- *       '400':
- *         description: Invalid input or incorrect current password.
- *       '401':
- *         description: Unauthorized.
  */
 router.put("/user/password", customerAuth, updatePassword);
 
@@ -459,8 +304,6 @@ router.put("/user/password", customerAuth, updatePassword);
  *     responses:
  *       '200':
  *         description: Notification preferences updated successfully.
- *       '401':
- *         description: Unauthorized.
  */
 router.put("/user/notifications", customerAuth, updateNotificationPreferences);
 
@@ -476,8 +319,6 @@ router.put("/user/notifications", customerAuth, updateNotificationPreferences);
  *     responses:
  *       '200':
  *         description: Account deleted successfully.
- *       '401':
- *         description: Unauthorized.
  */
 router.delete("/user/account", customerAuth, deleteAccount);
 

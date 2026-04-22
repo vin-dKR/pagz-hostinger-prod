@@ -1,254 +1,215 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { supabase, supabaseAdmin } from "../services/supabase.js";
+import bcrypt from "bcryptjs";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { ValidationError, UnauthorizedError, NotFoundError } from "../utils/errors.js";
-import { sendPasswordResetOTP } from "../services/email.js";
-import { generateOTP, storeOTP, checkOTP } from "../services/otp.js";
-import { Prisma } from "../../generated/prisma/client.js";
-
+import { generateOTP, storeOTP, checkOTP, verifyOTP } from "../services/otp.js";
+import { sendOtpSms, normalizePhone, isValidIndianMobile } from "../services/sms.js";
+import { Prisma, OTPPurpose } from "../../generated/prisma/client.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+const JWT_EXPIRES_IN = "7d";
+const BCRYPT_ROUNDS = 10;
 
-// Customer Registration
-export const register = async (req: Request, res: Response, next: NextFunction) => {
+type TokenType = "customer" | "admin";
+
+interface JwtPayload {
+    userId: string;
+    type: TokenType;
+}
+
+function signToken(userId: string, type: TokenType): string {
+    const payload: JwtPayload = { userId, type };
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+function serializeUser(user: {
+    id: string;
+    phone: string;
+    email: string | null;
+    name: string | null;
+    isAdmin: boolean;
+    isSuperAdmin?: boolean;
+}) {
+    return {
+        id: user.id,
+        phone: user.phone,
+        email: user.email,
+        name: user.name,
+        isAdmin: user.isAdmin,
+        isSuperAdmin: (user as any).isSuperAdmin ?? false,
+    };
+}
+
+function parseOtpPurpose(value: unknown): OTPPurpose {
+    if (value === "RESET_PASSWORD") return OTPPurpose.RESET_PASSWORD;
+    return OTPPurpose.SIGNUP;
+}
+
+/**
+ * POST /auth/send-otp
+ * Body: { phone, purpose: "SIGNUP" | "RESET_PASSWORD" }
+ * - SIGNUP: phone must NOT exist in users.
+ * - RESET_PASSWORD: phone must exist.
+ */
+export const sendOtp = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { email, password, name, phone, isAdmin, isSuperAdmin } = req.body;
+        const { phone, purpose: rawPurpose } = req.body || {};
 
-        if (!email || !password) {
-            throw new ValidationError("Email and password are required");
+        if (!phone) throw new ValidationError("Phone number is required");
+
+        const normalized = normalizePhone(phone);
+        if (!isValidIndianMobile(normalized)) {
+            return sendError(res, "Enter a valid 10-digit Indian mobile number", 400);
         }
 
-        // Block duplicate registrations by email/phone before creating auth user.
-        const normalizedEmail = String(email).trim().toLowerCase();
-        const normalizedPhone = phone ? String(phone).trim() : undefined;
-        const existingUser = await prisma.user.findFirst({
-            where: {
-                OR: [
-                    { email: normalizedEmail },
-                    ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
-                ],
-            },
-        });
+        const purpose = parseOtpPurpose(rawPurpose);
+        const existingUser = await prisma.user.findUnique({ where: { phone: normalized } });
 
-        if (existingUser) {
-            if (existingUser.email === normalizedEmail) {
-                return sendError(res, "Email already registered. Please login.", 400);
-            }
-            return sendError(res, "Phone number already registered. Please login.", 400);
+        if (purpose === OTPPurpose.SIGNUP && existingUser) {
+            return sendError(res, "Mobile number already registered. Please sign in.", 400);
+        }
+        if (purpose === OTPPurpose.RESET_PASSWORD && !existingUser) {
+            return sendError(res, "No account found with this mobile number.", 404);
         }
 
-        // Try Supabase first
-        if (supabase) {
-            const { data, error } = await supabase.auth.signUp({
-                email: normalizedEmail,
-                password,
-                options: {
-                    data: {
-                        name: name || normalizedEmail.split("@")[0],
-                    },
-                },
-            });
+        const otp = generateOTP();
+        await storeOTP(normalized, otp, purpose);
 
-            if (error) {
-                const message = error.message?.toLowerCase() || "";
-                if (
-                    message.includes("already registered") ||
-                    message.includes("already been registered") ||
-                    message.includes("already exists") ||
-                    message.includes("already in use")
-                ) {
-                    return sendError(res, "Email already registered. Please login.", 400);
-                }
-                return sendError(res, error.message, 400);
-            }
-
-            if (data.user && data.session) {
-                // Create user in our database
-                const user = await prisma.user.create({
-                    data: {
-                        email: data.user.email || normalizedEmail,
-                        supabaseId: data.user.id,
-                        name: name || data.user.user_metadata?.name || normalizedEmail.split("@")[0],
-                        phone: normalizedPhone,
-                        isAdmin: isAdmin || false,
-                        isSuperAdmin: isSuperAdmin || false,
-                    },
-                });
-
-                return sendSuccess(
-                    res,
-                    {
-                        user: {
-                            id: user.id,
-                            email: user.email,
-                            name: user.name,
-                            phone: user.phone,
-                            isAdmin: user.isAdmin,
-                        },
-                        token: data.session.access_token,
-                    },
-                    "Registration successful"
-                );
-            } else if (data.user) {
-                // User created but no session (email confirmation required)
-                const user = await prisma.user.create({
-                    data: {
-                        email: normalizedEmail,
-                        name: name || normalizedEmail.split("@")[0],
-                        phone: normalizedPhone,
-                        supabaseId: data.user.id,
-                        isAdmin,
-                        isSuperAdmin
-                    },
-                });
-
-                return sendSuccess(res, {
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        name: user.name,
-                    },
-                    // No token if email confirmation is required
-                }, "Registration successful. Please check your email to confirm your account.", 201);
-            }
+        const smsResult = await sendOtpSms(normalized, otp);
+        if (!smsResult.success) {
+            return sendError(res, smsResult.error || "Failed to send OTP", 502);
         }
-
-        // Fallback: Local registration (without Supabase)
-        // In a real scenario, you'd hash the password here
-        const existingUserByEmail = await prisma.user.findUnique({
-            where: { email: normalizedEmail },
-        });
-
-        if (existingUserByEmail) {
-            return sendError(res, "Email already registered. Please login.", 400);
-        }
-
-        if (normalizedPhone) {
-            const existingUserByPhone = await prisma.user.findFirst({
-                where: { phone: normalizedPhone },
-            });
-            if (existingUserByPhone) {
-                return sendError(res, "Phone number already registered. Please login.", 400);
-            }
-        }
-
-        const user = await prisma.user.create({
-            data: {
-                email: normalizedEmail,
-                name: name || normalizedEmail.split("@")[0],
-                phone: normalizedPhone,
-                isAdmin: isAdmin || false,
-                isSuperAdmin: isSuperAdmin || false,
-            },
-        });
-
-        // Generate JWT token
-        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-            expiresIn: "7d",
-        });
 
         return sendSuccess(
             res,
-            {
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    phone: user.phone,
-                    isAdmin: user.isAdmin,
-                },
-                token,
+            { phone: normalized, expiresInMinutes: 10 },
+            "OTP sent successfully"
+        );
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /auth/register
+ * Body: { name?, phone, email?, password, otp, isAdmin?, isSuperAdmin? }
+ * Requires OTP previously issued with purpose=SIGNUP.
+ */
+export const register = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { phone, email, password, name, otp, isAdmin, isSuperAdmin } = req.body || {};
+
+        if (!phone) throw new ValidationError("Phone number is required");
+        if (!password) throw new ValidationError("Password is required");
+        if (!otp) throw new ValidationError("OTP is required");
+        if (password.length < 6) {
+            throw new ValidationError("Password must be at least 6 characters long");
+        }
+
+        const normalizedPhone = normalizePhone(phone);
+        if (!isValidIndianMobile(normalizedPhone)) {
+            return sendError(res, "Enter a valid 10-digit Indian mobile number", 400);
+        }
+
+        const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+        if (normalizedEmail) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(normalizedEmail)) {
+                return sendError(res, "Invalid email format", 400);
+            }
+        }
+
+        const otpValid = await verifyOTP(normalizedPhone, String(otp), OTPPurpose.SIGNUP);
+        if (!otpValid) {
+            return sendError(res, "Invalid or expired OTP", 400);
+        }
+
+        const existingByPhone = await prisma.user.findUnique({ where: { phone: normalizedPhone } });
+        if (existingByPhone) {
+            return sendError(res, "Mobile number already registered. Please sign in.", 400);
+        }
+
+        if (normalizedEmail) {
+            const existingByEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+            if (existingByEmail) {
+                return sendError(res, "Email already registered.", 400);
+            }
+        }
+
+        const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
+        const user = await prisma.user.create({
+            data: {
+                phone: normalizedPhone,
+                email: normalizedEmail,
+                name: name ? String(name).trim() : null,
+                passwordHash,
+                isAdmin: Boolean(isAdmin),
+                isSuperAdmin: Boolean(isSuperAdmin),
             },
-            "Registration successful"
+        });
+
+        const token = signToken(user.id, user.isAdmin ? "admin" : "customer");
+
+        return sendSuccess(
+            res,
+            { user: serializeUser(user), token },
+            "Registration successful",
+            201
         );
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-            return sendError(res, "Email already registered. Please login.", 400);
+            const target = (error.meta?.target as string[] | undefined)?.join(",") || "";
+            if (target.includes("phone")) {
+                return sendError(res, "Mobile number already registered. Please sign in.", 400);
+            }
+            if (target.includes("email")) {
+                return sendError(res, "Email already registered.", 400);
+            }
+            return sendError(res, "Account already exists.", 400);
         }
         next(error);
     }
 };
 
-// Customer Login
+/**
+ * POST /auth/login
+ * Body: { phone?, email?, password }
+ * Accepts either phone (customer) or email (admin) as identifier.
+ */
 export const login = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { email, password } = req.body;
+        const { phone, email, password } = req.body || {};
 
-        if (!email || !password) {
-            throw new ValidationError("Email and password are required");
+        if (!password) throw new ValidationError("Password is required");
+        if (!phone && !email) {
+            throw new ValidationError("Mobile number or email is required");
         }
 
-        // Try Supabase first
-        if (supabase) {
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
+        let user = null as Awaited<ReturnType<typeof prisma.user.findUnique>> | null;
 
-            if (error) {
-                return sendError(res, "Invalid credentials", 401);
-            }
-
-            if (data.user && data.session) {
-                // Find or create user in our database
-                let user = await prisma.user.findUnique({
-                    where: { supabaseId: data.user.id },
-                });
-
-                if (!user) {
-                    user = await prisma.user.create({
-                        data: {
-                            email: data.user.email || email,
-                            supabaseId: data.user.id,
-                            name: data.user.user_metadata?.name || email.split("@")[0],
-                        },
-                    });
-                }
-
-                return sendSuccess(res, {
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        name: user.name,
-                        phone: user.phone,
-                        isAdmin: user.isAdmin,
-                    },
-                    token: data.session.access_token, // Supabase JWT token
-                }, "Login successful");
-            }
+        if (phone) {
+            user = await prisma.user.findUnique({ where: { phone: normalizePhone(phone) } });
+        } else if (email) {
+            user = await prisma.user.findUnique({ where: { email: String(email).trim().toLowerCase() } });
         }
 
-        // Fallback: Local login (without Supabase)
-        // In a real scenario, you'd verify password hash here
-        const user = await prisma.user.findUnique({
-            where: { email },
-        });
-
-        if (!user) {
+        if (!user || !user.passwordHash) {
             return sendError(res, "Invalid credentials", 401);
         }
 
-        const isAdmin = user.isAdmin
+        const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+        if (!passwordMatch) {
+            return sendError(res, "Invalid credentials", 401);
+        }
 
-        // Generate JWT token
-        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-            expiresIn: "7d",
-        });
+        const token = signToken(user.id, user.isAdmin ? "admin" : "customer");
 
         return sendSuccess(
             res,
-            {
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    phone: user.phone,
-                    isAdmin: user.isAdmin,
-                },
-                token,
-            },
+            { user: serializeUser(user), token },
             "Login successful"
         );
     } catch (error) {
@@ -256,33 +217,22 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     }
 };
 
-
-// Get User Profile
+/**
+ * GET /auth/user/profile
+ */
 export const getProfile = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        if (!req.user) {
-            throw new UnauthorizedError("User not authenticated");
-        }
+        if (!req.user) throw new UnauthorizedError("User not authenticated");
 
         const user = await prisma.user.findUnique({
             where: { id: req.user.id },
-            include: {
-                addresses: {
-                    orderBy: { isDefault: "desc" },
-                },
-            },
+            include: { addresses: { orderBy: { isDefault: "desc" } } },
         });
 
-        if (!user) {
-            throw new NotFoundError("User not found");
-        }
+        if (!user) throw new NotFoundError("User not found");
 
         return sendSuccess(res, {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            phone: user.phone,
-            isAdmin: user.isAdmin,
+            ...serializeUser(user),
             addresses: user.addresses,
             createdAt: user.createdAt,
             notificationPreferences: user.notificationPreferences || {},
@@ -292,101 +242,89 @@ export const getProfile = async (req: Request, res: Response, next: NextFunction
     }
 };
 
-// Update User Profile
+/**
+ * PUT /auth/user/profile
+ * Note: phone is immutable here (one user = one unique phone). Updating phone requires OTP flow.
+ */
 export const updateProfile = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        if (!req.user) {
-            throw new UnauthorizedError("User not authenticated");
+        if (!req.user) throw new UnauthorizedError("User not authenticated");
+
+        const { name, email } = req.body || {};
+        const updateData: Prisma.UserUpdateInput = {};
+
+        if (name !== undefined) updateData.name = name ? String(name).trim() : null;
+
+        if (email !== undefined) {
+            if (email === null || email === "") {
+                updateData.email = null;
+            } else {
+                const normalizedEmail = String(email).trim().toLowerCase();
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(normalizedEmail)) {
+                    return sendError(res, "Invalid email format", 400);
+                }
+                updateData.email = normalizedEmail;
+            }
         }
 
-        const { name, phone } = req.body;
+        try {
+            const updated = await prisma.user.update({
+                where: { id: req.user.id },
+                data: updateData,
+                include: { addresses: { orderBy: { isDefault: "desc" } } },
+            });
 
-        const updateData: any = {};
-        if (name !== undefined) updateData.name = name;
-        if (phone !== undefined) updateData.phone = phone;
-
-        const updatedUser = await prisma.user.update({
-            where: { id: req.user.id },
-            data: updateData,
-            include: {
-                addresses: {
-                    orderBy: { isDefault: "desc" },
+            return sendSuccess(
+                res,
+                {
+                    ...serializeUser(updated),
+                    addresses: updated.addresses,
+                    createdAt: updated.createdAt,
+                    notificationPreferences: updated.notificationPreferences || {},
                 },
-            },
-        });
-
-        return sendSuccess(res, {
-            id: updatedUser.id,
-            email: updatedUser.email,
-            name: updatedUser.name,
-            phone: updatedUser.phone,
-            isAdmin: updatedUser.isAdmin,
-            addresses: updatedUser.addresses,
-            createdAt: updatedUser.createdAt,
-            notificationPreferences: updatedUser.notificationPreferences || {},
-        }, "Profile updated successfully");
+                "Profile updated successfully"
+            );
+        } catch (err) {
+            if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+                return sendError(res, "Email already in use by another account", 400);
+            }
+            throw err;
+        }
     } catch (error) {
         next(error);
     }
 };
 
-// Update Password
+/**
+ * PUT /auth/user/password
+ * Body: { currentPassword, newPassword }
+ */
 export const updatePassword = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        if (!req.user) {
-            throw new UnauthorizedError("User not authenticated");
-        }
+        if (!req.user) throw new UnauthorizedError("User not authenticated");
 
-        const { currentPassword, newPassword } = req.body;
-
+        const { currentPassword, newPassword } = req.body || {};
         if (!currentPassword || !newPassword) {
             throw new ValidationError("Current password and new password are required");
         }
-
         if (newPassword.length < 6) {
             throw new ValidationError("New password must be at least 6 characters long");
         }
 
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-        });
-
-        if (!user) {
-            throw new NotFoundError("User not found");
+        const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+        if (!user) throw new NotFoundError("User not found");
+        if (!user.passwordHash) {
+            return sendError(res, "Password not set for this account", 400);
         }
 
-        // If user has Supabase ID, update password via Supabase
-        if (user.supabaseId && supabaseAdmin) {
-            try {
-                // First, verify current password by attempting to sign in
-                if (supabase) {
-                    const { error: signInError } = await supabase.auth.signInWithPassword({
-                        email: user.email,
-                        password: currentPassword,
-                    });
-
-                    if (signInError) {
-                        return sendError(res, "Current password is incorrect", 400);
-                    }
-                }
-
-                // If current password is correct, use admin API to update password
-                const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-                    user.supabaseId,
-                    { password: newPassword }
-                );
-
-                if (updateError) {
-                    return sendError(res, updateError.message || "Failed to update password", 400);
-                }
-            } catch (supabaseError: any) {
-                console.error("Error updating password in Supabase:", supabaseError);
-                return sendError(res, supabaseError.message || "Failed to update password", 400);
-            }
-        } else {
-            // If no Supabase ID, this is a local user - password update not supported without Supabase
-            return sendError(res, "Password update requires Supabase authentication", 400);
+        const match = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!match) {
+            return sendError(res, "Current password is incorrect", 400);
         }
+
+        const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+        await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
 
         return sendSuccess(res, null, "Password updated successfully");
     } catch (error) {
@@ -394,79 +332,41 @@ export const updatePassword = async (req: Request, res: Response, next: NextFunc
     }
 };
 
-// Update Notification Preferences
 export const updateNotificationPreferences = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        if (!req.user) {
-            throw new UnauthorizedError("User not authenticated");
-        }
+        if (!req.user) throw new UnauthorizedError("User not authenticated");
 
-        const { preferences } = req.body;
-
-        if (!preferences || typeof preferences !== 'object') {
+        const { preferences } = req.body || {};
+        if (!preferences || typeof preferences !== "object") {
             throw new ValidationError("Preferences must be an object");
         }
 
-        const updatedUser = await prisma.user.update({
+        const updated = await prisma.user.update({
             where: { id: req.user.id },
-            data: {
-                notificationPreferences: preferences,
-            },
-            include: {
-                addresses: {
-                    orderBy: { isDefault: "desc" },
-                },
-            },
+            data: { notificationPreferences: preferences },
+            include: { addresses: { orderBy: { isDefault: "desc" } } },
         });
 
-        return sendSuccess(res, {
-            id: updatedUser.id,
-            email: updatedUser.email,
-            name: updatedUser.name,
-            phone: updatedUser.phone,
-            isAdmin: updatedUser.isAdmin,
-            addresses: updatedUser.addresses,
-            createdAt: updatedUser.createdAt,
-            notificationPreferences: updatedUser.notificationPreferences || {},
-        }, "Notification preferences updated successfully");
+        return sendSuccess(
+            res,
+            {
+                ...serializeUser(updated),
+                addresses: updated.addresses,
+                createdAt: updated.createdAt,
+                notificationPreferences: updated.notificationPreferences || {},
+            },
+            "Notification preferences updated successfully"
+        );
     } catch (error) {
         next(error);
     }
 };
 
-// Delete User Account
 export const deleteAccount = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        if (!req.user) {
-            throw new UnauthorizedError("User not authenticated");
-        }
+        if (!req.user) throw new UnauthorizedError("User not authenticated");
 
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-        });
-
-        if (!user) {
-            throw new NotFoundError("User not found");
-        }
-
-        // Delete user from Supabase if supabaseId exists
-        if (user.supabaseId && supabaseAdmin) {
-            try {
-                const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.supabaseId);
-                if (deleteError) {
-                    console.error("Error deleting user from Supabase:", deleteError);
-                    // Continue with Prisma deletion even if Supabase deletion fails
-                }
-            } catch (supabaseError) {
-                console.error("Error deleting from Supabase:", supabaseError);
-                // Continue with Prisma deletion even if Supabase deletion fails
-            }
-        }
-
-        // Delete user from Prisma (cascade will handle related data)
-        await prisma.user.delete({
-            where: { id: req.user.id },
-        });
+        await prisma.user.delete({ where: { id: req.user.id } });
 
         return sendSuccess(res, null, "Account deleted successfully");
     } catch (error) {
@@ -474,243 +374,118 @@ export const deleteAccount = async (req: Request, res: Response, next: NextFunct
     }
 };
 
-// Refresh Token
 export const refreshToken = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { refreshToken } = req.body;
-
-        // Try Supabase refresh first if configured
-        if (supabase && refreshToken) {
-            const { data, error } = await supabase.auth.refreshSession({
-                refresh_token: refreshToken,
-            });
-
-            if (error) {
-                throw new UnauthorizedError("Invalid refresh token");
-            }
-
-            if (data.session && data.user) {
-                // Get user from database
-                const user = await prisma.user.findUnique({
-                    where: { supabaseId: data.user.id },
-                    select: {
-                        id: true,
-                        email: true,
-                        name: true,
-                        phone: true,
-                        isAdmin: true,
-                        isSuperAdmin: true,
-                    },
-                });
-
-                if (!user) {
-                    throw new NotFoundError("User not found");
-                }
-
-                return sendSuccess(
-                    res,
-                    {
-                        user,
-                        token: data.session.access_token,
-                        refreshToken: data.session.refresh_token,
-                        expiresAt: data.session.expires_at,
-                    },
-                    "Token refreshed successfully"
-                );
-            }
-        }
-
-        // Fallback: Use JWT-based refresh (for non-Supabase users)
         const userId = req.user?.id;
+        if (!userId) throw new UnauthorizedError("User not authenticated");
 
-        if (!userId) {
-            throw new UnauthorizedError("User not authenticated");
-        }
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) throw new NotFoundError("User not found");
 
-        // Fetch fresh user data
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                phone: true,
-                isAdmin: true,
-                isSuperAdmin: true,
-            },
-        });
-
-        if (!user) {
-            throw new NotFoundError("User not found");
-        }
-
-        // Generate new JWT token
-        const token = jwt.sign(
-            { id: user.id, email: user.email },
-            JWT_SECRET,
-            { expiresIn: "7d" }
-        );
-
-        return sendSuccess(
-            res,
-            {
-                user,
-                token,
-            },
-            "Token refreshed successfully"
-        );
+        const token = signToken(user.id, user.isAdmin ? "admin" : "customer");
+        return sendSuccess(res, { user: serializeUser(user), token }, "Token refreshed successfully");
     } catch (error) {
         next(error);
     }
 };
 
-// Forgot Password - Request password reset
+/**
+ * POST /auth/forgot-password
+ * Body: { phone }
+ * Sends RESET_PASSWORD OTP.
+ */
 export const forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { email } = req.body;
+        const { phone } = req.body || {};
+        if (!phone) throw new ValidationError("Phone number is required");
 
-        if (!email) {
-            throw new ValidationError("Email is required");
+        const normalized = normalizePhone(phone);
+        if (!isValidIndianMobile(normalized)) {
+            return sendError(res, "Enter a valid 10-digit Indian mobile number", 400);
         }
 
-        // Check if user exists in our database
-        const user = await prisma.user.findUnique({
-            where: { email },
-        });
-
-        // Only send OTP if user exists in database
+        const user = await prisma.user.findUnique({ where: { phone: normalized } });
         if (!user) {
             return sendSuccess(
                 res,
-                { 
-                    message: "No account found with this email. Please create an account first.",
-                    requiresSignup: true 
-                },
+                { requiresSignup: true, message: "No account found with this mobile number. Please sign up." },
                 "Account not found"
             );
         }
 
-        // User exists - generate and send OTP
-        try {
-            // Generate OTP
-            const otp = generateOTP();
+        const otp = generateOTP();
+        await storeOTP(normalized, otp, OTPPurpose.RESET_PASSWORD);
 
-            // Store OTP in database
-            await storeOTP(email, otp);
-
-            // Send OTP email
-            await sendPasswordResetOTP(email, otp);
-
-            return sendSuccess(
-                res,
-                { 
-                    message: "Password reset OTP has been sent to your email. Please check your inbox.",
-                    requiresSignup: false 
-                },
-                "Password reset OTP sent"
-            );
-        } catch (err) {
-            console.error('[FORGOT_PASSWORD] Error in OTP process:', err);
-            console.error('[FORGOT_PASSWORD] Error details:', {
-                message: err instanceof Error ? err.message : 'Unknown error',
-                stack: err instanceof Error ? err.stack : undefined,
-            });
-            
-            // Return error so user knows something went wrong
-            return sendError(
-                res,
-                "Failed to send password reset OTP. Please try again later.",
-                500
-            );
-        }
-    } catch (error) {
-        console.error('[FORGOT_PASSWORD] Unexpected error:', error);
-        next(error);
-    }
-};
-
-// Verify OTP (without resetting password)
-export const verifyOTPController = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const { email, otp } = req.body;
-
-        if (!email || !otp) {
-            throw new ValidationError("Email and OTP are required");
+        const smsResult = await sendOtpSms(normalized, otp);
+        if (!smsResult.success) {
+            return sendError(res, smsResult.error || "Failed to send OTP", 502);
         }
 
-        const isValidOTP = await checkOTP(email, otp);
-
-        if (!isValidOTP) {
-            return sendError(res, "Invalid or expired OTP", 400);
-        }
         return sendSuccess(
             res,
-            { message: "OTP verified successfully" },
-            "OTP verified"
+            { phone: normalized, requiresSignup: false, expiresInMinutes: 10 },
+            "Password reset OTP sent"
         );
     } catch (error) {
         next(error);
     }
 };
 
-// Reset Password - Set new password with OTP
-export const resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+/**
+ * POST /auth/verify-otp
+ * Body: { phone, otp, purpose? }
+ * Validates without consuming (one-time consume happens in register/reset-password).
+ */
+export const verifyOTPController = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { email, otp, password } = req.body;
-
-        if (!email || !otp || !password) {
-            throw new ValidationError("Email, OTP, and password are required");
+        const { phone, otp, purpose: rawPurpose } = req.body || {};
+        if (!phone || !otp) {
+            throw new ValidationError("Phone and OTP are required");
         }
 
+        const normalized = normalizePhone(phone);
+        const purpose = parseOtpPurpose(rawPurpose);
+
+        const valid = await checkOTP(normalized, String(otp), purpose);
+        if (!valid) {
+            return sendError(res, "Invalid or expired OTP", 400);
+        }
+
+        return sendSuccess(res, { valid: true }, "OTP verified");
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /auth/reset-password
+ * Body: { phone, otp, password }
+ */
+export const resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { phone, otp, password } = req.body || {};
+        if (!phone || !otp || !password) {
+            throw new ValidationError("Phone, OTP, and password are required");
+        }
         if (password.length < 6) {
             throw new ValidationError("Password must be at least 6 characters long");
         }
 
-        // Verify OTP
-        const { verifyOTP } = await import("../services/otp.js");
-        const isValidOTP = await verifyOTP(email, otp);
-
-        if (!isValidOTP) {
+        const normalized = normalizePhone(phone);
+        const valid = await verifyOTP(normalized, String(otp), OTPPurpose.RESET_PASSWORD);
+        if (!valid) {
             return sendError(res, "Invalid or expired OTP", 400);
         }
 
-        // Find user in our database
-        const user = await prisma.user.findUnique({
-            where: { email },
-        });
-
+        const user = await prisma.user.findUnique({ where: { phone: normalized } });
         if (!user) {
             return sendError(res, "User not found", 404);
         }
 
-        // Update password in Supabase if user has Supabase ID
-        if (user.supabaseId && supabaseAdmin) {
-            try {
-                const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-                    user.supabaseId,
-                    { password }
-                );
+        const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+        await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
 
-                if (updateError) {
-                    console.error('Supabase password update error:', updateError);
-                    return sendError(res, updateError.message || "Failed to reset password. Please try again.", 400);
-                }
-            } catch (err) {
-                console.error('Error updating password in Supabase:', err);
-                return sendError(res, "Failed to reset password. Please try again.", 400);
-            }
-        } else {
-            // If no Supabase ID, this is a local user
-            // For local users, we would need to hash and store the password
-            // For now, we'll return an error if Supabase is required
-            return sendError(res, "Password reset requires Supabase authentication", 400);
-        }
-
-        return sendSuccess(
-            res,
-            { message: "Password has been reset successfully" },
-            "Password reset successful"
-        );
+        return sendSuccess(res, { message: "Password has been reset successfully" }, "Password reset successful");
     } catch (error) {
         next(error);
     }

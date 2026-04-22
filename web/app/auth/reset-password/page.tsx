@@ -7,13 +7,20 @@ import AuthLayout from "../../components/auth/AuthLayout";
 import AuthFormInput from "../../components/auth/AuthFormInput";
 import AuthFormButton from "../../components/auth/AuthFormButton";
 import AuthGuard from "../../components/auth/AuthGuard";
-import { EmailIcon, PasswordIcon } from "../../components/icons";
+import OtpInput from "../../components/auth/OtpInput";
+import { PhoneIcon, PasswordIcon } from "../../components/icons";
 import { resetPassword } from "../../../lib/api/auth";
 import { toastPromise } from "../../../lib/utils/toast";
 
+function isValidIndianPhone(raw: string): boolean {
+    const digits = raw.replace(/\D/g, "");
+    const normalized = digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+    return /^[6-9]\d{9}$/.test(normalized);
+}
+
 export default function ResetPasswordPage() {
     const router = useRouter();
-    const [email, setEmail] = useState("");
+    const [phone, setPhone] = useState("");
     const [otp, setOtp] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -27,54 +34,43 @@ export default function ResetPasswordPage() {
         e.preventDefault();
         setError(null);
 
-        if (!email || !otp || !password || !confirmPassword) {
+        if (!phone || !otp || !password || !confirmPassword) {
             setError("Please fill in all fields");
             return;
         }
-
-        // Basic email validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            setError("Please enter a valid email address");
+        if (!isValidIndianPhone(phone)) {
+            setError("Enter a valid 10-digit Indian mobile number");
             return;
         }
-
         if (otp.length !== 6) {
             setError("OTP must be 6 digits");
             return;
         }
-
         if (password !== confirmPassword) {
             setError("Passwords do not match");
             return;
         }
-
         if (password.length < 6) {
             setError("Password must be at least 6 characters long");
             return;
         }
 
         setLoading(true);
-
         try {
             const response = await toastPromise(
-                resetPassword(email, otp, password),
+                resetPassword(phone, otp, password),
                 {
-                    loading: 'Resetting password...',
-                    success: 'Password reset successfully! Redirecting to login...',
-                    error: (err) => err || 'Failed to reset password. Please try again.',
+                    loading: "Resetting password...",
+                    success: "Password reset successfully! Redirecting to login...",
+                    error: (err) => err || "Failed to reset password.",
                 }
             );
-
             if (response?.success) {
                 setSuccess(true);
-                // Redirect to login after 2 seconds
-                setTimeout(() => {
-                    router.push("/auth/login");
-                }, 2000);
+                setTimeout(() => router.push("/auth/login"), 2000);
             }
         } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Failed to reset password. Please try again.");
+            setError(err instanceof Error ? err.message : "Failed to reset password.");
         } finally {
             setLoading(false);
         }
@@ -91,12 +87,8 @@ export default function ResetPasswordPage() {
                 {success ? (
                     <div className="space-y-4 text-center">
                         <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                            <p className="text-sm text-green-800 mb-2">
-                                Password reset successfully!
-                            </p>
-                            <p className="text-xs text-green-700">
-                                Redirecting to login page...
-                            </p>
+                            <p className="text-sm text-green-800 mb-2">Password reset successfully!</p>
+                            <p className="text-xs text-green-700">Redirecting to login page...</p>
                         </div>
                         <Link
                             href="/auth/login"
@@ -109,29 +101,15 @@ export default function ResetPasswordPage() {
                     <>
                         <form onSubmit={handleSubmit} className="space-y-2 sm:space-y-2.5">
                             <AuthFormInput
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="Email Address"
+                                type="tel"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                                placeholder="Mobile Number (10 digits)"
                                 required
-                                icon={<EmailIcon />}
+                                icon={<PhoneIcon />}
                             />
 
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    value={otp}
-                                    onChange={(e) => {
-                                        // Only allow numbers and limit to 6 digits
-                                        const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                                        setOtp(value);
-                                    }}
-                                    placeholder="Enter 6-digit OTP"
-                                    required
-                                    maxLength={6}
-                                    className="w-full px-4 py-2 text-center text-2xl tracking-widest font-mono bg-gray-50 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </div>
+                            <OtpInput value={otp} onChange={setOtp} disabled={loading} autoFocus={false} />
 
                             <AuthFormInput
                                 type="password"
@@ -162,7 +140,6 @@ export default function ResetPasswordPage() {
                             </AuthFormButton>
                         </form>
 
-                        {/* Back to Login Link */}
                         <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
                             Remember your password?{" "}
                             <Link href="/auth/login" className="text-blue-600 hover:text-blue-700 font-medium hover:underline">

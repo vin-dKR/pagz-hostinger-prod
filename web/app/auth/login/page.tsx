@@ -7,13 +7,13 @@ import AuthLayout from "../../components/auth/AuthLayout";
 import AuthFormInput from "../../components/auth/AuthFormInput";
 import AuthFormButton from "../../components/auth/AuthFormButton";
 import AuthGuard from "../../components/auth/AuthGuard";
-import { EmailIcon, PasswordIcon } from "../../components/icons"
+import { PhoneIcon, PasswordIcon } from "../../components/icons";
 import { useAuth } from "../../../contexts/AuthContext";
 
 function LoginPageContent() {
     const { login } = useAuth();
     const searchParams = useSearchParams();
-    const [email, setEmail] = useState("");
+    const [phone, setPhone] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
@@ -22,18 +22,19 @@ function LoginPageContent() {
     const intent = searchParams.get("intent");
     const signupHref = intent ? `/auth/signup?intent=${encodeURIComponent(intent)}` : "/auth/signup";
 
-    // Note: Redirect is handled by AuthGuard component after authentication
-    // AuthGuard will check for saved redirect path and redirect accordingly
-
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
-        setLoading(true);
 
+        const digits = phone.replace(/\D/g, "");
+        if (!/^[6-9]\d{9}$/.test(digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits)) {
+            setError("Enter a valid 10-digit Indian mobile number");
+            return;
+        }
+
+        setLoading(true);
         try {
-            await login(email, password);
-            // AuthGuard will handle redirect after isAuthenticated becomes true
-            // No need to set shouldRedirect flag
+            await login({ phone, password });
         } catch (err: any) {
             setError(err.message || "Login failed. Please check your credentials.");
             setLoading(false);
@@ -50,12 +51,12 @@ function LoginPageContent() {
             >
                 <form onSubmit={handleSubmit} className="space-y-2 sm:space-y-2.5">
                     <AuthFormInput
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="example@gmail.com"
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        placeholder="Mobile Number"
                         required
-                        icon={<EmailIcon />}
+                        icon={<PhoneIcon />}
                     />
 
                     <AuthFormInput
@@ -70,7 +71,6 @@ function LoginPageContent() {
                         onTogglePassword={() => setShowPassword(!showPassword)}
                     />
 
-                    {/* Remember Me & Forgot Password */}
                     <div className="flex items-center justify-between pt-0.5">
                         <label className="flex items-center gap-1.5 cursor-pointer">
                             <input
@@ -94,7 +94,6 @@ function LoginPageContent() {
                     </AuthFormButton>
                 </form>
 
-                {/* Register Link */}
                 <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
                     Don't have an account?{" "}
                     <Link href={signupHref} className="text-blue-600 hover:text-blue-700 font-medium hover:underline">

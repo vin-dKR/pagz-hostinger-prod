@@ -26,7 +26,6 @@ function createApiClientError(message: string, statusCode = 0, errors?: Record<s
 }
 
 import { getCookie, setCookie, removeCookie } from './cookies';
-import { supabase } from './supabase';
 
 const AUTH_TOKEN_COOKIE = 'auth_token';
 const LEGACY_AUTH_TOKEN_COOKIE = 'refreshToken';
@@ -86,8 +85,7 @@ function decodeToken(token: string): { exp: number } | null {
 }
 
 /**
- * Check if token is expired or will expire soon
- * Supabase tokens expire in 1 hour, so we refresh at 10 minutes before expiry
+ * Check if local JWT is close to expiry. Local tokens last 7 days; refresh 1 day before.
  */
 function isTokenExpiringSoon(token: string): boolean {
     const decoded = decodeToken(token);
@@ -95,44 +93,17 @@ function isTokenExpiringSoon(token: string): boolean {
 
     const now = Math.floor(Date.now() / 1000);
     const timeUntilExpiry = decoded.exp - now;
-
-    // Refresh if token expires in less than 10 minutes (600 seconds)
-    // This is more aggressive to handle Supabase's 1-hour expiration
-    return timeUntilExpiry < 600;
+    return timeUntilExpiry < 24 * 60 * 60;
 }
 
-/**
- * Refresh the authentication token
- * Uses Supabase session refresh if available, otherwise falls back to API refresh
- */
 async function refreshAuthToken(): Promise<string | null> {
-    // If already refreshing, return the existing promise
-    if (isRefreshing && refreshPromise) {
-        return refreshPromise;
-    }
+    if (isRefreshing && refreshPromise) return refreshPromise;
 
     isRefreshing = true;
     refreshPromise = (async () => {
         try {
-            // Try Supabase refresh first if configured
-            if (supabase) {
-                const { data, error } = await supabase.auth.refreshSession();
-
-                if (!error && data.session) {
-                    setAuthToken(data.session.access_token);
-                    return data.session.access_token;
-                }
-
-                if (error) {
-                    console.error('[API Client] Supabase refresh error:', error);
-                }
-            }
-
-            // Fallback to API-based refresh for non-Supabase users
             const token = getAuthToken();
-            if (!token) {
-                return null;
-            }
+            if (!token) return null;
 
             const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
                 method: 'POST',
@@ -142,16 +113,13 @@ async function refreshAuthToken(): Promise<string | null> {
                 },
             });
 
-            if (!response.ok) {
-                return null;
-            }
+            if (!response.ok) return null;
 
             const data = await response.json();
             if (data.success && data.data?.token) {
                 setAuthToken(data.data.token);
                 return data.data.token;
             }
-
             return null;
         } catch (error) {
             console.error('[API Client] Token refresh failed:', error);

@@ -56,11 +56,12 @@ export function removeCookie(name: string): void {
 /**
  * Store user info in cookie for persistence
  */
-export function setUserCookie(user: { id: string; email: string; name?: string | null }, days: number = 7): void {
+export function setUserCookie(user: { id: string; phone: string; email?: string | null; name?: string | null }, days: number = 7): void {
     if (typeof document === 'undefined') return;
 
     const userData = JSON.stringify({
         id: user.id,
+        phone: user.phone,
         email: user.email,
         name: user.name,
     });
@@ -71,7 +72,7 @@ export function setUserCookie(user: { id: string; email: string; name?: string |
 /**
  * Get user info from cookie
  */
-export function getUserCookie(): { id: string; email: string; name?: string | null } | null {
+export function getUserCookie(): { id: string; phone: string; email?: string | null; name?: string | null } | null {
     if (typeof document === 'undefined') return null;
 
     const userData = getCookie('user_info');
