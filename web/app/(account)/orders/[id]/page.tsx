@@ -467,7 +467,7 @@ function OrderDetailsPageContent({
                                             const getDisplayImage = (): { url: string | null } | null => {
                                                 // Priority 1: Category image
                                                 if (item.categoryImage) {
-                                                    return { url: item.categoryImage };
+                                                    return { url: getPublicS3Url(item.categoryImage) };
                                                 }
                                                 
                                                 // Priority 2: First custom design file (only if it's an image)
