@@ -7,13 +7,14 @@ import AuthLayout from "../../components/auth/AuthLayout";
 import AuthFormInput from "../../components/auth/AuthFormInput";
 import AuthFormButton from "../../components/auth/AuthFormButton";
 import AuthGuard from "../../components/auth/AuthGuard";
-import { PhoneIcon, PasswordIcon } from "../../components/icons";
+import { UserIcon, PasswordIcon } from "../../components/icons";
 import { useAuth } from "../../../contexts/AuthContext";
+import { parseLoginIdentifier } from "../../../lib/utils/login-identifier";
 
 function LoginPageContent() {
     const { login } = useAuth();
     const searchParams = useSearchParams();
-    const [phone, setPhone] = useState("");
+    const [identifier, setIdentifier] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
@@ -26,15 +27,15 @@ function LoginPageContent() {
         e.preventDefault();
         setError(null);
 
-        const digits = phone.replace(/\D/g, "");
-        if (!/^[6-9]\d{9}$/.test(digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits)) {
-            setError("Enter a valid 10-digit Indian mobile number");
+        const parsed = parseLoginIdentifier(identifier);
+        if (!parsed) {
+            setError("Enter a valid 10-digit mobile number or email");
             return;
         }
 
         setLoading(true);
         try {
-            await login({ phone, password });
+            await login({ ...parsed, password });
         } catch (err: any) {
             setError(err.message || "Login failed. Please check your credentials.");
             setLoading(false);
@@ -51,12 +52,14 @@ function LoginPageContent() {
             >
                 <form onSubmit={handleSubmit} className="space-y-2 sm:space-y-2.5">
                     <AuthFormInput
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                        placeholder="Mobile Number"
+                        type="text"
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
+                        placeholder="Mobile Number or Email"
                         required
-                        icon={<PhoneIcon />}
+                        autoComplete="username"
+                        inputMode="email"
+                        icon={<UserIcon />}
                     />
 
                     <AuthFormInput

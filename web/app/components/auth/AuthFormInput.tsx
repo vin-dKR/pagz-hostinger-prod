@@ -10,6 +10,8 @@ interface AuthFormInputProps {
     showPassword?: boolean;
     onTogglePassword?: () => void;
     className?: string;
+    autoComplete?: string;
+    inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
 }
 
 export default function AuthFormInput({
@@ -23,7 +25,9 @@ export default function AuthFormInput({
     showPasswordToggle = false,
     showPassword = false,
     onTogglePassword,
-    className = ""
+    className = "",
+    autoComplete,
+    inputMode
 }: AuthFormInputProps) {
     const inputType = showPasswordToggle && showPassword ? "text" : type;
 
@@ -39,6 +43,8 @@ export default function AuthFormInput({
                 onChange={onChange}
                 placeholder={placeholder}
                 required={required}
+                autoComplete={autoComplete}
+                inputMode={inputMode}
                 className="w-full pl-10 pr-10 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
             {showPasswordToggle && onTogglePassword && (
