@@ -54,6 +54,10 @@ function SignupPageContent() {
         e.preventDefault();
         setError(null);
 
+        if (!formData.name.trim()) {
+            setError("Name is required");
+            return;
+        }
         if (!formData.phone || !isValidIndianPhone(formData.phone)) {
             setError("Enter a valid 10-digit Indian mobile number");
             return;
@@ -117,7 +121,7 @@ function SignupPageContent() {
                 phone: formData.phone,
                 password: formData.password,
                 otp,
-                name: formData.name || undefined,
+                name: formData.name.trim(),
                 email: formData.email || undefined,
             });
         } catch (err: any) {
@@ -160,7 +164,8 @@ function SignupPageContent() {
                             name="name"
                             value={formData.name}
                             onChange={handleChange}
-                            placeholder="Full Name (optional)"
+                            placeholder="Full Name"
+                            required
                             icon={<UserIcon />}
                         />
 
