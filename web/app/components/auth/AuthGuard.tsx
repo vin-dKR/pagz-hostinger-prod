@@ -43,8 +43,18 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                     const shouldProcessPending =
                         authIntent === "add_to_cart" || hasPendingPurchaseData();
 
+                    console.log("[AuthGuard] post-login:", {
+                        isAuthenticated,
+                        redirectPath,
+                        authIntent,
+                        hasPending: hasPendingPurchaseData(),
+                        shouldProcessPending,
+                    });
+
                     if (shouldProcessPending) {
+                        console.log("[AuthGuard] calling processPendingAddToCartIntent");
                         const result = await processPendingAddToCartIntent();
+                        console.log("[AuthGuard] merge result:", result);
                         if (result.handled) {
                             clearRedirectPath();
                             if (result.success) {
