@@ -85,10 +85,19 @@ export const derivePriceBreakdown = (
 
     if (item.metadata?.priceBreakdown && Array.isArray(item.metadata.priceBreakdown)) {
         const breakdown = item.metadata.priceBreakdown;
-        const base =
-            breakdown.find((x) => x.label === "Base")?.value ?? 0;
+        // Server writes labels like "Base Price (3 pages × 1 copies)" and
+        // "Addon: binding". Match by prefix (case-insensitive) so the split
+        // between base and addon lines survives label tweaks.
+        const isAddon = (label: unknown) =>
+            typeof label === "string" && label.trim().toLowerCase().startsWith("addon");
+        const isBase = (label: unknown) =>
+            typeof label === "string" && label.trim().toLowerCase().startsWith("base");
+
+        const base = breakdown
+            .filter((x) => isBase(x.label) && typeof x.value === "number")
+            .reduce((sum, x) => sum + toNumber(x.value), 0);
         const addonTotal = breakdown
-            .filter((x) => x.label !== "Base" && typeof x.value === "number")
+            .filter((x) => isAddon(x.label) && typeof x.value === "number")
             .reduce((sum, x) => sum + toNumber(x.value), 0);
         return {
             baseTotal: toNumber(base),
