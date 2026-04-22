@@ -119,6 +119,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             hasAddon: boolean;
             addons: string[];
             metadata?: any;
+            fileCount: number;
         }> = [];
 
         // Validate and calculate prices (no database calls in loop)
@@ -202,17 +203,21 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
 
             // Normalize addons to array (deduped, trimmed).
             const normalizedAddons = normalizeAddonIds(addons);
+            const normalizedDesignUrls: string[] = customDesignUrl
+                ? (Array.isArray(customDesignUrl) ? customDesignUrl : [customDesignUrl])
+                : [];
 
             orderItems.push({
                 productId,
                 variantId: variantId || null,
                 quantity: effectiveQuantity,
                 price: itemPrice,
-                customDesignUrl: customDesignUrl ? (Array.isArray(customDesignUrl) ? customDesignUrl : [customDesignUrl]) : [],
+                customDesignUrl: normalizedDesignUrls,
                 customText: customText || null,
                 hasAddon: normalizedAddons.length > 0,
                 addons: normalizedAddons,
                 metadata: updatedMetadata,
+                fileCount: normalizedDesignUrls.length,
             });
         }
 
@@ -2288,11 +2293,15 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                 const addonMap = new Map<string, AddonPricingRule>(
                     addonRules.map((r) => [r.id, r])
                 );
+                const itemFileCount = Array.isArray(item.customDesignUrl)
+                    ? item.customDesignUrl.length
+                    : item.customDesignUrl ? 1 : 0;
                 return sum + computeLineAddonsTotal(
                     {
                         quantity: item.quantity,
                         addons: addonRules.map((r) => r.id),
                         metadata: (item.metadata as any) ?? null,
+                        fileCount: itemFileCount,
                     },
                     addonMap,
                 );
@@ -2332,10 +2341,14 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
             items: order.items.map((item: any) => {
                 const addons: AddonPricingRule[] = Array.isArray(item.addons) ? item.addons : [];
                 const metadata = (item.metadata as any) ?? null;
+                const lineFileCount = Array.isArray(item.customDesignUrl)
+                    ? item.customDesignUrl.length
+                    : item.customDesignUrl ? 1 : 0;
                 const line = {
                     quantity: item.quantity,
                     addons: addons.map((a) => a.id),
                     metadata,
+                    fileCount: lineFileCount,
                 };
                 return {
                     name: item.product?.name || 'Product',

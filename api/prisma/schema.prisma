@@ -160,7 +160,8 @@ model CategoryPricingRule {
   specificationValues Json // Maps specification slugs to selected values
   basePrice           Decimal?        @db.Decimal(10, 2)
   priceModifier       Decimal?        @db.Decimal(10, 2) // For addons like binding, lamination
-  quantityMultiplier  Boolean         @default(false) // Whether price multiplies by quantity
+  quantityMultiplier  Boolean         @default(false) // Price multiplies by effective quantity/pages
+  fileMultiplier      Boolean         @default(false) // Price multiplies by uploaded-file count
   minQuantity         Int? // For quantity tiers
   maxQuantity         Int? // For quantity tiers
   isActive            Boolean         @default(true)

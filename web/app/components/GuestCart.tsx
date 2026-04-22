@@ -381,6 +381,7 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                                                     pageCount: pending.pageCount,
                                                     copies: pending.copies,
                                                 } as any,
+                                                fileCount: (pending.files || []).length,
                                             });
                                             return (
                                                 <li key={addon.id} className="text-xs text-purple-700">

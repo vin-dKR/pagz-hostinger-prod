@@ -18,6 +18,7 @@ export interface AddonRule {
     basePrice?: number | null;
     priceModifier?: number | null;
     quantityMultiplier: boolean;
+    fileMultiplier?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
 }

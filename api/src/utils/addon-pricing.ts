@@ -28,6 +28,7 @@ export interface AddonPricingRule {
     basePrice: unknown;
     priceModifier: unknown;
     quantityMultiplier: boolean;
+    fileMultiplier?: boolean;
     minQuantity: number | null;
     maxQuantity: number | null;
     isActive?: boolean;
@@ -37,6 +38,8 @@ export interface AddonLineItemInput {
     quantity: number;
     addons: string[];
     metadata?: { pageCount?: number | null; copies?: number | null } | null | undefined;
+    /** Count of uploaded files on the cart/order item; used by fileMultiplier rules. */
+    fileCount?: number;
 }
 
 const toNumber = (value: unknown): number => {
@@ -102,6 +105,13 @@ export const computeAddonLineTotal = (
     if (!isAddonInPageRange(addon, effectivePages)) return 0;
 
     const unit = getAddonUnitPrice(addon);
+
+    // fileMultiplier wins when both flags are on — it's a more specific signal.
+    if (addon.fileMultiplier) {
+        const files = Math.max(1, line.fileCount ?? 0);
+        return unit * files;
+    }
+
     if (!addon.quantityMultiplier) return unit;
 
     const multiplier = effectivePages ?? line.quantity;
@@ -177,6 +187,7 @@ export const fetchAddonRuleMap = async (
                 basePrice: rule.basePrice,
                 priceModifier: rule.priceModifier,
                 quantityMultiplier: rule.quantityMultiplier,
+                fileMultiplier: (rule as { fileMultiplier?: boolean }).fileMultiplier ?? false,
                 minQuantity: rule.minQuantity,
                 maxQuantity: rule.maxQuantity,
                 isActive: rule.isActive,
