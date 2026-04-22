@@ -53,6 +53,36 @@ export function redirectToLoginWithReturn(
 }
 
 /**
+ * Saves a redirect path to sessionStorage without redirecting.
+ * Used when we want to stash the post-login destination ahead of time
+ * (e.g. when the user clicks Checkout while logged out from the cart page).
+ */
+export function saveRedirectPath(path: string): void {
+    if (typeof window === "undefined") return;
+
+    if (isValidRedirectPath(path)) {
+        sessionStorage.setItem("redirectAfterLogin", path);
+    } else {
+        console.warn('[auth-redirect] Invalid redirect path, not saving:', path);
+    }
+}
+
+/**
+ * Builds a URL pointing at /auth/login with an optional intent query-param.
+ */
+export function buildLoginUrl(options?: { intent?: AuthIntent }): string {
+    if (typeof window === "undefined") {
+        return options?.intent ? `/auth/login?intent=${options.intent}` : "/auth/login";
+    }
+
+    const loginUrl = new URL("/auth/login", window.location.origin);
+    if (options?.intent) {
+        loginUrl.searchParams.set("intent", options.intent);
+    }
+    return `${loginUrl.pathname}${loginUrl.search}`;
+}
+
+/**
  * Gets the saved redirect path and validates it
  * @returns The redirect path if valid, null otherwise
  */

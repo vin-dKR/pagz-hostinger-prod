@@ -10,7 +10,7 @@ import { addToCart } from "@/lib/api/cart";
 import { addToWishlist, removeFromWishlist, checkWishlist } from "@/lib/api/wishlist";
 import { useCart } from "@/contexts/CartContext";
 import { toastError, toastPromise } from "@/lib/utils/toast";
-import { redirectToLoginWithReturn } from "@/lib/utils/auth-redirect";
+import { redirectGuestToCart } from "@/lib/utils/guest-cart";
 import { savePendingProductForCartIntent } from "@/lib/utils/pending-cart-intent";
 
 interface ProductCardProps {
@@ -73,7 +73,8 @@ export default function ProductCard({
         if (!isAuthenticated) {
             try {
                 await savePendingProductForCartIntent({ productId: id, quantity: 1 });
-                redirectToLoginWithReturn(undefined, { intent: "add_to_cart" });
+                // Guest: land on /cart; auth is deferred until the Checkout button.
+                redirectGuestToCart(router);
             } catch (error) {
                 toastError("Unable to save your cart action. Please try again.");
             }

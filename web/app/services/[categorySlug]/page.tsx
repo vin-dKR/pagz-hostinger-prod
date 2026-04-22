@@ -34,6 +34,7 @@ import { Option } from '@/types';
 import { uploadOrderFilesToS3 } from '@/lib/api/uploads';
 import { toastWarning, toastError, toastSuccess, toastPromise } from '@/lib/utils/toast';
 import { redirectToLoginWithReturn } from '@/lib/utils/auth-redirect';
+import { redirectGuestToCart } from '@/lib/utils/guest-cart';
 import {
     savePendingPurchaseData,
     clearPendingPurchaseData,
@@ -704,9 +705,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 };
 
                 await savePendingPurchaseData(purchaseData);
-                redirectToLoginWithReturn(window.location.pathname + window.location.search, {
-                    intent: 'add_to_cart',
-                });
+                // Guest add-to-cart: send to /cart so the user can see their
+                // item; auth is deferred until the Checkout button.
+                redirectGuestToCart(router);
             } catch (error) {
                 console.error('Failed to save pending purchase data:', error);
                 toastError('Failed to save your selections. Please try again.');

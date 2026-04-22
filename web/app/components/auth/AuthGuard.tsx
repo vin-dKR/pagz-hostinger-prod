@@ -39,8 +39,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                         if (result.handled) {
                             clearRedirectPath();
                             if (result.success) {
-                                // Use full reload to avoid stale cart context initialized pre-token.
-                                window.location.href = "/cart";
+                                // Prefer the originally requested destination
+                                // (e.g. `/checkout?items=...` when the user
+                                // clicked Checkout from the guest cart).
+                                // Fall back to `/cart` so returning users
+                                // still see their merged item.
+                                //
+                                // Full reload avoids stale cart context
+                                // initialised pre-token.
+                                window.location.href = redirectPath || "/cart";
                             } else {
                                 toastError(result.error || "Failed to restore your cart item.");
                                 if (redirectPath) {
