@@ -16,7 +16,7 @@ export interface RegisterData {
   phone: string;
   password: string;
   otp: string;
-  name?: string;
+  name: string;
   email?: string;
 }
 

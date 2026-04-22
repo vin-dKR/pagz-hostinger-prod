@@ -107,6 +107,10 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         if (password.length < 6) {
             throw new ValidationError("Password must be at least 6 characters long");
         }
+        const trimmedName = name ? String(name).trim() : "";
+        if (!trimmedName) {
+            throw new ValidationError("Name is required");
+        }
 
         const normalizedPhone = normalizePhone(phone);
         if (!isValidIndianMobile(normalizedPhone)) {
@@ -144,7 +148,7 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             data: {
                 phone: normalizedPhone,
                 email: normalizedEmail,
-                name: name ? String(name).trim() : null,
+                name: trimmedName,
                 passwordHash,
                 isAdmin: Boolean(isAdmin),
                 isSuperAdmin: Boolean(isSuperAdmin),
