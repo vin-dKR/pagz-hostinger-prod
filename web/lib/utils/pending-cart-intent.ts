@@ -163,20 +163,15 @@ async function matchProductForService(
     const pickInStock = (list: any[]) =>
         list.find((p: any) => p?.id && (p.stock === undefined || p.stock > 0)) || list[0];
 
-    console.log(
-        "[pending-cart-intent] matchProductForService categorySlug=",
-        categorySlug,
-        "specs=",
-        specifications
-    );
-
+    // Strategy 1: exact-spec match.
     const first = await getProductsBySpecifications(categorySlug, specifications);
-    console.log("[pending-cart-intent] full-spec match result count=", first?.length ?? 0);
     if (first && first.length > 0) {
         return pickInStock(first);
     }
 
-    // Strategy 2: drop addon-only spec keys and retry.
+    // Strategy 2: drop addon-only spec keys and retry. Addon rules carry
+    // their own specificationValues (e.g. "binding: hardcover") which are
+    // metadata on top of the base product, not part of what identifies it.
     let addonOnlyKeys: string[] = [];
     try {
         const addons = await getCategoryAddons(categorySlug);
@@ -186,49 +181,36 @@ async function matchProductForService(
             Object.keys(values).forEach((k) => addonKeys.add(k));
         }
         addonOnlyKeys = Array.from(addonKeys);
-    } catch (err) {
-        console.warn("[pending-cart-intent] couldn't fetch addons to trim specs:", err);
+    } catch {
+        /* best-effort — fall through to next strategy */
     }
 
     if (addonOnlyKeys.length > 0) {
         const trimmed: Record<string, any> = { ...specifications };
-        const dropped: string[] = [];
         for (const key of addonOnlyKeys) {
-            if (key in trimmed) {
-                delete trimmed[key];
-                dropped.push(key);
-            }
+            delete trimmed[key];
         }
-
-        if (dropped.length > 0) {
-            console.warn(
-                `[pending-cart-intent] retry match without addon-only keys: ${dropped.join(", ")}`
-            );
+        if (Object.keys(trimmed).length !== Object.keys(specifications).length) {
             const second = await getProductsBySpecifications(categorySlug, trimmed);
-            console.log("[pending-cart-intent] trimmed match result count=", second?.length ?? 0);
             if (second && second.length > 0) {
                 return pickInStock(second);
             }
         }
     }
 
-    // Strategy 3 (last resort): pick any published product in the category.
-    // Reasoning: the user successfully added to cart as a guest (service page
-    // computed a price), so SOME product exists for this combination — even
-    // if the spec-matching endpoint can't resolve it (index stale, specs
-    // changed admin-side, etc.). Better to land the item on the generic
-    // product than throw away the entire configuration.
+    // Strategy 3 (last resort): pick any active product in the category.
+    // The user successfully added to cart as a guest (service page computed
+    // a price), so a matching product exists — the spec-matching endpoint
+    // just couldn't resolve it. Better to land the pending item on the
+    // category's generic product than discard the whole configuration.
     try {
         const fallback = await getProducts({ category: categorySlug, limit: 50 });
         const products = fallback.data?.products ?? [];
-        console.warn(
-            `[pending-cart-intent] falling back to any category product; got ${products.length}`
-        );
         if (products.length > 0) {
             return pickInStock(products as any[]);
         }
-    } catch (err) {
-        console.error("[pending-cart-intent] category fallback fetch failed:", err);
+    } catch {
+        /* ignore — return null below */
     }
 
     return null;
@@ -301,13 +283,6 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
                 ? await buildServiceCartPayload(pendingData)
                 : await buildProductCartPayload(pendingData);
 
-        console.info("[pending-cart-intent] payload:", {
-            productId: cartPayload.productId,
-            quantity: cartPayload.quantity,
-            addonsCount: cartPayload.addons?.length ?? 0,
-            filesCount: Array.isArray(cartPayload.customDesignUrl) ? cartPayload.customDesignUrl.length : cartPayload.customDesignUrl ? 1 : 0,
-        });
-
         let lastError = "Failed to add pending item to cart.";
         let addonsAlreadyStripped = false;
 
@@ -315,15 +290,10 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
             try {
                 const response = await addToCart(cartPayload);
                 if (response.success) {
-                    console.log("[pending-cart-intent] SUCCESS, clearing pendingPurchaseData");
                     clearPendingPurchaseData();
                     return { handled: true, success: true };
                 }
 
-                console.error(
-                    `[pending-cart-intent] attempt ${attempt + 1}/${ADD_TO_CART_MAX_RETRIES} server-reject:`,
-                    response
-                );
                 lastError = response.error || response.message || lastError;
                 const lowerError = lastError.toLowerCase();
                 const isAddonIssue =
@@ -332,7 +302,6 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
                     Boolean(cartPayload.addons && cartPayload.addons.length > 0);
 
                 if (isAddonIssue) {
-                    console.warn("[pending-cart-intent] stripping addons and retrying:", lastError);
                     cartPayload = { ...cartPayload, addons: [], hasAddon: false };
                     addonsAlreadyStripped = true;
                     continue; // retry immediately without adding to attempt backoff
@@ -347,10 +316,6 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
                     return { handled: true, success: false, error: lastError };
                 }
             } catch (error) {
-                console.error(
-                    `[pending-cart-intent] attempt ${attempt + 1}/${ADD_TO_CART_MAX_RETRIES} exception:`,
-                    error
-                );
                 lastError =
                     error instanceof Error ? error.message : "Failed to add pending item to cart.";
                 const lowerError = lastError.toLowerCase();
@@ -361,7 +326,6 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
                     Boolean(cartPayload.addons && cartPayload.addons.length > 0);
 
                 if (isAddonIssue) {
-                    console.warn("[pending-cart-intent] exception, stripping addons and retrying:", lastError);
                     cartPayload = { ...cartPayload, addons: [], hasAddon: false };
                     addonsAlreadyStripped = true;
                     continue;
@@ -383,7 +347,6 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
     } catch (error) {
         const message =
             error instanceof Error ? error.message : "Failed to process pending cart item.";
-        console.error("[pending-cart-intent] build payload failed:", error);
         return { handled: true, success: false, error: message };
     }
 }

@@ -983,9 +983,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 };
 
                 await savePendingPurchaseData(purchaseData);
-                redirectToLoginWithReturn(window.location.pathname + window.location.search, {
-                    intent: 'add_to_cart',
-                });
+                // Buy Now → after login, land on /checkout (not back on the
+                // service config page). Add-to-cart flow continues to use the
+                // cart page as the return target.
+                redirectToLoginWithReturn('/checkout', { intent: 'add_to_cart' });
             } catch (error) {
                 console.error('Failed to save pending purchase data:', error);
                 toastError('Failed to save your selections. Please try again.');

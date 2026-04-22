@@ -45,15 +45,12 @@ export function useCart(): UseCartReturn {
 
     // Fetch cart data (with optional loading state control)
     const fetchCart = useCallback(async (setLoadingState = true) => {
-        const callId = Math.random().toString(36).slice(2, 7);
-        console.log(`[useCart:${callId}] fetchCart start, hasToken=${!!getAuthToken()}`);
         try {
             if (setLoadingState) {
                 setLoading(true);
             }
             setError(null);
             if (!getAuthToken()) {
-                console.warn(`[useCart:${callId}] no token → clearing cart state`);
                 setCart(null);
                 setCartSubtotal(0);
                 setBaseSubtotal(0);
@@ -61,12 +58,6 @@ export function useCart(): UseCartReturn {
                 return;
             }
             const response = await getCart();
-            console.log(`[useCart:${callId}] getCart response:`, {
-                success: response.success,
-                itemCount: (response.data as any)?.cart?.items?.length,
-                subtotal: (response.data as any)?.subtotal,
-                error: response.error,
-            });
 
             if (response.success && response.data) {
                 const cartResponse = response.data as CartResponse;
@@ -76,7 +67,6 @@ export function useCart(): UseCartReturn {
                 setAddonsSubtotal(cartResponse.addonsSubtotal ?? 0);
             } else {
                 const cartError = response.error || 'Failed to fetch cart';
-                console.warn(`[useCart:${callId}] response not success:`, cartError);
                 // Avoid sticky error banners during auth token propagation races.
                 if (cartError.toLowerCase().includes('token')) {
                     setError(null);
@@ -86,7 +76,6 @@ export function useCart(): UseCartReturn {
                 setCart(null);
             }
         } catch (err) {
-            console.error(`[useCart:${callId}] exception:`, err);
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
             if (errorMessage.toLowerCase().includes('token')) {
                 setError(null);
@@ -98,7 +87,6 @@ export function useCart(): UseCartReturn {
             if (setLoadingState) {
                 setLoading(false);
             }
-            console.log(`[useCart:${callId}] fetchCart end`);
         }
     }, []);
 
@@ -236,9 +224,7 @@ export function useCart(): UseCartReturn {
 
     // Computed values
     const items = useMemo(() => {
-        const next = cart?.items || [];
-        console.log(`[useCart] items memo recomputed, count=${next.length}`);
-        return next;
+        return cart?.items || [];
     }, [cart]);
 
     const itemCount = useMemo(() => {
