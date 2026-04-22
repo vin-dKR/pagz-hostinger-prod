@@ -1,6 +1,7 @@
 *.zip
 /apps-prod
 /prompts
-
+/history
+.claude/
 
 
