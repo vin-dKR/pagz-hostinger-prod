@@ -26,6 +26,21 @@ export function isValidIndianMobile(phone: string): boolean {
     return /^[6-9]\d{9}$/.test(n);
 }
 
+/**
+ * Substitute {otp} and {minutes} placeholders in a template.
+ *
+ * Tolerates shell-escaped braces from dotenv (\{otp\}, \{minutes\}) — some
+ * prod deployments escape braces when piping env values through shells
+ * or dashboard UIs, which would otherwise leave the literal placeholder
+ * in the delivered SMS.
+ */
+function renderTemplate(template: string, otp: string, minutes: string): string {
+    return template
+        .replace(/\\([{}])/g, "$1")
+        .replace(/\{otp\}/g, otp)
+        .replace(/\{minutes\}/g, minutes);
+}
+
 export interface SendSmsResult {
     success: boolean;
     messageId?: string;
@@ -89,17 +104,12 @@ export async function sendOtpSms(phone: string, otp: string): Promise<SendSmsRes
                 return { success: false, error: "dlt_manual route requires FAST2SMS_SENDER_ID" };
             }
             params.set("sender_id", FAST2SMS_SENDER_ID);
-            params.set(
-                "message",
-                FAST2SMS_MESSAGE_TEMPLATE
-                    .replace(/\{otp\}/g, otp)
-                    .replace(/\{minutes\}/g, FAST2SMS_OTP_MINUTES)
-            );
+            params.set("message", renderTemplate(FAST2SMS_MESSAGE_TEMPLATE, otp, FAST2SMS_OTP_MINUTES));
             break;
 
         case "q":
         default:
-            params.set("message", FAST2SMS_MESSAGE_TEMPLATE.replace(/\{otp\}/g, otp));
+            params.set("message", renderTemplate(FAST2SMS_MESSAGE_TEMPLATE, otp, FAST2SMS_OTP_MINUTES));
             break;
     }
 
