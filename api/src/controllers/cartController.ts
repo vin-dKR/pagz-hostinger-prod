@@ -359,7 +359,32 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
         // new state for this line. This matches how users think about
         // "re-configure and add-to-cart again" vs "bump quantity".
         const addonsProvided = Array.isArray(addons);
-        const normalizedAddonIds = addonsProvided ? normalizeAddonIds(addons) : [];
+        const rawAddonIds = addonsProvided ? normalizeAddonIds(addons) : [];
+
+        // Filter to addon rules that actually exist + belong to the product's
+        // category. Stale ids (common with the guest pending-cart flow when a
+        // rule was deleted or its category changed between save and login)
+        // would otherwise throw Prisma P2025 on `connect` and reject the
+        // whole add-to-cart. Dropping bad ids lets the item land with the
+        // surviving addons instead of silently producing an empty cart.
+        let normalizedAddonIds = rawAddonIds;
+        if (rawAddonIds.length > 0) {
+            const liveRules = await prisma.categoryPricingRule.findMany({
+                where: {
+                    id: { in: rawAddonIds },
+                    ruleType: "ADDON",
+                    isActive: true,
+                    categoryId: product.categoryId,
+                },
+                select: { id: true },
+            });
+            normalizedAddonIds = liveRules.map((r) => r.id);
+            if (normalizedAddonIds.length !== rawAddonIds.length) {
+                console.warn(
+                    `[cart] dropped ${rawAddonIds.length - normalizedAddonIds.length}/${rawAddonIds.length} stale addon id(s) for product ${productId}`
+                );
+            }
+        }
 
         // Check if item already exists in cart
         const existingItem = await prisma.cartItem.findUnique({

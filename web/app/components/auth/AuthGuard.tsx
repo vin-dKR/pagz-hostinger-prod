@@ -56,8 +56,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                                 // context initialised pre-token.
                                 window.location.href = redirectPath || "/cart";
                             } else {
+                                // Merge failed — land the user on /cart so they
+                                // can see what's there and retry. Dropping them
+                                // on /checkout with an empty cart is worse UX
+                                // because the error toast is easy to miss.
                                 toastError(result.error || "Failed to restore your cart item.");
-                                window.location.href = redirectPath || "/cart";
+                                window.location.href = "/cart";
                             }
                             return;
                         }

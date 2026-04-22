@@ -1,5 +1,5 @@
 import { addToCart, type AddToCartData } from "@/lib/api/cart";
-import { getProductsBySpecifications } from "@/lib/api/categories";
+import { getCategoryAddons, getProductsBySpecifications } from "@/lib/api/categories";
 import { getAuthToken } from "@/lib/api-client";
 import { uploadOrderFilesToS3 } from "@/lib/api/uploads";
 import {
@@ -38,6 +38,36 @@ async function waitForAuthToken(maxWaitMs = AUTH_WAIT_MAX_MS): Promise<boolean> 
 
 function getSelectedAddons(pendingData: PendingPurchaseData): string[] {
     return pendingData.selectedAddons || pendingData.metadata?.selectedAddons || [];
+}
+
+/**
+ * Filter addon ids against the category's live ADDON rules. Stale ids (rules
+ * deleted / deactivated between save and login) would otherwise make the
+ * server's Prisma `connect` throw P2025 and reject the whole add-to-cart,
+ * leaving the user with an empty cart post-login. Dropping bad ids lets the
+ * item land with whatever addons are still valid.
+ */
+async function validateAddonIdsForCategory(
+    categorySlug: string | undefined,
+    ids: string[]
+): Promise<string[]> {
+    if (!categorySlug || ids.length === 0) return ids;
+    try {
+        const liveAddons = await getCategoryAddons(categorySlug);
+        const liveSet = new Set(liveAddons.map((a) => a.id));
+        const kept = ids.filter((id) => liveSet.has(id));
+        if (kept.length !== ids.length) {
+            console.warn(
+                `[pending-cart-intent] dropped ${ids.length - kept.length}/${ids.length} stale addon id(s) for category ${categorySlug}`
+            );
+        }
+        return kept;
+    } catch (err) {
+        // If we can't fetch live addons, proceed with the saved ids — a 404
+        // on an addon is a clearer error than a blanket skip.
+        console.warn("[pending-cart-intent] failed to validate addons; sending as-is:", err);
+        return ids;
+    }
 }
 
 function buildMetadata(pendingData: PendingPurchaseData): PendingCartMetadata | undefined {
@@ -130,7 +160,10 @@ async function buildServiceCartPayload(pendingData: PendingPurchaseData): Promis
     }
 
     const uploadedFileKeys = await ensureUploadedFileKeys(pendingData);
-    const selectedAddons = getSelectedAddons(pendingData);
+    const selectedAddons = await validateAddonIdsForCategory(
+        pendingData.categorySlug,
+        getSelectedAddons(pendingData)
+    );
 
     return {
         productId: matchingProduct.id,
@@ -148,7 +181,10 @@ async function buildProductCartPayload(pendingData: PendingPurchaseData): Promis
     }
 
     const uploadedFileKeys = await ensureUploadedFileKeys(pendingData);
-    const selectedAddons = getSelectedAddons(pendingData);
+    const selectedAddons = await validateAddonIdsForCategory(
+        pendingData.categorySlug,
+        getSelectedAddons(pendingData)
+    );
 
     return {
         productId: pendingData.productId,
@@ -171,12 +207,20 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
         // Wait briefly for post-login token propagation (cookie write + app state sync).
         await waitForAuthToken();
 
-        const cartPayload =
+        let cartPayload =
             pendingData.type === "service"
                 ? await buildServiceCartPayload(pendingData)
                 : await buildProductCartPayload(pendingData);
 
+        console.info("[pending-cart-intent] payload:", {
+            productId: cartPayload.productId,
+            quantity: cartPayload.quantity,
+            addonsCount: cartPayload.addons?.length ?? 0,
+            filesCount: Array.isArray(cartPayload.customDesignUrl) ? cartPayload.customDesignUrl.length : cartPayload.customDesignUrl ? 1 : 0,
+        });
+
         let lastError = "Failed to add pending item to cart.";
+        let addonsAlreadyStripped = false;
 
         for (let attempt = 0; attempt < ADD_TO_CART_MAX_RETRIES; attempt++) {
             try {
@@ -188,6 +232,18 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
 
                 lastError = response.error || lastError;
                 const lowerError = lastError.toLowerCase();
+                const isAddonIssue =
+                    (lowerError.includes("addon") || lowerError.includes("foreign") || lowerError.includes("constraint") || lowerError.includes("not found") || lowerError.includes("p2025")) &&
+                    !addonsAlreadyStripped &&
+                    Boolean(cartPayload.addons && cartPayload.addons.length > 0);
+
+                if (isAddonIssue) {
+                    console.warn("[pending-cart-intent] stripping addons and retrying:", lastError);
+                    cartPayload = { ...cartPayload, addons: [], hasAddon: false };
+                    addonsAlreadyStripped = true;
+                    continue; // retry immediately without adding to attempt backoff
+                }
+
                 const shouldRetry =
                     lowerError.includes("token") ||
                     lowerError.includes("unauthorized") ||
@@ -200,6 +256,19 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
                 lastError =
                     error instanceof Error ? error.message : "Failed to add pending item to cart.";
                 const lowerError = lastError.toLowerCase();
+
+                const isAddonIssue =
+                    (lowerError.includes("addon") || lowerError.includes("foreign") || lowerError.includes("constraint") || lowerError.includes("not found") || lowerError.includes("p2025")) &&
+                    !addonsAlreadyStripped &&
+                    Boolean(cartPayload.addons && cartPayload.addons.length > 0);
+
+                if (isAddonIssue) {
+                    console.warn("[pending-cart-intent] exception, stripping addons and retrying:", lastError);
+                    cartPayload = { ...cartPayload, addons: [], hasAddon: false };
+                    addonsAlreadyStripped = true;
+                    continue;
+                }
+
                 const shouldRetry =
                     lowerError.includes("token") ||
                     lowerError.includes("unauthorized") ||
@@ -216,6 +285,7 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
     } catch (error) {
         const message =
             error instanceof Error ? error.message : "Failed to process pending cart item.";
+        console.error("[pending-cart-intent] build payload failed:", error);
         return { handled: true, success: false, error: message };
     }
 }
