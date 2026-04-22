@@ -77,7 +77,7 @@ export const sendOtp = async (req: Request, res: Response, next: NextFunction) =
         const otp = generateOTP();
         await storeOTP(normalized, otp, purpose);
 
-        const smsResult = await sendOtpSms(normalized, otp);
+        const smsResult = await sendOtpSms(normalized, otp, purpose);
         if (!smsResult.success) {
             return sendError(res, smsResult.error || "Failed to send OTP", 502);
         }
@@ -416,7 +416,7 @@ export const forgotPassword = async (req: Request, res: Response, next: NextFunc
         const otp = generateOTP();
         await storeOTP(normalized, otp, OTPPurpose.RESET_PASSWORD);
 
-        const smsResult = await sendOtpSms(normalized, otp);
+        const smsResult = await sendOtpSms(normalized, otp, "RESET_PASSWORD");
         if (!smsResult.success) {
             return sendError(res, smsResult.error || "Failed to send OTP", 502);
         }
