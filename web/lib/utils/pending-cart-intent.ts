@@ -1,6 +1,6 @@
 import { addToCart, type AddToCartData } from "@/lib/api/cart";
 import { getCategoryAddons, getProductsBySpecifications } from "@/lib/api/categories";
-import { getProducts } from "@/lib/api/products";
+import { getProduct } from "@/lib/api/products";
 import { getAuthToken } from "@/lib/api-client";
 import { uploadOrderFilesToS3 } from "@/lib/api/uploads";
 import {
@@ -144,17 +144,23 @@ async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise
 }
 
 /**
- * Addon rules carry their own specificationValues (e.g. "binding: hardcover")
- * but these are metadata on top of the base product, NOT part of what
- * identifies the product itself. If we send addon-only keys into
- * getProductsBySpecifications the server's combination lookup can't find a
- * matching BASE_PRICE rule and returns zero products → merge fails with
- * "No matching service product found."
+ * Secondary match used only when the service page didn't persist a
+ * resolved productId in the pending data (e.g. legacy sessionStorage
+ * entries from before that field was saved).
  *
- * Strategy: compute the union of spec keys referenced by live ADDON rules,
- * subtract any key the user's selection would need for the base product
- * (heuristic: keys that only appear in addon rules are safe to drop), and
- * retry the match with the trimmed set if the full match returns zero.
+ * Addon rules carry their own specificationValues (e.g. "binding:
+ * Spiral Binding") which are metadata on top of the base product,
+ * NOT part of what identifies the product itself. If we send
+ * addon-only keys into getProductsBySpecifications the server's
+ * combination lookup can't find a matching BASE_PRICE rule and
+ * returns zero products.
+ *
+ * We explicitly avoid the "pick any product in the category" fallback
+ * that used to live here — it silently substituted an unrelated
+ * product (wrong paper size, wrong color, wildly different price)
+ * which is worse than refusing the merge. When this helper returns
+ * null the caller surfaces an error and the pending data is kept
+ * so the user can retry.
  */
 async function matchProductForService(
     categorySlug: string,
@@ -169,10 +175,10 @@ async function matchProductForService(
         return pickInStock(first);
     }
 
-    // Strategy 2: drop addon-only spec keys and retry. Addon rules carry
-    // their own specificationValues (e.g. "binding: hardcover") which are
-    // metadata on top of the base product, not part of what identifies it.
-    let addonOnlyKeys: string[] = [];
+    // Strategy 2: drop any spec key referenced by an ADDON rule and retry.
+    // Product-defining specs also appear in BASE_PRICE / COMBINATION rules
+    // so dropping addon-covered keys is safe for the match even if the key
+    // name collides.
     try {
         const addons = await getCategoryAddons(categorySlug);
         const addonKeys = new Set<string>();
@@ -180,39 +186,38 @@ async function matchProductForService(
             const values = (rule.specificationValues || {}) as Record<string, unknown>;
             Object.keys(values).forEach((k) => addonKeys.add(k));
         }
-        addonOnlyKeys = Array.from(addonKeys);
-    } catch {
-        /* best-effort — fall through to next strategy */
-    }
 
-    if (addonOnlyKeys.length > 0) {
-        const trimmed: Record<string, any> = { ...specifications };
-        for (const key of addonOnlyKeys) {
-            delete trimmed[key];
-        }
-        if (Object.keys(trimmed).length !== Object.keys(specifications).length) {
-            const second = await getProductsBySpecifications(categorySlug, trimmed);
-            if (second && second.length > 0) {
-                return pickInStock(second);
+        if (addonKeys.size > 0) {
+            const trimmed: Record<string, any> = { ...specifications };
+            for (const key of addonKeys) {
+                delete trimmed[key];
+            }
+            if (Object.keys(trimmed).length !== Object.keys(specifications).length) {
+                const second = await getProductsBySpecifications(categorySlug, trimmed);
+                if (second && second.length > 0) {
+                    return pickInStock(second);
+                }
             }
         }
-    }
-
-    // Strategy 3 (last resort): pick any active product in the category.
-    // The user successfully added to cart as a guest (service page computed
-    // a price), so a matching product exists — the spec-matching endpoint
-    // just couldn't resolve it. Better to land the pending item on the
-    // category's generic product than discard the whole configuration.
-    try {
-        const fallback = await getProducts({ category: categorySlug, limit: 50 });
-        const products = fallback.data?.products ?? [];
-        if (products.length > 0) {
-            return pickInStock(products as any[]);
-        }
     } catch {
-        /* ignore — return null below */
+        /* best-effort — fall through */
     }
 
+    return null;
+}
+
+/**
+ * Verify the snapshot productId saved at add-to-cart time still exists
+ * and is published. Returns the product row on success, null when it's
+ * been deleted/unpublished between save and login.
+ */
+async function resolveSavedProduct(productId: string): Promise<any | null> {
+    try {
+        const res = await getProduct(productId);
+        if (res.success && res.data?.id) return res.data;
+    } catch {
+        /* treat as missing */
+    }
     return null;
 }
 
@@ -221,10 +226,21 @@ async function buildServiceCartPayload(pendingData: PendingPurchaseData): Promis
         throw new Error("Pending service data is incomplete.");
     }
 
-    const matchingProduct = await matchProductForService(
-        pendingData.categorySlug,
-        pendingData.specifications
-    );
+    // Prefer the product id the service page already resolved at add-to-cart
+    // time — it's the authoritative match and avoids re-running the brittle
+    // spec-match server-side (addon-only spec keys + exact-match semantics
+    // produce zero results and we'd land on an unrelated product).
+    let matchingProduct: any = null;
+    if (pendingData.productId) {
+        matchingProduct = await resolveSavedProduct(pendingData.productId);
+    }
+
+    if (!matchingProduct?.id) {
+        matchingProduct = await matchProductForService(
+            pendingData.categorySlug,
+            pendingData.specifications
+        );
+    }
 
     if (!matchingProduct?.id) {
         throw new Error("No matching service product found.");

@@ -684,6 +684,11 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 const purchaseData: PendingPurchaseData = {
                     type: 'service',
                     categorySlug,
+                    // Snapshot the product id the service page has already
+                    // resolved so the post-login merge doesn't have to re-match
+                    // by specs (addon-only spec keys would otherwise cause the
+                    // spec match to fail and we'd land on a different product).
+                    productId: matchingProduct?.id,
                     files: preparedFiles,
                     specifications: selectedSpecifications,
                     selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
@@ -954,6 +959,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 const purchaseData: PendingPurchaseData = {
                     type: 'service',
                     categorySlug,
+                    productId: matchingProduct?.id,
                     files: preparedFiles,
                     specifications: selectedSpecifications,
                     selectedAddons: selectedAddonIds.length > 0 ? selectedAddonIds : undefined,
