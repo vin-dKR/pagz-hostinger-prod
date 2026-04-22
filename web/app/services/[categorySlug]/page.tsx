@@ -258,6 +258,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 quantity: totalQuantity,
                 pageCount: pageCount > 0 ? pageCount : undefined,
                 copies: pageCount > 0 ? copies : undefined,
+                // Drives fileMultiplier addon rules so the preview matches
+                // the cart/checkout totals. At least 1 so a single-file
+                // upload still multiplies correctly.
+                fileCount: uploadedFiles.length > 0 ? uploadedFiles.length : undefined,
             });
 
             setPriceBreakdown(result.breakdown);
@@ -293,7 +297,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         } finally {
             setCalculatingPrice(false);
         }
-    }, [category, categorySlug, selectedSpecifications, totalQuantity, pageCount, copies]);
+    }, [category, categorySlug, selectedSpecifications, totalQuantity, pageCount, copies, uploadedFiles.length]);
 
     const checkForProduct = useCallback(async () => {
         if (!category) return;

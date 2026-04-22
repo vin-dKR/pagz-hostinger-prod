@@ -836,7 +836,7 @@ export const calculateCategoryPrice = async (
 ) => {
     try {
         const id = getParamAsString(req.params.id, "Category ID");
-        const { specifications, quantity, pageCount, copies } = req.body;
+        const { specifications, quantity, pageCount, copies, fileCount } = req.body;
 
         if (!specifications || typeof specifications !== "object") {
             throw new ValidationError("Specifications object is required");
@@ -983,14 +983,19 @@ export const calculateCategoryPrice = async (
 
                 const modifier = rule.priceModifier ? Number(rule.priceModifier) : 0;
                 // Match the shared util (`computeAddonLineTotal`):
+                //   fileMultiplier=true      -> multiply by fileCount (min 1)
                 //   quantityMultiplier=false -> flat per-order amount
                 //   quantityMultiplier=true  -> multiply by effective pages
                 //                               (falls back to quantity when
                 //                               the line item isn't a print
                 //                               job with pageCount/copies).
-                const multiplier = rule.quantityMultiplier
-                    ? (effectivePages ?? quantity)
-                    : 1;
+                const fileMultiplierOn = Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier);
+                const safeFileCount = fileCount != null && fileCount > 0 ? Number(fileCount) : 1;
+                const multiplier = fileMultiplierOn
+                    ? safeFileCount
+                    : rule.quantityMultiplier
+                        ? (effectivePages ?? quantity)
+                        : 1;
                 const finalPrice = modifier * multiplier;
                 totalPrice += finalPrice;
 
@@ -999,11 +1004,13 @@ export const calculateCategoryPrice = async (
                         ? ` (${rule.minQuantity ?? 0}-${rule.maxQuantity ?? "∞"} pages`
                         : "";
                 const multiplierLabel =
-                    rule.quantityMultiplier && multiplier > 1
-                        ? (rangeLabel ? `) × ${multiplier}` : ` × ${multiplier}`)
-                        : rangeLabel
-                            ? ")"
-                            : "";
+                    fileMultiplierOn && multiplier > 1
+                        ? (rangeLabel ? `) × ${multiplier} files` : ` × ${multiplier} files`)
+                        : rule.quantityMultiplier && multiplier > 1
+                            ? (rangeLabel ? `) × ${multiplier}` : ` × ${multiplier}`)
+                            : rangeLabel
+                                ? ")"
+                                : "";
 
                 const addonSpecLabel = Object.keys(ruleSpecs).length
                     ? `: ${Object.entries(ruleSpecs)
@@ -1402,7 +1409,7 @@ export const calculateCategoryPricePublic = async (
 ) => {
     try {
         const slug = getParamAsString(req.params.slug, "Category slug");
-        const { specifications, quantity, pageCount, copies } = req.body;
+        const { specifications, quantity, pageCount, copies, fileCount } = req.body;
 
         if (!specifications || typeof specifications !== "object") {
             throw new ValidationError("Specifications object is required");
@@ -1554,14 +1561,19 @@ export const calculateCategoryPricePublic = async (
 
                 const modifier = rule.priceModifier ? Number(rule.priceModifier) : 0;
                 // Match the shared util (`computeAddonLineTotal`):
+                //   fileMultiplier=true      -> multiply by fileCount (min 1)
                 //   quantityMultiplier=false -> flat per-order amount
                 //   quantityMultiplier=true  -> multiply by effective pages
                 //                               (falls back to quantity when
                 //                               the line item isn't a print
                 //                               job with pageCount/copies).
-                const multiplier = rule.quantityMultiplier
-                    ? (effectivePages ?? effectiveQuantity)
-                    : 1;
+                const fileMultiplierOn = Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier);
+                const safeFileCount = fileCount != null && fileCount > 0 ? Number(fileCount) : 1;
+                const multiplier = fileMultiplierOn
+                    ? safeFileCount
+                    : rule.quantityMultiplier
+                        ? (effectivePages ?? effectiveQuantity)
+                        : 1;
                 const finalPrice = modifier * multiplier;
                 totalPrice += finalPrice;
 
@@ -1570,11 +1582,13 @@ export const calculateCategoryPricePublic = async (
                         ? ` (${rule.minQuantity ?? 0}-${rule.maxQuantity ?? "∞"} pages`
                         : "";
                 const multiplierLabel =
-                    rule.quantityMultiplier && multiplier > 1
-                        ? (rangeLabel ? `) × ${multiplier}` : ` × ${multiplier}`)
-                        : rangeLabel
-                            ? ")"
-                            : "";
+                    fileMultiplierOn && multiplier > 1
+                        ? (rangeLabel ? `) × ${multiplier} files` : ` × ${multiplier} files`)
+                        : rule.quantityMultiplier && multiplier > 1
+                            ? (rangeLabel ? `) × ${multiplier}` : ` × ${multiplier}`)
+                            : rangeLabel
+                                ? ")"
+                                : "";
 
                 const addonSpecLabel = Object.keys(ruleSpecs).length
                     ? `: ${Object.entries(ruleSpecs)
