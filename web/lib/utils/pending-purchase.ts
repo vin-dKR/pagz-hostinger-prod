@@ -106,15 +106,7 @@ export async function savePendingPurchaseData(data: PendingPurchaseData): Promis
 
     // Attempt 1: full payload.
     const first = trySetItem(buildPayload(processedFiles));
-    if (first.ok) {
-        const addonsCount =
-            (data.selectedAddons?.length ?? 0) ||
-            (data.metadata?.selectedAddons?.length ?? 0);
-        console.info(
-            `[pending-purchase] saved ${first.size} bytes (files=${processedFiles.length}, addons=${addonsCount})`
-        );
-        return;
-    }
+    if (first.ok) return;
 
     console.warn('[pending-purchase] First save failed:', first.reason, first.error);
 

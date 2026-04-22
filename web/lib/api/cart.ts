@@ -129,10 +129,7 @@ export async function getCart(): Promise<ApiResponse<CartResponse>> {
  * Add item to cart
  */
 export async function addToCart(data: AddToCartData): Promise<ApiResponse<Cart>> {
-    console.log("[cart.addToCart] request:", data);
-    const response = await post<Cart>('/cart/items', data);
-    console.log("[cart.addToCart] response:", response);
-    return response;
+    return post<Cart>('/cart/items', data);
 }
 
 /**

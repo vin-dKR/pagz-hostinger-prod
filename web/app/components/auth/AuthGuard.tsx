@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../contexts/AuthContext";
 import {
@@ -12,119 +12,109 @@ import { processPendingAddToCartIntent } from "../../../lib/utils/pending-cart-i
 import { hasPendingPurchaseData } from "../../../lib/utils/pending-purchase";
 import { toastError } from "../../../lib/utils/toast";
 
+const MERGE_ERROR_KEY = "pendingMergeError";
+
 /**
- * AuthGuard Component
- * Redirects authenticated users away from auth pages (login/signup)
- * to prevent logged-in users from accessing authentication pages
+ * AuthGuard
+ *
+ * Wraps the /auth/* pages.
+ *   - While auth state is resolving: shows a loading spinner.
+ *   - If user is authenticated and we have a pending guest cart intent
+ *     (either via ?intent=add_to_cart or leftover sessionStorage): runs
+ *     processPendingAddToCartIntent to merge the item into the real cart,
+ *     then redirects to the saved redirect path (or /cart as a fallback).
+ *     While merging, renders a dedicated spinner so the page isn't blank.
+ *   - Otherwise: redirects authenticated users away from the login/signup
+ *     page to the saved redirect path, or / as a last resort.
+ *   - If not authenticated: renders children (login/signup form).
  */
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const { isAuthenticated, loading } = useAuth();
     const redirectHandledRef = useRef(false);
+    const [merging, setMerging] = useState(false);
 
     useEffect(() => {
-        // Wait for auth state to be determined
         if (loading || redirectHandledRef.current) return;
 
-        // If user is authenticated, check for saved redirect path
-        if (isAuthenticated) {
-            redirectHandledRef.current = true;
-            // Small delay to ensure auth state is fully updated
-            const timer = setTimeout(() => {
-                const handleAuthenticatedRedirect = async () => {
-                    const redirectPath = getRedirectPath();
-                    const authIntent = getAuthIntentFromSearch();
+        if (!isAuthenticated) return;
 
-                    // Trigger cart merge whenever pending-purchase data exists,
-                    // not just when the URL carries ?intent=add_to_cart. This
-                    // covers users who signed up / logged in via a link that
-                    // dropped the intent param (e.g. clicking "Register" on
-                    // a stale tab, or landing on /auth/signup directly).
-                    const shouldProcessPending =
-                        authIntent === "add_to_cart" || hasPendingPurchaseData();
+        redirectHandledRef.current = true;
 
-                    console.log("[AuthGuard] post-login:", {
-                        isAuthenticated,
-                        redirectPath,
-                        authIntent,
-                        hasPending: hasPendingPurchaseData(),
-                        shouldProcessPending,
-                    });
+        const timer = setTimeout(() => {
+            const handleAuthenticatedRedirect = async () => {
+                const redirectPath = getRedirectPath();
+                const authIntent = getAuthIntentFromSearch();
+                const shouldProcessPending =
+                    authIntent === "add_to_cart" || hasPendingPurchaseData();
 
-                    if (shouldProcessPending) {
-                        console.log("[AuthGuard] calling processPendingAddToCartIntent");
-                        const result = await processPendingAddToCartIntent();
-                        console.log("[AuthGuard] merge result:", result);
-                        if (result.handled) {
-                            clearRedirectPath();
-                            if (result.success) {
-                                // Prefer the originally requested destination
-                                // (e.g. `/checkout` when the user clicked
-                                // Checkout from the guest cart). Fall back to
-                                // `/cart` so returning users still see their
-                                // merged item. Full reload avoids stale cart
-                                // context initialised pre-token.
-                                try {
-                                    sessionStorage.removeItem("pendingMergeError");
-                                } catch {
-                                    /* ignore */
-                                }
-                                window.location.href = redirectPath || "/cart";
-                            } else {
-                                // Merge failed — land the user on /cart so they
-                                // can see what's there and retry. Dropping them
-                                // on /checkout with an empty cart is worse UX
-                                // because the error toast is easy to miss.
-                                const errorMessage =
-                                    result.error || "Failed to restore your cart item.";
-                                try {
-                                    sessionStorage.setItem(
-                                        "pendingMergeError",
-                                        JSON.stringify({ error: errorMessage, at: Date.now() })
-                                    );
-                                } catch {
-                                    /* ignore */
-                                }
-                                toastError(errorMessage);
-                                window.location.href = "/cart";
-                            }
-                            return;
-                        }
-                    }
-
-                    if (redirectPath) {
+                if (shouldProcessPending) {
+                    setMerging(true);
+                    const result = await processPendingAddToCartIntent();
+                    if (result.handled) {
                         clearRedirectPath();
-                        // Use window.location for full page reload to ensure proper navigation
-                        window.location.href = redirectPath;
-                    } else {
-                        router.replace("/");
+                        if (result.success) {
+                            try {
+                                sessionStorage.removeItem(MERGE_ERROR_KEY);
+                            } catch {
+                                /* ignore */
+                            }
+                            window.location.href = redirectPath || "/cart";
+                        } else {
+                            const errorMessage =
+                                result.error || "Failed to restore your cart item.";
+                            try {
+                                sessionStorage.setItem(
+                                    MERGE_ERROR_KEY,
+                                    JSON.stringify({ error: errorMessage, at: Date.now() })
+                                );
+                            } catch {
+                                /* ignore */
+                            }
+                            toastError(errorMessage);
+                            window.location.href = "/cart";
+                        }
+                        return;
                     }
-                };
+                    setMerging(false);
+                }
 
-                void handleAuthenticatedRedirect();
-            }, 100);
+                if (redirectPath) {
+                    clearRedirectPath();
+                    window.location.href = redirectPath;
+                } else {
+                    router.replace("/");
+                }
+            };
 
-            return () => clearTimeout(timer);
-        }
+            void handleAuthenticatedRedirect();
+        }, 100);
+
+        return () => clearTimeout(timer);
     }, [isAuthenticated, loading, router]);
 
-    // Show loading state while checking authentication
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <div className="text-center">
-                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-                    <p className="text-gray-600">Loading...</p>
-                </div>
-            </div>
-        );
+        return <AuthSpinner label="Loading..." />;
     }
 
-    // Don't render children if user is authenticated (will redirect)
     if (isAuthenticated) {
-        return null;
+        return (
+            <AuthSpinner
+                label={merging ? "Restoring your cart..." : "Signing you in..."}
+            />
+        );
     }
 
     return <>{children}</>;
 }
 
+function AuthSpinner({ label }: { label: string }) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4" />
+                <p className="text-gray-600">{label}</p>
+            </div>
+        </div>
+    );
+}
