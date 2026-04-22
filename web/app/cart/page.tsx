@@ -6,6 +6,7 @@ import Breadcrumbs from "../components/Breadcrumbs";
 import CartItem from "../components/CartItem";
 import BillingSummary from "../components/BillingSummary";
 import GuestCart from "../components/GuestCart";
+import PendingMergeBanner from "../components/PendingMergeBanner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
@@ -334,6 +335,10 @@ function CartPageContent() {
                         </button>
                     </div>
                 )}
+
+                {/* Post-login: if the guest->user merge failed, surface it with a retry CTA
+                    instead of silently showing an empty cart. */}
+                {!authLoading && isAuthenticated && <PendingMergeBanner />}
 
                 {/* Guest cart (logged-out users see their pending purchase) */}
                 {!authLoading && !isAuthenticated ? (

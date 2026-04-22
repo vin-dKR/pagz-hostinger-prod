@@ -142,18 +142,78 @@ async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise
     return updatedFiles.map((file) => file.s3Key).filter(Boolean) as string[];
 }
 
+/**
+ * Addon rules carry their own specificationValues (e.g. "binding: hardcover")
+ * but these are metadata on top of the base product, NOT part of what
+ * identifies the product itself. If we send addon-only keys into
+ * getProductsBySpecifications the server's combination lookup can't find a
+ * matching BASE_PRICE rule and returns zero products → merge fails with
+ * "No matching service product found."
+ *
+ * Strategy: compute the union of spec keys referenced by live ADDON rules,
+ * subtract any key the user's selection would need for the base product
+ * (heuristic: keys that only appear in addon rules are safe to drop), and
+ * retry the match with the trimmed set if the full match returns zero.
+ */
+async function matchProductForService(
+    categorySlug: string,
+    specifications: Record<string, any>
+): Promise<any | null> {
+    const first = await getProductsBySpecifications(categorySlug, specifications);
+    const pickInStock = (list: any[]) =>
+        list.find((p: any) => p?.id && (p.stock === undefined || p.stock > 0)) || list[0];
+    if (first && first.length > 0) {
+        return pickInStock(first);
+    }
+
+    // No match with the full spec set. Figure out which keys are addon-only
+    // and retry without them.
+    let addonOnlyKeys: string[] = [];
+    try {
+        const addons = await getCategoryAddons(categorySlug);
+        const addonKeys = new Set<string>();
+        for (const rule of addons) {
+            const values = (rule.specificationValues || {}) as Record<string, unknown>;
+            Object.keys(values).forEach((k) => addonKeys.add(k));
+        }
+        addonOnlyKeys = Array.from(addonKeys);
+    } catch (err) {
+        console.warn("[pending-cart-intent] couldn't fetch addons to trim specs:", err);
+    }
+
+    if (addonOnlyKeys.length === 0) return null;
+
+    const trimmed: Record<string, any> = { ...specifications };
+    const dropped: string[] = [];
+    for (const key of addonOnlyKeys) {
+        if (key in trimmed) {
+            delete trimmed[key];
+            dropped.push(key);
+        }
+    }
+
+    if (dropped.length === 0) return null;
+
+    console.warn(
+        `[pending-cart-intent] retrying product match without addon-only keys: ${dropped.join(", ")}`
+    );
+
+    const second = await getProductsBySpecifications(categorySlug, trimmed);
+    if (second && second.length > 0) {
+        return pickInStock(second);
+    }
+    return null;
+}
+
 async function buildServiceCartPayload(pendingData: PendingPurchaseData): Promise<AddToCartData> {
     if (!pendingData.categorySlug || !pendingData.specifications) {
         throw new Error("Pending service data is incomplete.");
     }
 
-    const matchingProducts = await getProductsBySpecifications(
+    const matchingProduct = await matchProductForService(
         pendingData.categorySlug,
         pendingData.specifications
     );
-    const matchingProduct =
-        matchingProducts.find((product: any) => product?.id && (product.stock === undefined || product.stock > 0)) ||
-        matchingProducts[0];
 
     if (!matchingProduct?.id) {
         throw new Error("No matching service product found.");
@@ -230,7 +290,11 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
                     return { handled: true, success: true };
                 }
 
-                lastError = response.error || lastError;
+                console.error(
+                    `[pending-cart-intent] attempt ${attempt + 1}/${ADD_TO_CART_MAX_RETRIES} server-reject:`,
+                    response
+                );
+                lastError = response.error || response.message || lastError;
                 const lowerError = lastError.toLowerCase();
                 const isAddonIssue =
                     (lowerError.includes("addon") || lowerError.includes("foreign") || lowerError.includes("constraint") || lowerError.includes("not found") || lowerError.includes("p2025")) &&
@@ -253,6 +317,10 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
                     return { handled: true, success: false, error: lastError };
                 }
             } catch (error) {
+                console.error(
+                    `[pending-cart-intent] attempt ${attempt + 1}/${ADD_TO_CART_MAX_RETRIES} exception:`,
+                    error
+                );
                 lastError =
                     error instanceof Error ? error.message : "Failed to add pending item to cart.";
                 const lowerError = lastError.toLowerCase();

@@ -54,13 +54,28 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                                 // `/cart` so returning users still see their
                                 // merged item. Full reload avoids stale cart
                                 // context initialised pre-token.
+                                try {
+                                    sessionStorage.removeItem("pendingMergeError");
+                                } catch {
+                                    /* ignore */
+                                }
                                 window.location.href = redirectPath || "/cart";
                             } else {
                                 // Merge failed — land the user on /cart so they
                                 // can see what's there and retry. Dropping them
                                 // on /checkout with an empty cart is worse UX
                                 // because the error toast is easy to miss.
-                                toastError(result.error || "Failed to restore your cart item.");
+                                const errorMessage =
+                                    result.error || "Failed to restore your cart item.";
+                                try {
+                                    sessionStorage.setItem(
+                                        "pendingMergeError",
+                                        JSON.stringify({ error: errorMessage, at: Date.now() })
+                                    );
+                                } catch {
+                                    /* ignore */
+                                }
+                                toastError(errorMessage);
                                 window.location.href = "/cart";
                             }
                             return;
