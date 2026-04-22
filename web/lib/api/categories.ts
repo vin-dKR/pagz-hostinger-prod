@@ -102,6 +102,7 @@ export interface PriceCalculationRequest {
     quantity: number; // Total quantity (pageCount × copies when files uploaded)
     pageCount?: number; // Total pages from uploaded files
     copies?: number; // Number of copies
+    fileCount?: number; // Number of uploaded files, used by fileMultiplier addon rules
 }
 
 export interface PriceCalculationResponse {
