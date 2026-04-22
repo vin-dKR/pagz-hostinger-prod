@@ -8,6 +8,7 @@ import {
     derivePriceBreakdown,
     getAddonLabel,
 } from "@/lib/utils/addon-pricing";
+import { getPublicS3Url } from "@/lib/utils/s3";
 
 interface OrderReviewProps {
     items: CartItem[];
@@ -19,10 +20,13 @@ export default function OrderReview({ items }: OrderReviewProps) {
             {items.map((item) => {
                 const product = item.product;
                 const variant = item.variant;
-                const productImage =
+                const rawImage =
                     product?.images?.find((img) => img.isPrimary)?.url ||
                     product?.images?.[0]?.url ||
-                    "/images/placeholder.png";
+                    "";
+                const productImage = rawImage
+                    ? getPublicS3Url(rawImage)
+                    : "/images/placeholder.png";
                 const productName = product?.name || "Unknown Product";
 
                 const { baseTotal: finalBaseTotal, addonTotal: finalAddonTotal, total: finalTotal } =
