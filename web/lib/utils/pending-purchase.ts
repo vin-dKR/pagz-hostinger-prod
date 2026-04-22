@@ -59,62 +59,99 @@ interface StoredPendingPurchaseData extends PendingPurchaseData {
 }
 
 /**
- * Save pending purchase data to sessionStorage
- * Uses optimized storage: base64 for small files, blob URLs for large files
+ * Save pending purchase data to sessionStorage.
+ *
+ * Strategy:
+ *   1. First attempt: full payload (files with base64/blob URLs + all metadata).
+ *   2. On QuotaExceededError or JSON size > 5MB cap: retry with files reduced
+ *      to metadata-only (name/size/type/pageCount/s3Key) so addons, specs,
+ *      template form data and priceBreakdown still survive. A base64-heavy
+ *      file payload is the usual culprit, not the configuration data itself.
+ *   3. On final failure: throw so the caller can surface a toast instead of
+ *      silently redirecting to an empty cart.
  */
 export async function savePendingPurchaseData(data: PendingPurchaseData): Promise<void> {
     if (typeof window === 'undefined') return;
 
-    try {
-        // Process files: convert to base64 if small, use blob URL if large
-        const processedFiles: PendingPurchaseFile[] = await Promise.all(
-            data.files.map(async (file) => {
-                // If already has s3Key, keep it
-                if (file.s3Key) {
-                    return file;
-                }
+    const processedFiles: PendingPurchaseFile[] = await Promise.all(
+        data.files.map(async (file) => {
+            if (file.s3Key) return file;
+            if (file.fileData || file.blobUrl) return file;
+            return file;
+        })
+    );
 
-                // If already has fileData or blobUrl, keep it
-                if (file.fileData || file.blobUrl) {
-                    return file;
-                }
+    const buildPayload = (files: PendingPurchaseFile[]): StoredPendingPurchaseData => ({
+        ...data,
+        files,
+        expiry: Date.now() + PENDING_PURCHASE_EXPIRY,
+    });
 
-                // This shouldn't happen in normal flow, but handle it gracefully
-                return file;
-            })
-        );
-
-        const dataWithExpiry: StoredPendingPurchaseData = {
-            ...data,
-            files: processedFiles,
-            expiry: Date.now() + PENDING_PURCHASE_EXPIRY,
-        };
-
-        const serialized = JSON.stringify(dataWithExpiry);
-        
-        // Check if data is too large for sessionStorage
-        if (serialized.length > 5 * 1024 * 1024) { // 5MB limit
-            console.warn('[pending-purchase] Data too large for sessionStorage, clearing old data');
-            // Try to clear and save anyway - might work if browser allows
-        }
-
-        sessionStorage.setItem(PENDING_PURCHASE_KEY, serialized);
-    } catch (error) {
-        console.error('[pending-purchase] Failed to save pending purchase data:', error);
-        // If quota exceeded, try to clear and retry once
-        if (error instanceof DOMException && error.name === 'QuotaExceededError') {
-            try {
-                sessionStorage.removeItem(PENDING_PURCHASE_KEY);
-                const dataWithExpiry: StoredPendingPurchaseData = {
-                    ...data,
-                    expiry: Date.now() + PENDING_PURCHASE_EXPIRY,
-                };
-                sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify(dataWithExpiry));
-            } catch (retryError) {
-                console.error('[pending-purchase] Failed to save after clearing:', retryError);
+    const trySetItem = (payload: StoredPendingPurchaseData): { ok: true; size: number } | { ok: false; reason: 'quota' | 'other'; error: unknown } => {
+        try {
+            const serialized = JSON.stringify(payload);
+            if (serialized.length > 5 * 1024 * 1024) {
+                return { ok: false, reason: 'quota', error: new Error(`payload size ${serialized.length} exceeds 5MB`) };
             }
+            sessionStorage.setItem(PENDING_PURCHASE_KEY, serialized);
+            return { ok: true, size: serialized.length };
+        } catch (error) {
+            const isQuota = error instanceof DOMException && (
+                error.name === 'QuotaExceededError' ||
+                error.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+            );
+            return { ok: false, reason: isQuota ? 'quota' : 'other', error };
         }
+    };
+
+    // Attempt 1: full payload.
+    const first = trySetItem(buildPayload(processedFiles));
+    if (first.ok) {
+        const addonsCount =
+            (data.selectedAddons?.length ?? 0) ||
+            (data.metadata?.selectedAddons?.length ?? 0);
+        console.info(
+            `[pending-purchase] saved ${first.size} bytes (files=${processedFiles.length}, addons=${addonsCount})`
+        );
+        return;
     }
+
+    console.warn('[pending-purchase] First save failed:', first.reason, first.error);
+
+    if (first.reason !== 'quota') {
+        throw first.error instanceof Error
+            ? first.error
+            : new Error('Failed to save pending purchase data');
+    }
+
+    // Attempt 2: drop heavy file payloads (keep metadata only).
+    sessionStorage.removeItem(PENDING_PURCHASE_KEY);
+
+    const lightFiles = processedFiles.map<PendingPurchaseFile>((file) => {
+        // Revoke blob URL since we're dropping it; otherwise it leaks.
+        if (file.blobUrl) {
+            try { URL.revokeObjectURL(file.blobUrl); } catch { /* ignore */ }
+        }
+        return {
+            id: file.id,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            pageCount: file.pageCount,
+            s3Key: file.s3Key,
+        };
+    });
+
+    const second = trySetItem(buildPayload(lightFiles));
+    if (second.ok) {
+        console.warn('[pending-purchase] Saved without file contents due to storage quota; files must be re-uploaded after login.');
+        return;
+    }
+
+    console.error('[pending-purchase] Final save failed:', second.error);
+    throw second.error instanceof Error
+        ? second.error
+        : new Error('Failed to save pending purchase data');
 }
 
 /**
