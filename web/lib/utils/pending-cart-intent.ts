@@ -1,5 +1,6 @@
 import { addToCart, type AddToCartData } from "@/lib/api/cart";
 import { getCategoryAddons, getProductsBySpecifications } from "@/lib/api/categories";
+import { getProducts } from "@/lib/api/products";
 import { getAuthToken } from "@/lib/api-client";
 import { uploadOrderFilesToS3 } from "@/lib/api/uploads";
 import {
@@ -159,15 +160,23 @@ async function matchProductForService(
     categorySlug: string,
     specifications: Record<string, any>
 ): Promise<any | null> {
-    const first = await getProductsBySpecifications(categorySlug, specifications);
     const pickInStock = (list: any[]) =>
         list.find((p: any) => p?.id && (p.stock === undefined || p.stock > 0)) || list[0];
+
+    console.log(
+        "[pending-cart-intent] matchProductForService categorySlug=",
+        categorySlug,
+        "specs=",
+        specifications
+    );
+
+    const first = await getProductsBySpecifications(categorySlug, specifications);
+    console.log("[pending-cart-intent] full-spec match result count=", first?.length ?? 0);
     if (first && first.length > 0) {
         return pickInStock(first);
     }
 
-    // No match with the full spec set. Figure out which keys are addon-only
-    // and retry without them.
+    // Strategy 2: drop addon-only spec keys and retry.
     let addonOnlyKeys: string[] = [];
     try {
         const addons = await getCategoryAddons(categorySlug);
@@ -181,27 +190,47 @@ async function matchProductForService(
         console.warn("[pending-cart-intent] couldn't fetch addons to trim specs:", err);
     }
 
-    if (addonOnlyKeys.length === 0) return null;
+    if (addonOnlyKeys.length > 0) {
+        const trimmed: Record<string, any> = { ...specifications };
+        const dropped: string[] = [];
+        for (const key of addonOnlyKeys) {
+            if (key in trimmed) {
+                delete trimmed[key];
+                dropped.push(key);
+            }
+        }
 
-    const trimmed: Record<string, any> = { ...specifications };
-    const dropped: string[] = [];
-    for (const key of addonOnlyKeys) {
-        if (key in trimmed) {
-            delete trimmed[key];
-            dropped.push(key);
+        if (dropped.length > 0) {
+            console.warn(
+                `[pending-cart-intent] retry match without addon-only keys: ${dropped.join(", ")}`
+            );
+            const second = await getProductsBySpecifications(categorySlug, trimmed);
+            console.log("[pending-cart-intent] trimmed match result count=", second?.length ?? 0);
+            if (second && second.length > 0) {
+                return pickInStock(second);
+            }
         }
     }
 
-    if (dropped.length === 0) return null;
-
-    console.warn(
-        `[pending-cart-intent] retrying product match without addon-only keys: ${dropped.join(", ")}`
-    );
-
-    const second = await getProductsBySpecifications(categorySlug, trimmed);
-    if (second && second.length > 0) {
-        return pickInStock(second);
+    // Strategy 3 (last resort): pick any published product in the category.
+    // Reasoning: the user successfully added to cart as a guest (service page
+    // computed a price), so SOME product exists for this combination — even
+    // if the spec-matching endpoint can't resolve it (index stale, specs
+    // changed admin-side, etc.). Better to land the item on the generic
+    // product than throw away the entire configuration.
+    try {
+        const fallback = await getProducts({ category: categorySlug, limit: 50 });
+        const products = fallback.data?.products ?? [];
+        console.warn(
+            `[pending-cart-intent] falling back to any category product; got ${products.length}`
+        );
+        if (products.length > 0) {
+            return pickInStock(products as any[]);
+        }
+    } catch (err) {
+        console.error("[pending-cart-intent] category fallback fetch failed:", err);
     }
+
     return null;
 }
 
