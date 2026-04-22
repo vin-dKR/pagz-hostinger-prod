@@ -33,6 +33,17 @@ function CartPageContent() {
         refetch,
     } = useCart();
 
+    useEffect(() => {
+        console.log("[CartPage] state:", {
+            authLoading,
+            isAuthenticated,
+            cartLoading: loading,
+            itemCount: items.length,
+            cartId: cart?.id,
+            error,
+        });
+    }, [authLoading, isAuthenticated, loading, items.length, cart?.id, error]);
+
     const { confirm, ConfirmDialog } = useConfirm();
     const router = useRouter();
 

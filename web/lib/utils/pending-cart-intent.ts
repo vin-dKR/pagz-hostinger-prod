@@ -286,6 +286,7 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
             try {
                 const response = await addToCart(cartPayload);
                 if (response.success) {
+                    console.log("[pending-cart-intent] SUCCESS, clearing pendingPurchaseData");
                     clearPendingPurchaseData();
                     return { handled: true, success: true };
                 }
