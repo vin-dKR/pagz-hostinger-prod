@@ -959,9 +959,13 @@ export const calculateCategoryPrice = async (
             } else if (rule.ruleType === "ADDON") {
                 const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
 
+                // Shared across the range check and the quantityMultiplier math
+                // so the admin preview agrees with the server-side cart /
+                // checkout / invoice path (which runs `computeAddonLineTotal`).
+                const effectivePages =
+                    pageCount != null ? pageCount * (copies != null ? copies : 1) : null;
+
                 if (hasPageRange) {
-                    const effectivePages =
-                        pageCount != null ? pageCount * (copies != null ? copies : 1) : null;
                     if (effectivePages == null) {
                         continue;
                     }
@@ -974,17 +978,25 @@ export const calculateCategoryPrice = async (
                 }
 
                 const modifier = rule.priceModifier ? Number(rule.priceModifier) : 0;
-                const copiesForMultiplier = copies || 1;
-                const finalPrice = rule.quantityMultiplier ? modifier * copiesForMultiplier : modifier;
+                // Match the shared util (`computeAddonLineTotal`):
+                //   quantityMultiplier=false -> flat per-order amount
+                //   quantityMultiplier=true  -> multiply by effective pages
+                //                               (falls back to quantity when
+                //                               the line item isn't a print
+                //                               job with pageCount/copies).
+                const multiplier = rule.quantityMultiplier
+                    ? (effectivePages ?? quantity)
+                    : 1;
+                const finalPrice = modifier * multiplier;
                 totalPrice += finalPrice;
 
                 const rangeLabel =
                     hasPageRange
                         ? ` (${rule.minQuantity ?? 0}-${rule.maxQuantity ?? "∞"} pages`
                         : "";
-                const copiesLabel =
-                    rule.quantityMultiplier && copiesForMultiplier > 1
-                        ? (rangeLabel ? `) × ${copiesForMultiplier} copies` : ` × ${copiesForMultiplier} copies`)
+                const multiplierLabel =
+                    rule.quantityMultiplier && multiplier > 1
+                        ? (rangeLabel ? `) × ${multiplier}` : ` × ${multiplier}`)
                         : rangeLabel
                             ? ")"
                             : "";
@@ -996,7 +1008,7 @@ export const calculateCategoryPrice = async (
                     : "";
 
                 breakdown.push({
-                    label: `Addon${addonSpecLabel}${rangeLabel}${copiesLabel}`,
+                    label: `Addon${addonSpecLabel}${rangeLabel}${multiplierLabel}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "QUANTITY_TIER") {
@@ -1516,9 +1528,15 @@ export const calculateCategoryPricePublic = async (
             } else if (rule.ruleType === "ADDON") {
                 const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
 
+                // effectivePages = pageCount * copies when a print-job with
+                // pages is being priced; null otherwise. Shared with the range
+                // check AND the quantityMultiplier math below so the preview
+                // agrees with the server-side cart / checkout / invoice path
+                // (which calls `computeAddonLineTotal` with the same input).
+                const effectivePages =
+                    effectivePageCount > 0 ? effectivePageCount * (copies != null ? copies : 1) : null;
+
                 if (hasPageRange) {
-                    const effectivePages =
-                        effectivePageCount > 0 ? effectivePageCount * (copies != null ? copies : 1) : null;
                     if (effectivePages == null) {
                         continue;
                     }
@@ -1531,17 +1549,25 @@ export const calculateCategoryPricePublic = async (
                 }
 
                 const modifier = rule.priceModifier ? Number(rule.priceModifier) : 0;
-                const copiesForMultiplier = copies || 1;
-                const finalPrice = rule.quantityMultiplier ? modifier * copiesForMultiplier : modifier;
+                // Match the shared util (`computeAddonLineTotal`):
+                //   quantityMultiplier=false -> flat per-order amount
+                //   quantityMultiplier=true  -> multiply by effective pages
+                //                               (falls back to quantity when
+                //                               the line item isn't a print
+                //                               job with pageCount/copies).
+                const multiplier = rule.quantityMultiplier
+                    ? (effectivePages ?? effectiveQuantity)
+                    : 1;
+                const finalPrice = modifier * multiplier;
                 totalPrice += finalPrice;
 
                 const rangeLabel =
                     hasPageRange
                         ? ` (${rule.minQuantity ?? 0}-${rule.maxQuantity ?? "∞"} pages`
                         : "";
-                const copiesLabel =
-                    rule.quantityMultiplier && copiesForMultiplier > 1
-                        ? (rangeLabel ? `) × ${copiesForMultiplier} copies` : ` × ${copiesForMultiplier} copies`)
+                const multiplierLabel =
+                    rule.quantityMultiplier && multiplier > 1
+                        ? (rangeLabel ? `) × ${multiplier}` : ` × ${multiplier}`)
                         : rangeLabel
                             ? ")"
                             : "";
@@ -1553,7 +1579,7 @@ export const calculateCategoryPricePublic = async (
                     : "";
 
                 breakdown.push({
-                    label: `Addon${addonSpecLabel}${rangeLabel}${copiesLabel}`,
+                    label: `Addon${addonSpecLabel}${rangeLabel}${multiplierLabel}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "QUANTITY_TIER") {

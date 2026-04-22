@@ -288,13 +288,24 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
                 }
                 itemPrice += Number(variant.priceModifier);
             }
+            // metadata.priceBreakdown (written by the service page) contains
+            // BOTH the base and the addon lines. Deriving item price from its
+            // sum would silently double-count addons because we add the
+            // server-computed `addonsSubtotal` to the total below. Only use
+            // the breakdown to recover the base-price portion.
             if (metadata && Array.isArray(metadata.priceBreakdown)) {
-                const lineTotal = metadata.priceBreakdown.reduce(
-                    (sum: number, entry: any) => sum + Number(entry?.value || 0),
+                const basePortion = metadata.priceBreakdown.reduce(
+                    (sum: number, entry: any) => {
+                        const label = typeof entry?.label === "string"
+                            ? entry.label.toLowerCase()
+                            : "";
+                        if (label.startsWith("addon")) return sum;
+                        return sum + Number(entry?.value || 0);
+                    },
                     0
                 );
-                if (quantity > 0 && lineTotal > 0) {
-                    itemPrice = lineTotal / quantity;
+                if (quantity > 0 && basePortion > 0) {
+                    itemPrice = basePortion / quantity;
                 }
             }
 
@@ -575,14 +586,24 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
                 itemPrice += Number(variant.priceModifier);
             }
 
-            // If metadata contains a full price breakdown (base + addons), use it to derive item price
+            // metadata.priceBreakdown (written by the service page) contains
+            // BOTH the base and the addon lines. Deriving item price from its
+            // sum would silently double-count addons because we add the
+            // server-computed `addonsSubtotal` to the total below. Only use
+            // the breakdown to recover the base-price portion.
             if (metadata && Array.isArray(metadata.priceBreakdown)) {
-                const lineTotal = metadata.priceBreakdown.reduce(
-                    (sum: number, entry: any) => sum + Number(entry?.value || 0),
+                const basePortion = metadata.priceBreakdown.reduce(
+                    (sum: number, entry: any) => {
+                        const label = typeof entry?.label === "string"
+                            ? entry.label.toLowerCase()
+                            : "";
+                        if (label.startsWith("addon")) return sum;
+                        return sum + Number(entry?.value || 0);
+                    },
                     0
                 );
-                if (quantity > 0 && lineTotal > 0) {
-                    itemPrice = lineTotal / quantity;
+                if (quantity > 0 && basePortion > 0) {
+                    itemPrice = basePortion / quantity;
                 }
             }
 
