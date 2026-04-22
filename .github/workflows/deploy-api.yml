@@ -1,0 +1,71 @@
+name: Deploy API to Hostinger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build (prisma generate + tsup)
+        env:
+          # prisma generate reads DATABASE_URL from the schema config but does
+          # not connect; a dummy URL keeps it happy in CI.
+          DATABASE_URL: mysql://build:build@localhost:3306/build
+        run: bun run build
+
+      - name: Prune to production dependencies
+        run: |
+          rm -rf node_modules
+          bun install --production --frozen-lockfile
+
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.HOSTINGER_FTP_HOST }}
+          username: ${{ secrets.HOSTINGER_FTP_USERNAME }}
+          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_FTP_PORT || '21' }}
+          protocol: ${{ secrets.HOSTINGER_FTP_PROTOCOL || 'ftp' }}
+          local-dir: ./api/
+          server-dir: ${{ secrets.HOSTINGER_API_DIR }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.env
+            **/.env.*
+            **/src/**
+            **/scripts/**
+            **/prisma/migrations/**
+            **/uploads/**
+            **/uploads/ftp-temp/**
+            **/*.test.ts
+            **/*.map
+            **/tsconfig.json
+            **/eslint.config.*
+            **/.turbo/**

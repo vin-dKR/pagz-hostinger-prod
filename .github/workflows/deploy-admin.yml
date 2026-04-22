@@ -1,0 +1,66 @@
+name: Deploy Admin to Hostinger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "admin/**"
+      - ".github/workflows/deploy-admin.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-admin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Next.js
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.ADMIN_NEXT_PUBLIC_API_URL }}
+        run: bun run build
+
+      - name: Prune to production dependencies
+        run: |
+          rm -rf node_modules
+          bun install --production --frozen-lockfile
+
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.HOSTINGER_FTP_HOST }}
+          username: ${{ secrets.HOSTINGER_FTP_USERNAME }}
+          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_FTP_PORT || '21' }}
+          protocol: ${{ secrets.HOSTINGER_FTP_PROTOCOL || 'ftp' }}
+          local-dir: ./admin/
+          server-dir: ${{ secrets.HOSTINGER_ADMIN_DIR }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.env
+            **/.env.*
+            **/.next/cache/**
+            **/*.test.ts
+            **/*.test.tsx
+            **/*.map
+            **/tsconfig.json
+            **/eslint.config.*
+            **/.turbo/**
