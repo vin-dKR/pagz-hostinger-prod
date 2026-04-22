@@ -5,6 +5,12 @@ import { prisma } from "../services/prisma.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import crypto from "crypto";
+import {
+    collectAddonIds,
+    computeAddonsSubtotal,
+    fetchAddonRuleMap,
+    normalizeAddonIds,
+} from "../utils/addon-pricing.js";
 
 type RazorpayCreateOrderResponse = {
     id?: string;
@@ -303,11 +309,15 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
                 }
             }
 
-            const selectedAddons: string[] = Array.isArray(item.addons)
-                ? (item.addons as string[]).filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+            // Prefer the explicit top-level addons array; fall back to
+            // metadata.selectedAddons for intent saved by "pending cart" flows
+            // that predate the top-level field.
+            const rawAddons = Array.isArray(item.addons)
+                ? item.addons
                 : Array.isArray(metadata?.selectedAddons)
-                    ? (metadata.selectedAddons as string[])
+                    ? metadata.selectedAddons
                     : [];
+            const selectedAddons = normalizeAddonIds(rawAddons);
 
             orderItems.push({
                 productId,
@@ -352,40 +362,8 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
             }
         }
 
-        let addonsSubtotal = 0;
-        const allAddonIds = new Set<string>();
-        orderItems.forEach(item => item.addons?.forEach((addonId: string) => allAddonIds.add(addonId)));
-        if (allAddonIds.size > 0) {
-            const addonRules = await prisma.categoryPricingRule.findMany({
-                where: { id: { in: Array.from(allAddonIds) }, ruleType: "ADDON", isActive: true },
-            });
-            const addonMap = new Map(addonRules.map(rule => [rule.id, rule]));
-            orderItems.forEach(item => {
-                const pageCount = item.metadata?.pageCount || 1;
-                const copies = item.metadata?.copies || 1;
-                const effectivePages = pageCount > 1 ? pageCount * copies : null;
-                item.addons.forEach((addonId: string) => {
-                    const addonRule = addonMap.get(addonId);
-                    if (!addonRule) return;
-                    const hasPageRange = addonRule.minQuantity != null || addonRule.maxQuantity != null;
-                    if (hasPageRange && effectivePages != null) {
-                        const inRange =
-                            (addonRule.minQuantity == null || effectivePages >= addonRule.minQuantity) &&
-                            (addonRule.maxQuantity == null || effectivePages <= addonRule.maxQuantity);
-                        if (!inRange) return;
-                    }
-                    const rawPrice = addonRule.priceModifier !== null && addonRule.priceModifier !== undefined
-                        ? Number(addonRule.priceModifier)
-                        : addonRule.basePrice !== null && addonRule.basePrice !== undefined
-                            ? Number(addonRule.basePrice)
-                            : 0;
-                    const multiplier = addonRule.quantityMultiplier
-                        ? (effectivePages != null ? effectivePages : item.quantity)
-                        : 1;
-                    addonsSubtotal += rawPrice * multiplier;
-                });
-            });
-        }
+        const addonMapRzp = await fetchAddonRuleMap(collectAddonIds(orderItems));
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapRzp);
 
         const total = subtotal + addonsSubtotal - discountAmount + shippingCharges;
         const order = await prisma.order.create({
@@ -622,11 +600,12 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
             }
 
             // Extract addons from item.addons if present, otherwise from metadata
-            const selectedAddons: string[] = Array.isArray(item.addons)
-                ? (item.addons as string[]).filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+            const rawAddons = Array.isArray(item.addons)
+                ? item.addons
                 : Array.isArray(metadata?.selectedAddons)
-                    ? (metadata.selectedAddons as string[])
+                    ? metadata.selectedAddons
                     : [];
+            const selectedAddons = normalizeAddonIds(rawAddons);
 
             orderItems.push({
                 productId,
@@ -685,72 +664,10 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
             }
         }
 
-        // Calculate addons subtotal from order items
-        let addonsSubtotal = 0;
-        const allAddonIds = new Set<string>();
-        orderItems.forEach(item => {
-            if (item.addons && Array.isArray(item.addons)) {
-                item.addons.forEach((addonId: string) => allAddonIds.add(addonId));
-            }
-        });
-
-        if (allAddonIds.size > 0) {
-            // Fetch all addon rules
-            const addonRules = await prisma.categoryPricingRule.findMany({
-                where: {
-                    id: { in: Array.from(allAddonIds) },
-                    ruleType: 'ADDON',
-                    isActive: true,
-                },
-            });
-
-            // Create a map for O(1) lookup
-            const addonMap = new Map(addonRules.map(rule => [rule.id, rule]));
-
-            // Calculate addons total for each order item
-            orderItems.forEach(item => {
-                if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
-                    // Get page count from metadata if available
-                    const pageCount = item.metadata?.pageCount || 1;
-                    const copies = item.metadata?.copies || 1;
-                    const effectivePages = pageCount > 1 ? pageCount * copies : null;
-
-                    item.addons.forEach((addonId: string) => {
-                        const addonRule = addonMap.get(addonId);
-                        if (addonRule) {
-                            // Check page range if addon has minQuantity/maxQuantity
-                            const hasPageRange = addonRule.minQuantity != null || addonRule.maxQuantity != null;
-                            if (hasPageRange && effectivePages != null) {
-                                const inRange =
-                                    (addonRule.minQuantity == null || effectivePages >= addonRule.minQuantity) &&
-                                    (addonRule.maxQuantity == null || effectivePages <= addonRule.maxQuantity);
-                                if (!inRange) {
-                                    return; // Skip this addon if not in range
-                                }
-                            }
-
-                            const rawPrice = addonRule.priceModifier !== null && addonRule.priceModifier !== undefined
-                                ? Number(addonRule.priceModifier)
-                                : addonRule.basePrice !== null && addonRule.basePrice !== undefined
-                                    ? Number(addonRule.basePrice)
-                                    : 0;
-
-                            // Calculate multiplier based on quantity multiplier and page count
-                            let multiplier = 1;
-                            if (addonRule.quantityMultiplier) {
-                                if (effectivePages != null) {
-                                    multiplier = effectivePages;
-                                } else {
-                                    multiplier = item.quantity;
-                                }
-                            }
-
-                            addonsSubtotal += rawPrice * multiplier;
-                        }
-                    });
-                }
-            });
-        }
+        // Compute addons subtotal using the shared helper so cart, order
+        // creation, and invoice printing all produce the same number.
+        const addonMapPpe = await fetchAddonRuleMap(collectAddonIds(orderItems));
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapPpe);
 
         // Calculate final total (subtotal + addonsSubtotal - discount + shipping)
         const total = subtotal + addonsSubtotal - discountAmount + shippingCharges;
@@ -782,10 +699,9 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
                         customText: oi.customText,
                         hasAddon: oi.hasAddon,
                         metadata: oi.metadata ?? undefined,
-                        // @ts-ignore - connect addons relation
-                        addons: oi.addons && oi.addons.length > 0
-                            ? { connect: oi.addons.map((id: string) => ({ id })) }
-                            : undefined,
+                        ...(oi.addons && oi.addons.length > 0 && {
+                            addons: { connect: oi.addons.map((id: string) => ({ id })) },
+                        }),
                     })),
                 },
                 statusHistory: {
