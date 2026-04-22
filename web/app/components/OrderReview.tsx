@@ -102,6 +102,7 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                             const addonItemTotal = computeAddonLineTotal(addon, {
                                                 quantity: item.quantity,
                                                 metadata: item.metadata,
+                                                fileCount: uploadedFileUrls.length,
                                             });
                                             return (
                                                 <div key={addon.id ?? idx} className="text-xs text-purple-700 mb-0.5">

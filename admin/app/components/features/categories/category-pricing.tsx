@@ -70,6 +70,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         basePrice: string;
         priceModifier: string;
         quantityMultiplier: boolean;
+        fileMultiplier: boolean;
         minQuantity: string;
         maxQuantity: string;
         isActive: boolean;
@@ -79,6 +80,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         basePrice: '',
         priceModifier: '',
         quantityMultiplier: true,
+        fileMultiplier: false,
         minQuantity: '',
         maxQuantity: '',
         isActive: true,
@@ -148,6 +150,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             basePrice: '',
             priceModifier: '',
             quantityMultiplier: true,
+            fileMultiplier: false,
             minQuantity: '',
             maxQuantity: '',
             isActive: true,
@@ -211,6 +214,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                 basePrice: form.basePrice ? Number(form.basePrice) : null,
                 priceModifier: form.priceModifier ? Number(form.priceModifier) : null,
                 quantityMultiplier: form.quantityMultiplier,
+                fileMultiplier: form.fileMultiplier,
                 minQuantity: form.minQuantity ? Number(form.minQuantity) : null,
                 maxQuantity: form.maxQuantity ? Number(form.maxQuantity) : null,
                 isActive: form.isActive,
@@ -281,6 +285,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                     ? String(rule.priceModifier)
                     : '',
             quantityMultiplier: rule.quantityMultiplier,
+            fileMultiplier: (rule as any).fileMultiplier ?? false,
             minQuantity:
                 (rule.ruleType === 'ADDON' || rule.ruleType === 'QUANTITY_TIER') && rule.minQuantity != null
                     ? String(rule.minQuantity)
@@ -1079,11 +1084,30 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                         setForm((prev) => ({
                                                             ...prev,
                                                             quantityMultiplier: e.target.checked,
+                                                            // Keep the two multiplier flags mutually exclusive — turning
+                                                            // on "by quantity" auto-clears "by files".
+                                                            fileMultiplier: e.target.checked ? false : prev.fileMultiplier,
                                                         }))
                                                     }
                                                     className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                                 />
                                                 <Label htmlFor="qty-multiplier">Multiply by quantity</Label>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    id="file-multiplier"
+                                                    type="checkbox"
+                                                    checked={form.fileMultiplier}
+                                                    onChange={(e) =>
+                                                        setForm((prev) => ({
+                                                            ...prev,
+                                                            fileMultiplier: e.target.checked,
+                                                            quantityMultiplier: e.target.checked ? false : prev.quantityMultiplier,
+                                                        }))
+                                                    }
+                                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <Label htmlFor="file-multiplier">Multiply by files</Label>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <input
@@ -1183,7 +1207,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                         {RULE_TYPES.find(t => t.value === rule.ruleType)?.label || rule.ruleType}
                                                                     </div>
                                                                     <div className="text-[10px] text-gray-400 mt-1">
-                                                                        {rule.quantityMultiplier ? '× Qty' : 'Fixed'}
+                                                                        {(rule as any).fileMultiplier ? '× Files' : rule.quantityMultiplier ? '× Qty' : 'Fixed'}
                                                                     </div>
                                                                 </td>
 
@@ -1387,7 +1411,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                         {RULE_TYPES.find(t => t.value === rule.ruleType)?.label || rule.ruleType}
                                                                     </div>
                                                                     <div className="text-[10px] text-gray-400 mt-1">
-                                                                        {rule.quantityMultiplier ? '× Qty' : 'Fixed'}
+                                                                        {(rule as any).fileMultiplier ? '× Files' : rule.quantityMultiplier ? '× Qty' : 'Fixed'}
                                                                     </div>
                                                                 </td>
 
@@ -1591,7 +1615,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                 {RULE_TYPES.find(t => t.value === rule.ruleType)?.label || rule.ruleType}
                                                                             </div>
                                                                             <div className="text-[10px] text-gray-400 mt-1">
-                                                                                {rule.quantityMultiplier ? '× Qty' : 'Fixed'}
+                                                                                {(rule as any).fileMultiplier ? '× Files' : rule.quantityMultiplier ? '× Qty' : 'Fixed'}
                                                                             </div>
                                                                         </td>
 

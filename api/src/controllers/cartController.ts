@@ -25,6 +25,7 @@ const CART_ADDON_SELECT = {
     basePrice: true,
     priceModifier: true,
     quantityMultiplier: true,
+    fileMultiplier: true,
     minQuantity: true,
     maxQuantity: true,
 } as const;
@@ -218,6 +219,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             let addonTotal = 0;
 
             if (item.addons && item.addons.length > 0) {
+                const lineFileCount = normalizeDesignUrls(item.customDesignUrl).length;
                 const pricingLine = {
                     quantity: item.quantity,
                     addons: (item.addons as AddonPricingRule[]).map((a) => a.id),
@@ -229,6 +231,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                             : null,
                         copies,
                     },
+                    fileCount: lineFileCount,
                 };
 
                 for (const addon of item.addons as AddonPricingRule[]) {

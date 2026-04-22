@@ -121,6 +121,8 @@ export interface CategoryAddon {
     ruleType: 'ADDON';
     specificationValues: Record<string, any>;
     priceModifier: number | null;
+    quantityMultiplier?: boolean;
+    fileMultiplier?: boolean;
     minQuantity: number | null;
     maxQuantity: number | null;
     isActive: boolean;

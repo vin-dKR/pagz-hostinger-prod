@@ -53,11 +53,16 @@ export const isAddonInPageRange = (
 /** Price contribution of a single addon applied to a line item. */
 export const computeAddonLineTotal = (
     addon: AddonRule,
-    line: { quantity: number; metadata: CartItem["metadata"] }
+    line: { quantity: number; metadata: CartItem["metadata"]; fileCount?: number }
 ): number => {
     const effectivePages = getEffectivePages(line.metadata);
     if (!isAddonInPageRange(addon, effectivePages)) return 0;
     const unit = getAddonUnitPrice(addon);
+    // fileMultiplier wins when both flags are on — more specific signal.
+    if (addon.fileMultiplier) {
+        const files = Math.max(1, line.fileCount ?? 0);
+        return unit * files;
+    }
     if (!addon.quantityMultiplier) return unit;
     const multiplier = effectivePages ?? line.quantity;
     return unit * multiplier;
@@ -102,9 +107,13 @@ export const derivePriceBreakdown = (
     const variantMod = toNumber(item.variant?.priceModifier);
     const baseTotal = (basePrice + variantMod) * item.quantity;
 
+    const fileCount = Array.isArray(item.customDesignUrl)
+        ? item.customDesignUrl.length
+        : item.customDesignUrl ? 1 : 0;
+
     const addonTotal = (item.addons ?? []).reduce(
         (sum, addon) =>
-            sum + computeAddonLineTotal(addon, { quantity: item.quantity, metadata: item.metadata }),
+            sum + computeAddonLineTotal(addon, { quantity: item.quantity, metadata: item.metadata, fileCount }),
         0
     );
 

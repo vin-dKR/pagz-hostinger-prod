@@ -456,7 +456,7 @@ export default function CartItem({
                             <ul className="mt-2 pl-3 border-l-2 border-purple-200 space-y-0.5">
                                 {(item.addons as AddonRule[]).map((addon, idx) => (
                                     <li key={addon.id} className="text-xs text-purple-700">
-                                        {getAddonLabel(addon, idx)}: ₹{computeAddonLineTotal(addon, { quantity: item.quantity, metadata: item.metadata }).toFixed(2)}
+                                        {getAddonLabel(addon, idx)}: ₹{computeAddonLineTotal(addon, { quantity: item.quantity, metadata: item.metadata, fileCount: uploadedFileUrls.length }).toFixed(2)}
                                     </li>
                                 ))}
                             </ul>

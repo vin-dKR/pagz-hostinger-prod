@@ -264,6 +264,7 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
             hasAddon: boolean;
             addons: string[];
             metadata?: any;
+            fileCount: number;
         }> = [];
 
         for (const item of items) {
@@ -329,6 +330,7 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
                 hasAddon: selectedAddons.length > 0,
                 addons: selectedAddons,
                 metadata: metadata || undefined,
+                fileCount: normalizedUrls.length,
             });
         }
 
@@ -547,6 +549,7 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
             hasAddon: boolean;
             addons: string[];
             metadata?: any;
+            fileCount: number;
         }> = [];
 
         for (const item of items) {
@@ -617,6 +620,7 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
                 hasAddon: selectedAddons.length > 0,
                 addons: selectedAddons,
                 metadata: metadata || undefined,
+                fileCount: normalizedUrls.length,
             });
         }
 
