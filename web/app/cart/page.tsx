@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Breadcrumbs from "../components/Breadcrumbs";
 import CartItem from "../components/CartItem";
 import BillingSummary from "../components/BillingSummary";
-import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import GuestCart from "../components/GuestCart";
+import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
 import { toastError, toastWarning, toastSuccess, toastPromise } from "@/lib/utils/toast";
@@ -14,8 +15,10 @@ import { ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import { uploadOrderFilesToS3 } from "@/lib/api/uploads";
 import { updateCartItem } from "@/lib/api/cart";
+import { redirectGuestToLoginForCheckout } from "@/lib/utils/guest-cart";
 
 function CartPageContent() {
+    const { isAuthenticated, loading: authLoading } = useAuth();
     const {
         cart,
         items,
@@ -193,6 +196,14 @@ function CartPageContent() {
     }, [selectedItemsList]);
 
     const handleGoToCheckout = () => {
+        // If (somehow) a logged-out user reaches the server-cart checkout
+        // button, defer to the guest login-and-checkout flow instead of
+        // silently failing on the checkout page.
+        if (!isAuthenticated) {
+            redirectGuestToLoginForCheckout('/checkout');
+            return;
+        }
+
         if (selectedItems.size === 0) {
             toastWarning('Please select at least one item to checkout.');
             return;
@@ -324,8 +335,10 @@ function CartPageContent() {
                     </div>
                 )}
 
-                {/* Loading State */}
-                {loading ? (
+                {/* Guest cart (logged-out users see their pending purchase) */}
+                {!authLoading && !isAuthenticated ? (
+                    <GuestCart />
+                ) : (loading || authLoading) ? (
                     <div className="flex items-center justify-center py-12">
                         <BarsSpinner />
                     </div>
@@ -444,9 +457,9 @@ function CartPageContent() {
 }
 
 export default function CartPage() {
-    return (
-        <ProtectedRoute>
-            <CartPageContent />
-        </ProtectedRoute>
-    );
+    // Note: /cart is intentionally *not* wrapped in ProtectedRoute.
+    // Logged-out users see their pending purchase via <GuestCart />;
+    // the auth gate has moved to the Checkout button (see
+    // `redirectGuestToLoginForCheckout`).
+    return <CartPageContent />;
 }
