@@ -952,12 +952,25 @@ export const calculateCategoryPrice = async (
                     continue;
                 }
                 const basePrice = rule.basePrice ? Number(rule.basePrice) : 0;
-                const finalPrice = rule.quantityMultiplier ? basePrice * quantity : basePrice;
+                const ruleFileMultiplier = Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier);
+                const safeFileCount = fileCount != null && fileCount > 0 ? Number(fileCount) : 1;
+                // Priority: fileMultiplier > quantityMultiplier > flat
+                const baseMultiplier = ruleFileMultiplier
+                    ? safeFileCount
+                    : rule.quantityMultiplier
+                        ? quantity
+                        : 1;
+                const finalPrice = basePrice * baseMultiplier;
                 totalPrice += finalPrice;
                 baseApplied = true;
                 baseQuantityMultiplierApplied = Boolean(rule.quantityMultiplier);
+                const baseSuffix = ruleFileMultiplier && baseMultiplier > 1
+                    ? ` × ${baseMultiplier} files`
+                    : rule.quantityMultiplier && baseMultiplier > 1
+                        ? ` × ${baseMultiplier}`
+                        : "";
                 breakdown.push({
-                    label: "Base Price",
+                    label: `Base Price${baseSuffix}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "ADDON") {
@@ -1528,12 +1541,25 @@ export const calculateCategoryPricePublic = async (
                     continue;
                 }
                 const basePrice = rule.basePrice ? Number(rule.basePrice) : 0;
-                const finalPrice = rule.quantityMultiplier ? basePrice * effectiveQuantity : basePrice;
+                const ruleFileMultiplier = Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier);
+                const safeFileCount = fileCount != null && fileCount > 0 ? Number(fileCount) : 1;
+                // Priority: fileMultiplier > quantityMultiplier > flat
+                const baseMultiplier = ruleFileMultiplier
+                    ? safeFileCount
+                    : rule.quantityMultiplier
+                        ? effectiveQuantity
+                        : 1;
+                const finalPrice = basePrice * baseMultiplier;
                 totalPrice += finalPrice;
                 baseApplied = true;
                 baseQuantityMultiplierApplied = Boolean(rule.quantityMultiplier);
+                const baseSuffix = ruleFileMultiplier && baseMultiplier > 1
+                    ? ` (${baseMultiplier} files)`
+                    : effectivePageCount > 0
+                        ? ` (${effectivePageCount} pages × ${copies || 1} copies)`
+                        : "";
                 breakdown.push({
-                    label: `Base Price${effectivePageCount > 0 ? ` (${effectivePageCount} pages × ${copies || 1} copies)` : ""}`,
+                    label: `Base Price${baseSuffix}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "ADDON") {

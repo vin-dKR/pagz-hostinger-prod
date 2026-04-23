@@ -128,6 +128,7 @@ export interface CategoryPricingRule {
     basePrice?: number | null;
     priceModifier?: number | null;
     quantityMultiplier: boolean;
+    fileMultiplier?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
     isActive: boolean;
@@ -424,6 +425,7 @@ export interface CreatePricingRuleData {
     basePrice?: number | null;
     priceModifier?: number | null;
     quantityMultiplier?: boolean;
+    fileMultiplier?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
     isActive?: boolean;
