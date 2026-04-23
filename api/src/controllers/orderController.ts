@@ -150,27 +150,46 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             // Check for half-page option and adjust pricing
             const pageCount = (metadata as any)?.pageCount || null;
             const copies = (metadata as any)?.copies || 1;
-            
+
             let effectiveQuantity = quantity;
             let updatedMetadata = metadata || {};
-            
-            if (pageCount && pageCount > 0) {
+
+            // If the product's base pricing rule has fileMultiplier, base price
+            // scales with the uploaded file count instead of pages/quantity.
+            const orderLineFileCount = Array.isArray(customDesignUrl)
+                ? customDesignUrl.length
+                : customDesignUrl ? 1 : 0;
+            const baseRule = await prisma.categoryPricingRule.findFirst({
+                where: {
+                    productId,
+                    ruleType: { in: ["BASE_PRICE", "SPECIFICATION_COMBINATION"] },
+                    isActive: true,
+                },
+                select: { fileMultiplier: true },
+            });
+            const baseUsesFileMultiplier = Boolean((baseRule as { fileMultiplier?: boolean } | null)?.fileMultiplier);
+
+            if (baseUsesFileMultiplier) {
+                const files = Math.max(1, orderLineFileCount);
+                const itemTotal = itemPrice * files;
+                subtotal += itemTotal;
+            } else if (pageCount && pageCount > 0) {
                 const { effectivePageCount, effectiveQuantity: effQty, hasHalfPage } = await calculateProductEffectivePages(
                     productId,
                     pageCount,
                     quantity,
                     copies
                 );
-                
+
                 effectiveQuantity = effQty;
-                
+
                 // If half-page is applied, use effective page count for pricing
                 if (hasHalfPage) {
                     // Calculate price based on effective pages instead of original pages
                     const effectivePages = effectivePageCount * copies;
                     const itemTotal = itemPrice * effectivePages;
                     subtotal += itemTotal;
-                    
+
                     // Add half-page breakdown to metadata
                     const halfPageBreakdown = await getProductHalfPageBreakdown(
                         productId,
@@ -178,7 +197,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                         quantity,
                         copies
                     );
-                    
+
                     updatedMetadata = {
                         ...(metadata as any || {}),
                         effectivePageCount,

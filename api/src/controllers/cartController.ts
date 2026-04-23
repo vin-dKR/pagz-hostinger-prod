@@ -190,11 +190,11 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             const productBasePrice = Number(item.product.sellingPrice ?? item.product.basePrice);
             const variantPrice = item.variant ? Number(item.variant.priceModifier) : 0;
             const unitBasePrice = productBasePrice + variantPrice;
-            
+
             // Get pageCount and copies from metadata
             const pageCount = (item.metadata as any)?.pageCount || null;
             const copies = (item.metadata as any)?.copies || 1;
-            
+
             // Calculate effective pages considering half-page option
             const { effectivePageCount, effectiveQuantity, hasHalfPage } = await calculateProductEffectivePages(
                 item.productId,
@@ -202,16 +202,36 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                 item.quantity,
                 copies
             );
-            
+
             // Use effective page count for pricing if half-page is applied
-            const effectivePages = pageCount && pageCount > 0 
+            const effectivePages = pageCount && pageCount > 0
                 ? (hasHalfPage ? effectivePageCount : pageCount) * copies
                 : item.quantity;
-            
-            // Calculate base total: if pageCount > 1, multiply by effectivePages, otherwise use quantity
-            const baseTotal = pageCount && pageCount > 0
-                ? unitBasePrice * effectivePages 
-                : unitBasePrice * item.quantity;
+
+            // If the product's base pricing rule is configured with
+            // fileMultiplier, base price scales with the number of uploaded
+            // files (customDesignUrl length). Mirrors the preview endpoint.
+            const lineFileCount = normalizeDesignUrls(item.customDesignUrl).length;
+            const baseRule = await prisma.categoryPricingRule.findFirst({
+                where: {
+                    productId: item.productId,
+                    ruleType: { in: ["BASE_PRICE", "SPECIFICATION_COMBINATION"] },
+                    isActive: true,
+                },
+                select: { fileMultiplier: true, quantityMultiplier: true },
+            });
+            const baseUsesFileMultiplier = Boolean((baseRule as { fileMultiplier?: boolean } | null)?.fileMultiplier);
+            const safeFileCount = Math.max(1, lineFileCount);
+
+            // Calculate base total:
+            //   fileMultiplier on base rule -> unitBasePrice * fileCount
+            //   else pageCount-based        -> unitBasePrice * effectivePages
+            //   else                        -> unitBasePrice * quantity
+            const baseTotal = baseUsesFileMultiplier
+                ? unitBasePrice * safeFileCount
+                : pageCount && pageCount > 0
+                    ? unitBasePrice * effectivePages
+                    : unitBasePrice * item.quantity;
 
             // Addon pricing — honour half-page adjustments by feeding the effective
             // pages into the shared util (so cart UI matches server-side checkout).
