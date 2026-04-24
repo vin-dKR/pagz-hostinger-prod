@@ -374,15 +374,20 @@ export function useCheckout(): UseCheckoutReturn {
         return appliedCoupon?.discountAmount || 0;
     }, [appliedCoupon]);
 
-    // Calculate tax (18% GST for now)
+    // Calculate tax (18% GST for now). Floor the taxable amount at 0 so an
+    // oversized discount can't produce a negative tax figure.
     const tax = useMemo(() => {
-        const taxableAmount = (subtotal || 0) - discountAmount;
+        const taxableAmount = Math.max(0, (subtotal || 0) - discountAmount);
         return taxableAmount * 0.18;
     }, [subtotal, discountAmount]);
 
-    // Calculate grand total
+    // Calculate grand total. Clamp at 0 so a large fixed-amount discount can
+    // never surface a negative payable in the UI.
     const grandTotal = useMemo(() => {
-        return (subtotal || 0) - discountAmount + (deliveryFee || 0) + tax;
+        return Math.max(
+            0,
+            (subtotal || 0) - discountAmount + (deliveryFee || 0) + tax,
+        );
     }, [subtotal, discountAmount, deliveryFee, tax]);
 
     // Combined loading state

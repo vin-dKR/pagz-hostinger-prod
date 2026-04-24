@@ -240,6 +240,15 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             });
         }
 
+        // Compute addons subtotal using the shared helper so the cart summary,
+        // order creation, and invoice all agree on the number. This must run
+        // BEFORE discount calculation so percentage-based coupons apply to the
+        // true line total (base × qty × fileMultiplier + addons) rather than
+        // to the base subtotal alone.
+        const addonMap = await fetchAddonRuleMap(collectAddonIds(orderItems));
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMap);
+        const grossSubtotal = subtotal + addonsSubtotal;
+
         // Calculate discount from coupon if provided
         let discountAmount = 0;
         let couponId = null;
@@ -252,7 +261,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             if (coupon && coupon.isActive) {
                 const now = new Date();
                 if (now >= coupon.validFrom && now <= coupon.validUntil) {
-                    if (!coupon.minPurchaseAmount || subtotal >= Number(coupon.minPurchaseAmount)) {
+                    if (!coupon.minPurchaseAmount || grossSubtotal >= Number(coupon.minPurchaseAmount)) {
                         // Check usage limits
                         const usageCount = await prisma.couponUsage.count({
                             where: { couponId: coupon.id },
@@ -267,9 +276,12 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                             });
 
                             if (userUsageCount < coupon.usageLimitPerUser) {
-                                // Calculate discount
+                                // Calculate discount against the full line total
+                                // (base × qty × fileMultiplier + addons) so
+                                // addons receive the same percentage relief as
+                                // the base price.
                                 if (coupon.discountType === "PERCENTAGE") {
-                                    discountAmount = (subtotal * Number(coupon.discountValue)) / 100;
+                                    discountAmount = (grossSubtotal * Number(coupon.discountValue)) / 100;
                                 } else {
                                     discountAmount = Number(coupon.discountValue);
                                 }
@@ -277,6 +289,11 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                                 // Apply max discount cap
                                 if (coupon.maxDiscountAmount && discountAmount > Number(coupon.maxDiscountAmount)) {
                                     discountAmount = Number(coupon.maxDiscountAmount);
+                                }
+
+                                // Never discount more than the order is worth.
+                                if (discountAmount > grossSubtotal) {
+                                    discountAmount = grossSubtotal;
                                 }
 
                                 couponId = coupon.id;
@@ -287,18 +304,14 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             }
         }
 
-        // Compute addons subtotal using the shared helper so the cart summary,
-        // order creation, and invoice all agree on the number.
-        const addonMap = await fetchAddonRuleMap(collectAddonIds(orderItems));
-        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMap);
-
         // Calculate final total (subtotal + addonsSubtotal - discount + shipping).
         // When a shippingMethodId resolves, the method price is authoritative; the
         // client-supplied shippingCharges is only kept as a legacy fallback.
+        // Clamp at 0 so an oversized discount can never persist a negative total.
         const finalShippingCharges = serverShippingCharges !== null
             ? serverShippingCharges
             : Number(shippingCharges) || 0;
-        const total = subtotal + addonsSubtotal - discountAmount + finalShippingCharges;
+        const total = Math.max(0, grossSubtotal - discountAmount + finalShippingCharges);
 
         // Create order
         const order = await prisma.order.create({
@@ -1234,7 +1247,12 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
             const finalDiscount = updateData.discountAmount !== undefined
                 ? updateData.discountAmount
                 : Number(order.discountAmount || 0);
-            updateData.total = subtotal + addonsSubtotal - finalDiscount + finalShipping;
+            // Clamp at 0: an admin-set discount larger than the order value
+            // must not persist a negative grand total.
+            updateData.total = Math.max(
+                0,
+                subtotal + addonsSubtotal - finalDiscount + finalShipping,
+            );
         }
 
         // Update items if provided
@@ -1313,7 +1331,11 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
                 ? updateData.discountAmount
                 : Number(order.discountAmount || 0);
             const existingAddonsSubtotal = Number(order.addonsSubtotal || 0);
-            updateData.total = subtotal + existingAddonsSubtotal - finalDiscount + finalShipping;
+            // Clamp at 0 so admin edits can't push the stored total below 0.
+            updateData.total = Math.max(
+                0,
+                subtotal + existingAddonsSubtotal - finalDiscount + finalShipping,
+            );
         }
 
         const updatedOrder = await prisma.order.update({
