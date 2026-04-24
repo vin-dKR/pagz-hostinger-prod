@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
-import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
+import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { deleteFromFTP, extractFtpPathFromUrl } from "../services/ftp.js";
 import { getParamAsString } from "../utils/db-utils.js";
@@ -424,6 +424,67 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                 addons: { select: { id: true } },
             },
         });
+
+        // Per-category minimum cart value gate.
+        // If the product's category has a minCartValue set, the add-to-cart
+        // action is only allowed when the prospective category subtotal
+        // (existing lines in that category plus this new/updated line) meets
+        // the minimum. Uses base unit × quantity as a conservative estimate —
+        // addons / fileMultiplier contributions only push the real total up,
+        // so this gate never produces a false positive.
+        if (product.categoryId) {
+            const category = await prisma.category.findUnique({
+                where: { id: product.categoryId },
+                select: { id: true, name: true, minCartValue: true },
+            });
+
+            const minValue = category?.minCartValue ? Number(category.minCartValue) : 0;
+            if (category && minValue > 0) {
+                const sameCategoryItems = await prisma.cartItem.findMany({
+                    where: {
+                        cartId: cart.id,
+                        product: { categoryId: category.id },
+                    },
+                    include: {
+                        product: { select: { basePrice: true } },
+                        variant: { select: { priceModifier: true } },
+                    },
+                });
+
+                let prospective = 0;
+                for (const ci of sameCategoryItems) {
+                    if (ci.id === existingItem?.id) continue;
+                    const basePrice = Number(ci.product.basePrice);
+                    const modifier = ci.variant ? Number(ci.variant.priceModifier) : 0;
+                    prospective += (basePrice + modifier) * ci.quantity;
+                }
+
+                const baseUnit = Number(product.basePrice);
+                const variantModifier = variantId
+                    ? Number(product.variants.find((v) => v.id === variantId)!.priceModifier)
+                    : 0;
+                const newQty = existingItem ? existingItem.quantity + quantity : quantity;
+                prospective += (baseUnit + variantModifier) * newQty;
+
+                if (prospective < minValue) {
+                    const shortage = minValue - prospective;
+                    throw new AppError(
+                        `Add ₹${shortage.toFixed(2)} more to "${category.name}" to meet its minimum cart value of ₹${minValue.toFixed(2)}.`,
+                        400,
+                        {
+                            shortfalls: [
+                                {
+                                    categoryId: category.id,
+                                    categoryName: category.name,
+                                    required: minValue,
+                                    current: prospective,
+                                },
+                            ],
+                        },
+                    );
+                }
+            }
+        }
 
         let cartItem;
         if (existingItem) {
