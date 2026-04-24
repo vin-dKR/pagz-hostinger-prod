@@ -138,7 +138,7 @@ export default function BillingSummary({
                             : "bg-gray-400 cursor-not-allowed"
                             }`}
                     >
-                        {isPaying ? "Processing..." : `Pay ₹${grandTotal.toFixed(2)}`}
+                        {isPaying ? "Processing..." : grandTotal <= 0 ? "Place Order" : `Pay ₹${grandTotal.toFixed(2)}`}
                     </button>
 
                     {disabled && disabledMessage && (
