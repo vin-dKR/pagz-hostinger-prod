@@ -97,12 +97,21 @@ function LoginPageContent() {
                     </AuthFormButton>
                 </form>
 
-                <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
-                    Don't have an account?{" "}
-                    <Link href={signupHref} className="text-blue-600 hover:text-blue-700 font-medium hover:underline">
-                        Register
-                    </Link>
+                <div className="relative mt-2 sm:mt-2.5">
+                    <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-300"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs">
+                        <span className="px-2 bg-white text-gray-500">or</span>
+                    </div>
                 </div>
+
+                <Link
+                    href={signupHref}
+                    className="mt-2 sm:mt-2.5 block w-full px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium text-sm text-center"
+                >
+                    Create Account
+                </Link>
             </AuthLayout>
         </AuthGuard>
     );
