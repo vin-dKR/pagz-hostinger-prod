@@ -7,6 +7,8 @@ import { deleteFromFTP, extractFtpPathFromUrl } from "../services/ftp.js";
 import { getParamAsString } from "../utils/db-utils.js";
 import {
     computeAddonLineTotal,
+    computeLineAddonsTotal,
+    fetchAddonRuleMap,
     getAddonUnitPrice,
     normalizeAddonIds,
     type AddonPricingRule,
@@ -426,12 +428,11 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
         });
 
         // Per-category minimum cart value gate.
-        // If the product's category has a minCartValue set, the add-to-cart
-        // action is only allowed when the prospective category subtotal
-        // (existing lines in that category plus this new/updated line) meets
-        // the minimum. Uses base unit × quantity as a conservative estimate —
-        // addons / fileMultiplier contributions only push the real total up,
-        // so this gate never produces a false positive.
+        // Evaluates against the prospective order total for the category —
+        // (base × qty × variant modifier) + addon contributions, matching the
+        // same pricing rules that drive the cart subtotal, order creation,
+        // and invoice. An add-to-cart attempt is rejected when the post-add
+        // category total falls below the category's configured minimum.
         if (product.categoryId) {
             const category = await prisma.category.findUnique({
                 where: { id: product.categoryId },
@@ -448,6 +449,7 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                     include: {
                         product: { select: { basePrice: true } },
                         variant: { select: { priceModifier: true } },
+                        addons: { select: CART_ADDON_SELECT },
                     },
                 });
 
@@ -456,15 +458,64 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                     if (ci.id === existingItem?.id) continue;
                     const basePrice = Number(ci.product.basePrice);
                     const modifier = ci.variant ? Number(ci.variant.priceModifier) : 0;
-                    prospective += (basePrice + modifier) * ci.quantity;
+                    const baseLine = (basePrice + modifier) * ci.quantity;
+
+                    const fileCount = Array.isArray(ci.customDesignUrl)
+                        ? (ci.customDesignUrl as unknown[]).length
+                        : 0;
+                    const addonMap = new Map(
+                        ci.addons.map((a) => [a.id, a as AddonPricingRule]),
+                    );
+                    const addonTotal = computeLineAddonsTotal(
+                        {
+                            quantity: ci.quantity,
+                            addons: ci.addons.map((a) => a.id),
+                            metadata: (ci as any).metadata ?? null,
+                            fileCount,
+                        },
+                        addonMap,
+                    );
+
+                    prospective += baseLine + addonTotal;
                 }
 
                 const baseUnit = Number(product.basePrice);
                 const variantModifier = variantId
                     ? Number(product.variants.find((v) => v.id === variantId)!.priceModifier)
                     : 0;
+
+                // Merge-mode: field-omitted keeps existing addons; explicit []
+                // clears; explicit array replaces. Mirror the write-side logic
+                // so the preview total matches the persisted line.
+                const existingAddonIds: string[] = Array.isArray((existingItem as any)?.addons)
+                    ? ((existingItem as any).addons as Array<{ id: string }>).map((a) => a.id)
+                    : [];
+                const effectiveAddonIds = addonsProvided ? normalizedAddonIds : existingAddonIds;
+
                 const newQty = existingItem ? existingItem.quantity + quantity : quantity;
-                prospective += (baseUnit + variantModifier) * newQty;
+                const newAddonMap = await fetchAddonRuleMap(effectiveAddonIds);
+                const newFileCount = (() => {
+                    const incoming = Array.isArray(customDesignUrl)
+                        ? customDesignUrl.length
+                        : (typeof customDesignUrl === "string" && customDesignUrl.length > 0 ? 1 : 0);
+                    if (incoming > 0) return incoming;
+                    return existingItem && Array.isArray(existingItem.customDesignUrl)
+                        ? (existingItem.customDesignUrl as unknown[]).length
+                        : 0;
+                })();
+                const newMetadata = metadata !== undefined ? metadata : (existingItem as any)?.metadata ?? null;
+
+                const newAddonTotal = computeLineAddonsTotal(
+                    {
+                        quantity: newQty,
+                        addons: effectiveAddonIds,
+                        metadata: newMetadata,
+                        fileCount: newFileCount,
+                    },
+                    newAddonMap,
+                );
+
+                prospective += (baseUnit + variantModifier) * newQty + newAddonTotal;
 
                 if (prospective < minValue) {
                     const shortage = minValue - prospective;
