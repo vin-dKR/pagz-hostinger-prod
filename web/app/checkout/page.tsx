@@ -16,6 +16,7 @@ import { useCheckout } from "@/hooks/checkout/useCheckout";
 import { useCart } from "@/contexts/CartContext";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
 import { createRazorpayOrder, verifyRazorpayPayment } from "@/lib/api/payments";
+import { createOrder } from "@/lib/api/orders";
 import { getShippingMethods } from "@/lib/api/shipping";
 import CheckoutFilesReview from "../components/CheckoutFilesReview";
 import { toastWarning, toastError } from "@/lib/utils/toast";
@@ -313,7 +314,7 @@ function CheckoutPageContent() {
             return;
         }
 
-        if (calculatedTotal < 1) {
+        if (calculatedTotal > 0 && calculatedTotal < 1) {
             toastWarning("Minimum payable amount is ₹1.00. Please increase your order total.");
             return;
         }
@@ -327,6 +328,63 @@ function CheckoutPageContent() {
                 .map(item => item.id);
             if (cartItemIds.length > 0) {
                 sessionStorage.setItem('pendingCartItemIds', JSON.stringify(cartItemIds));
+            }
+
+            const orderItemsPayload = cartItems.map((item: any) => {
+                let addonIds: string[] = [];
+                if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
+                    addonIds = item.addons.map((addon: any) => addon.id).filter((id: any): id is string => typeof id === 'string');
+                } else if (item.metadata?.selectedAddons && Array.isArray(item.metadata.selectedAddons)) {
+                    addonIds = item.metadata.selectedAddons.filter((id: any): id is string => typeof id === 'string');
+                }
+
+                return {
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    quantity: item.quantity,
+                    customDesignUrl: item.customDesignUrl,
+                    customText: item.customText,
+                    addons: addonIds.length > 0 ? addonIds : undefined,
+                    hasAddon: addonIds.length > 0,
+                    metadata: item.metadata || undefined,
+                };
+            });
+
+            // Zero-total orders (e.g., 100% discount coupon) skip the payment
+            // gateway and land in PENDING_REVIEW for the admin to approve.
+            if (calculatedTotal <= 0) {
+                const freeOrderResp = await createOrder({
+                    items: orderItemsPayload,
+                    addressId: selectedAddressId,
+                    paymentMethod: "OFFLINE",
+                    couponCode: appliedCoupon?.coupon?.code,
+                    shippingCharges: selectedShippingFee,
+                    shippingMethodId: selectedShippingId ?? undefined,
+                });
+
+                if (!freeOrderResp.success || !freeOrderResp.data) {
+                    throw new Error(freeOrderResp.error || "Failed to place order");
+                }
+
+                setIsCompletingPayment(true);
+                const orderId = freeOrderResp.data.id;
+                router.replace(`/orders/${orderId}`);
+
+                try {
+                    const pendingIds = sessionStorage.getItem("pendingCartItemIds");
+                    if (pendingIds) {
+                        const ids: string[] = JSON.parse(pendingIds);
+                        await Promise.all(ids.map((id) => removeItem(id)));
+                        sessionStorage.removeItem("pendingCartItemIds");
+                    }
+                } catch {
+                    // Do not fail order flow due to cart cleanup issue
+                }
+
+                if (typeof window !== "undefined" && sessionStorage.getItem("buyNow")) {
+                    sessionStorage.removeItem("buyNow");
+                }
+                return;
             }
 
             // Create Razorpay order

@@ -121,12 +121,17 @@ export interface CreateOrderData {
         productId: string;
         variantId?: string;
         quantity: number;
-        customDesignUrl?: string[]; // Array of S3 URLs
+        customDesignUrl?: string[];
         customText?: string;
+        addons?: string[];
+        hasAddon?: boolean;
+        metadata?: Record<string, unknown>;
     }>;
     addressId: string;
     paymentMethod: PaymentMethod;
     couponCode?: string;
+    shippingCharges?: number;
+    shippingMethodId?: string;
 }
 
 export interface OrdersResponse {
