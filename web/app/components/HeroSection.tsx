@@ -328,11 +328,22 @@ export default function HeroSection() {
                         >
                             {extendedCarousels.map((carousel, index) => {
                                 if (!carousel) return null;
-                                
+
+                                const slug = carousel.category?.slug;
+                                const handleSlideClick = () => {
+                                    // Suppress navigation when the user was dragging —
+                                    // hasDragged stays true for ~100ms after drag end.
+                                    if (hasDragged) return;
+                                    if (slug) {
+                                        router.push(`/services/${slug}`);
+                                    }
+                                };
+
                                 return (
                                     <div
                                         key={`${carousel.id}-${index}`}
-                                        className="absolute inset-0"
+                                        onClick={slug ? handleSlideClick : undefined}
+                                        className={`absolute inset-0 ${slug ? 'cursor-pointer' : ''}`}
                                         style={{
                                             left: `${index * 100}%`,
                                             width: '100%',
