@@ -261,7 +261,7 @@ export default function BillingAddressForm({
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                State/Province <span className="text-red-500">*</span>
+                                State <span className="text-red-500">*</span>
                             </label>
                             <input
                                 type="text"
@@ -273,7 +273,7 @@ export default function BillingAddressForm({
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Zip/Postal Code <span className="text-red-500">*</span>
+                                Zip Code <span className="text-red-500">*</span>
                             </label>
                             <input
                                 type="text"
