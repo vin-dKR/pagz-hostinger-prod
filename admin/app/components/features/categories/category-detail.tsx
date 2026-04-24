@@ -60,12 +60,18 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         description: string;
         priority: number;
         parentId: string | null;
+        /**
+         * Stored as a string so the input can be blank (= no minimum).
+         * Converted to number / null at save-time.
+         */
+        minCartValue: string;
     }>({
         name: '',
         slug: '',
         description: '',
         priority: 0,
         parentId: null,
+        minCartValue: '',
     });
 
     const [configForm, setConfigForm] = useState<{
@@ -123,6 +129,9 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                     description: cat.description || '',
                     priority: cat.priority ?? 0,
                     parentId: cat.parentId || null,
+                    minCartValue: cat.minCartValue != null && Number(cat.minCartValue) > 0
+                        ? String(cat.minCartValue)
+                        : '',
                 });
                 setIsEditingParent(false);
 
@@ -176,11 +185,24 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
             setError(null);
 
             const currentCategoryId = category.id;
+
+            // Parse min cart value: blank => null (disable), non-numeric or
+            // negative => bail early with a friendly error.
+            let parsedMinCartValue: number | null = null;
+            if (basicForm.minCartValue.trim() !== '') {
+                const n = Number(basicForm.minCartValue);
+                if (!Number.isFinite(n) || n < 0) {
+                    throw new Error('Minimum cart value must be a non-negative number');
+                }
+                parsedMinCartValue = n > 0 ? n : null;
+            }
+
             await updateCategory(currentCategoryId, {
                 name: basicForm.name.trim(),
                 description: basicForm.description.trim() || undefined,
                 priority: basicForm.priority,
                 parentId: basicForm.parentId || null,
+                minCartValue: parsedMinCartValue,
             });
 
             // Persist child categories relationship as the "final" step with Basic Info.
@@ -212,6 +234,9 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                 description: cat.description || '',
                 priority: cat.priority ?? 0,
                 parentId: cat.parentId || null,
+                minCartValue: cat.minCartValue != null && Number(cat.minCartValue) > 0
+                    ? String(cat.minCartValue)
+                    : '',
             });
 
             setConfigForm({
@@ -446,6 +471,29 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
                                     />
                                     <p className="text-xs text-gray-500">
                                         Higher values appear first in the services page. Default: 0
+                                    </p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="minCartValue">Minimum Cart Value</Label>
+                                    <Input
+                                        id="minCartValue"
+                                        type="number"
+                                        value={basicForm.minCartValue}
+                                        onChange={(e) =>
+                                            setBasicForm((prev) => ({
+                                                ...prev,
+                                                minCartValue: e.target.value,
+                                            }))
+                                        }
+                                        placeholder="0 (no minimum)"
+                                        min="0"
+                                        step="0.01"
+                                    />
+                                    <p className="text-xs text-gray-500">
+                                        Optional. Customers cannot place an order unless the total
+                                        for items in this category reaches this amount. Leave blank
+                                        (or 0) to disable.
                                     </p>
                                 </div>
 

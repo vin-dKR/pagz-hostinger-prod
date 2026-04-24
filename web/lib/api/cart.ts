@@ -61,6 +61,16 @@ export interface CartItem {
         basePrice: number;
         sellingPrice?: number | null;
         images?: Array<{ url: string; isPrimary: boolean }>;
+        category?: {
+            id: string;
+            name: string;
+            slug: string;
+            /**
+             * Minimum cart subtotal (₹) required for items in this category
+             * for the order to be allowed. Null or 0 means no minimum.
+             */
+            minCartValue?: number | string | null;
+        } | null;
     };
     variant?: {
         id: string;
@@ -155,5 +165,30 @@ export async function removeFromCart(itemId: string): Promise<ApiResponse<Cart>>
  */
 export async function clearCart(): Promise<ApiResponse<{ message: string }>> {
     return del<{ message: string }>('/cart/clear');
+}
+
+export interface CategoryCartShortfall {
+    categoryId: string;
+    categoryName: string;
+    required: number;
+    current: number;
+}
+
+export interface ValidateCartMinimumsResponse {
+    ok: boolean;
+    shortfalls: CategoryCartShortfall[];
+}
+
+/**
+ * Preflight check: ask the API whether the selected cart items satisfy each
+ * category's `minCartValue`. Pass `itemIds` to limit the check to the items
+ * the user has actually selected on the cart page.
+ */
+export async function validateCartMinimums(
+    itemIds?: string[],
+): Promise<ApiResponse<ValidateCartMinimumsResponse>> {
+    return post<ValidateCartMinimumsResponse>('/cart/validate-minimums', {
+        itemIds: itemIds && itemIds.length > 0 ? itemIds : undefined,
+    });
 }
 

@@ -31,6 +31,12 @@ export interface Category {
     primaryImage?: CategoryImage | null;
     priority: number;
     isActive: boolean;
+    /**
+     * Optional minimum cart subtotal (in ₹) required for the order to go
+     * through when the cart contains items from this category. Null / 0 /
+     * undefined disables the check.
+     */
+    minCartValue?: number | string | null;
     _count?: {
         products: number;
         specifications: number;
@@ -47,6 +53,7 @@ export interface CreateCategoryData {
     description?: string;
     parentId?: string;
     priority?: number;
+    minCartValue?: number | null;
 }
 
 export interface UpdateCategoryData {
@@ -54,6 +61,7 @@ export interface UpdateCategoryData {
     description?: string;
     parentId?: string | null;
     priority?: number;
+    minCartValue?: number | null;
 }
 
 export interface CategorySearchResult {

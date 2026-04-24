@@ -9,6 +9,8 @@ export interface ApiError {
     message: string;
     statusCode?: number;
     errors?: Record<string, string[]>;
+    /** Mirrors `ApiResponse.details` for 4xx errors (e.g. cart shortfalls). */
+    details?: unknown;
 }
 
 export interface ApiResponse<T> {
@@ -16,12 +18,26 @@ export interface ApiResponse<T> {
     data?: T;
     error?: string;
     message?: string;
+    /**
+     * Structured error metadata set by the API for 4xx responses that need
+     * more than a plain message (e.g. per-category cart-minimum shortfall
+     * details: `{ shortfalls: CategoryCartShortfall[] }`).
+     */
+    details?: unknown;
 }
 
-function createApiClientError(message: string, statusCode = 0, errors?: Record<string, string[]>): Error & ApiError {
+function createApiClientError(
+    message: string,
+    statusCode = 0,
+    errors?: Record<string, string[]>,
+    details?: unknown,
+): Error & ApiError {
     const err = new Error(message) as Error & ApiError;
     err.statusCode = statusCode;
     err.errors = errors;
+    if (details !== undefined) {
+        err.details = details;
+    }
     return err;
 }
 
@@ -186,7 +202,8 @@ async function fetchAPI<T>(
             const error = createApiClientError(
                 data.message || data.error || 'An error occurred',
                 response.status,
-                data.errors
+                data.errors,
+                data.details
             );
 
             // Handle 401 Unauthorized errors
