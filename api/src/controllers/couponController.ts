@@ -167,10 +167,25 @@ export const validateCoupon = async (req: Request, res: Response, next: NextFunc
             eligibleAmount = orderAmount;
         }
 
-        // Calculate discount only on eligible items
+        const isFullyValid = ineligibleItems.length === 0;
+        const isPartiallyValid = eligibleItems.length > 0 && ineligibleItems.length > 0;
+
+        // Apply the discount against the full client-supplied orderAmount when
+        // every item is eligible. orderAmount already includes the effects of
+        // quantity, fileMultiplier, and addons — the per-item `price * quantity`
+        // rollup above only captures the raw base × quantity, so using it for
+        // the discount basis would shortchange the user on addon and
+        // multiplier-driven portions of the order total. When the coupon only
+        // partially applies, fall back to the eligible base total so ineligible
+        // items are excluded correctly.
+        const discountBasis = isFullyValid
+            ? Math.max(eligibleAmount, Number(orderAmount) || 0)
+            : eligibleAmount;
+
+        // Calculate discount against the resolved basis
         let discountAmount = 0;
         if (coupon.discountType === "PERCENTAGE") {
-            discountAmount = (eligibleAmount * Number(coupon.discountValue)) / 100;
+            discountAmount = (discountBasis * Number(coupon.discountValue)) / 100;
         } else {
             discountAmount = Number(coupon.discountValue);
         }
@@ -180,21 +195,22 @@ export const validateCoupon = async (req: Request, res: Response, next: NextFunc
             discountAmount = Number(coupon.maxDiscountAmount);
         }
 
-        // Ensure discount doesn't exceed eligible amount
-        if (discountAmount > eligibleAmount) {
-            discountAmount = eligibleAmount;
+        // Ensure discount doesn't exceed the basis (and, for fully-valid
+        // coupons, the full order amount) so the final payable never reads
+        // negative before the caller's own clamp.
+        if (discountAmount > discountBasis) {
+            discountAmount = discountBasis;
         }
 
-        // Calculate discount per eligible item (proportional)
+        // Calculate discount per eligible item (proportional) — splitting
+        // against eligibleAmount keeps the per-item shares stable regardless
+        // of which basis was used to size the total discount.
         if (eligibleItems.length > 0 && eligibleAmount > 0) {
             eligibleItems.forEach((item) => {
                 const itemDiscount = (item.eligibleAmount / eligibleAmount) * discountAmount;
                 item.discount = Math.round(itemDiscount * 100) / 100;
             });
         }
-
-        const isFullyValid = ineligibleItems.length === 0;
-        const isPartiallyValid = eligibleItems.length > 0 && ineligibleItems.length > 0;
 
         return sendSuccess(res, {
             coupon: {
@@ -206,7 +222,9 @@ export const validateCoupon = async (req: Request, res: Response, next: NextFunc
                 discountValue: coupon.discountValue,
             },
             discountAmount,
-            finalAmount: orderAmount - discountAmount,
+            // Floor the preview at 0: an oversized fixed-amount coupon must
+            // never surface a negative payable.
+            finalAmount: Math.max(0, Number(orderAmount) - discountAmount),
             eligibleItems,
             ineligibleItems,
             validation: {

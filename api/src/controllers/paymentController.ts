@@ -345,6 +345,13 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
             });
         }
 
+        // Compute addonsSubtotal before discount so % coupons apply against
+        // the true line total (base × qty × fileMultiplier + addons), not the
+        // base subtotal alone.
+        const addonMapRzp = await fetchAddonRuleMap(collectAddonIds(orderItems));
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapRzp);
+        const grossSubtotal = subtotal + addonsSubtotal;
+
         let discountAmount = 0;
         let couponId = null;
         if (couponCode && couponCode.trim()) {
@@ -354,7 +361,7 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
             if (coupon && coupon.isActive) {
                 const now = new Date();
                 if (now >= coupon.validFrom && now <= coupon.validUntil) {
-                    if (!coupon.minPurchaseAmount || subtotal >= Number(coupon.minPurchaseAmount)) {
+                    if (!coupon.minPurchaseAmount || grossSubtotal >= Number(coupon.minPurchaseAmount)) {
                         const usageCount = await prisma.couponUsage.count({ where: { couponId: coupon.id } });
                         if (coupon.usageLimit === null || usageCount < coupon.usageLimit) {
                             const userUsageCount = await prisma.couponUsage.count({
@@ -362,10 +369,14 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
                             });
                             if (userUsageCount < coupon.usageLimitPerUser) {
                                 discountAmount = coupon.discountType === "PERCENTAGE"
-                                    ? (subtotal * Number(coupon.discountValue)) / 100
+                                    ? (grossSubtotal * Number(coupon.discountValue)) / 100
                                     : Number(coupon.discountValue);
                                 if (coupon.maxDiscountAmount && discountAmount > Number(coupon.maxDiscountAmount)) {
                                     discountAmount = Number(coupon.maxDiscountAmount);
+                                }
+                                // Never discount more than the order is worth.
+                                if (discountAmount > grossSubtotal) {
+                                    discountAmount = grossSubtotal;
                                 }
                                 couponId = coupon.id;
                             }
@@ -375,10 +386,8 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
             }
         }
 
-        const addonMapRzp = await fetchAddonRuleMap(collectAddonIds(orderItems));
-        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapRzp);
-
-        const total = subtotal + addonsSubtotal - discountAmount + shippingCharges;
+        // Clamp at 0 so an oversized discount can never persist a negative total.
+        const total = Math.max(0, grossSubtotal - discountAmount + shippingCharges);
         const order = await prisma.order.create({
             data: {
                 userId: req.user.id,
@@ -645,6 +654,14 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
             });
         }
 
+        // Compute addons subtotal using the shared helper so cart, order
+        // creation, and invoice printing all produce the same number. Must
+        // happen BEFORE discount calculation so % coupons apply to the full
+        // line total, not just the base subtotal.
+        const addonMapPpe = await fetchAddonRuleMap(collectAddonIds(orderItems));
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapPpe);
+        const grossSubtotal = subtotal + addonsSubtotal;
+
         // Calculate discount from coupon if provided
         let discountAmount = 0;
         let couponId = null;
@@ -657,7 +674,7 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
             if (coupon && coupon.isActive) {
                 const now = new Date();
                 if (now >= coupon.validFrom && now <= coupon.validUntil) {
-                    if (!coupon.minPurchaseAmount || subtotal >= Number(coupon.minPurchaseAmount)) {
+                    if (!coupon.minPurchaseAmount || grossSubtotal >= Number(coupon.minPurchaseAmount)) {
                         const usageCount = await prisma.couponUsage.count({
                             where: { couponId: coupon.id },
                         });
@@ -672,13 +689,18 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
 
                             if (userUsageCount < coupon.usageLimitPerUser) {
                                 if (coupon.discountType === "PERCENTAGE") {
-                                    discountAmount = (subtotal * Number(coupon.discountValue)) / 100;
+                                    discountAmount = (grossSubtotal * Number(coupon.discountValue)) / 100;
                                 } else {
                                     discountAmount = Number(coupon.discountValue);
                                 }
 
                                 if (coupon.maxDiscountAmount && discountAmount > Number(coupon.maxDiscountAmount)) {
                                     discountAmount = Number(coupon.maxDiscountAmount);
+                                }
+
+                                // Never discount more than the order is worth.
+                                if (discountAmount > grossSubtotal) {
+                                    discountAmount = grossSubtotal;
                                 }
 
                                 couponId = coupon.id;
@@ -689,13 +711,9 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
             }
         }
 
-        // Compute addons subtotal using the shared helper so cart, order
-        // creation, and invoice printing all produce the same number.
-        const addonMapPpe = await fetchAddonRuleMap(collectAddonIds(orderItems));
-        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapPpe);
-
         // Calculate final total (subtotal + addonsSubtotal - discount + shipping)
-        const total = subtotal + addonsSubtotal - discountAmount + shippingCharges;
+        // Clamp at 0 so an oversized discount can never persist a negative total.
+        const total = Math.max(0, grossSubtotal - discountAmount + shippingCharges);
 
         // Create order
         const order = await prisma.order.create({

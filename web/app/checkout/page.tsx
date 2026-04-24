@@ -258,9 +258,11 @@ function CheckoutPageContent() {
     const hasNoShippingMethods = !isShippingLoading && !isShippingError && shippingMethods.length === 0;
     const requiresShippingSelection = shippingOptions.length > 0 && !selectedShippingId;
 
-    // Recalculate total with selected shipping (for selected items only)
+    // Recalculate total with selected shipping (for selected items only).
+    // Clamp at 0 so an oversized fixed-amount discount never surfaces a
+    // negative payable in the billing summary or the Pay button.
     const calculatedTotal = useMemo(() => {
-        return (subtotal || 0) - discountAmount + selectedShippingFee;
+        return Math.max(0, (subtotal || 0) - discountAmount + selectedShippingFee);
     }, [subtotal, discountAmount, selectedShippingFee]);
 
     const handlePay = async () => {
