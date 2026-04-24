@@ -78,7 +78,7 @@ export default function CouponProductCard({ product }: CouponProductCardProps) {
                 {
                     loading: 'Adding to cart...',
                     success: 'Product added to cart successfully!',
-                    error: 'Failed to add to cart. Please try again.',
+                    error: (err: any) => err?.message || 'Failed to add to cart. Please try again.',
                 }
             );
 
