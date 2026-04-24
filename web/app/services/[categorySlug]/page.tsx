@@ -907,7 +907,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 {
                     loading: 'Adding to cart...',
                     success: 'Product added to cart successfully!',
-                    error: 'Failed to add product to cart. Please try again.',
+                    error: (err: any) => err?.message || 'Failed to add product to cart. Please try again.',
                 }
             );
 
