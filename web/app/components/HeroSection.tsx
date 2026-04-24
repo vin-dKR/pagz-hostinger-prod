@@ -35,17 +35,6 @@ export default function HeroSection() {
         ? [carousels[carousels.length - 1], ...carousels, carousels[0]]
         : [];
     
-    // Calculate real index from virtual index
-    const getRealIndex = (vIndex: number) => {
-        if (carousels.length === 0) return 0;
-        if (vIndex === 0) return carousels.length - 1; // Last slide (duplicate at start)
-        if (vIndex === extendedCarousels.length - 1) return 0; // First slide (duplicate at end)
-        return vIndex - 1; // Real slides are offset by 1
-    };
-    
-    const currentCarouselIndex = getRealIndex(virtualIndex);
-    const currentCarousel = carousels[currentCarouselIndex];
-
     // Process categories when they're loaded from cache
     useEffect(() => {
         if (allCategories.length > 0) {
@@ -299,15 +288,6 @@ export default function HeroSection() {
         }
     };
 
-    // Handle Buy Now button click
-    const handleBuyNowClick = (e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (currentCarousel?.category?.slug) {
-            router.push(`/services/${currentCarousel.category.slug}`);
-        }
-    };
-
     return (
         <section className="bg-white w-full py-3 md:py-6 flex items-center justify-center">
             <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
@@ -371,23 +351,6 @@ export default function HeroSection() {
                                 );
                             })}
                         </div>
-
-                        {/* Content Overlay - Alt Text Bottom Right, CTA Centered Horizontally */}
-                        {currentCarousel && (
-                            <div className="absolute inset-0 z-10 pointer-events-none">
-                                {/* Order Now Button (centered horizontally) */}
-                                {currentCarousel.category?.slug && (
-                                    <div className="absolute bottom-2 md:bottom-8 left-1/2 -translate-x-1/2 px-4 pointer-events-auto z-20">
-                                        <button
-                                            onClick={handleBuyNowClick}
-                                    className="w-full sm:w-auto px-4 py-2 md:px-8 md:py-4 lg:px-10 lg:py-5 bg-[#008ECC] text-white font-semibold rounded-lg md:rounded-xl hover:bg-[#0077B5] transition-colors shadow-lg text-xs sm:text-sm md:text-base lg:text-lg"
-                                        >
-                                            Order Now
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
 
                         {/* Navigation Arrows */}
                         {carousels.length > 1 && (
