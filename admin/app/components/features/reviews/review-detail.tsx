@@ -43,6 +43,7 @@ import {
     ExternalLink,
 } from 'lucide-react';
 import { toastError, toastPromise, toastSuccess } from '@/lib/utils/toast';
+import { uploadFilesToFTP, FTP_FOLDERS } from '@/lib/api/ftp';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import Link from 'next/link';
 
@@ -221,6 +222,7 @@ export function ReviewDetail({ reviewId, initialReview }: ReviewDetailProps) {
         rating?: number;
         title?: string;
         comment?: string;
+        images?: string[];
         isApproved?: boolean;
         isVerifiedPurchase?: boolean;
     }) => {
@@ -704,9 +706,35 @@ function EditReviewModal({
     const [rating, setRating] = useState(review.rating);
     const [title, setTitle] = useState(review.title || '');
     const [comment, setComment] = useState(review.comment || '');
+    const [images, setImages] = useState<string[]>(review.images ?? []);
     const [isApproved, setIsApproved] = useState(review.isApproved);
     const [isVerifiedPurchase, setIsVerifiedPurchase] = useState(review.isVerifiedPurchase);
     const [isSaving, setIsSaving] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+
+    const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const picked = Array.from(e.target.files ?? []);
+        e.target.value = '';
+        if (picked.length === 0) return;
+
+        try {
+            setIsUploading(true);
+            const results = await uploadFilesToFTP(picked, FTP_FOLDERS.REVIEWS);
+            const paths = results.map((r) => r.path).filter((p): p is string => typeof p === 'string' && p.length > 0);
+            if (paths.length > 0) {
+                setImages((prev) => [...prev, ...paths]);
+                toastSuccess(`Uploaded ${paths.length} image${paths.length === 1 ? '' : 's'}`);
+            }
+        } catch (err) {
+            toastError(err instanceof Error ? err.message : 'Failed to upload images');
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const removeImage = (index: number) => {
+        setImages((prev) => prev.filter((_, i) => i !== index));
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -716,6 +744,7 @@ function EditReviewModal({
                 rating,
                 title: title || undefined,
                 comment: comment || undefined,
+                images,
                 isApproved,
                 isVerifiedPurchase,
             });
@@ -779,6 +808,49 @@ function EditReviewModal({
                             <div className="text-xs text-gray-500 mt-1 text-right">
                                 {comment.length} / 1000
                             </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-2">
+                                Images ({images.length})
+                            </label>
+                            {images.length > 0 && (
+                                <div className="grid grid-cols-4 gap-3 mb-3">
+                                    {images.map((image, index) => (
+                                        <div
+                                            key={`${image}-${index}`}
+                                            className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group"
+                                        >
+                                            <img
+                                                src={getPublicFileUrl(image)}
+                                                alt={`Review image ${index + 1}`}
+                                                className="w-full h-full object-cover"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => removeImage(index)}
+                                                disabled={isSaving || isUploading}
+                                                className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 disabled:opacity-50"
+                                                aria-label={`Remove image ${index + 1}`}
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <label className="inline-flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 text-sm">
+                                <ImageIcon size={16} />
+                                <span>{isUploading ? 'Uploading...' : 'Add Images'}</span>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={handleFiles}
+                                    disabled={isSaving || isUploading}
+                                    className="hidden"
+                                />
+                            </label>
                         </div>
 
                         <div className="space-y-2">
