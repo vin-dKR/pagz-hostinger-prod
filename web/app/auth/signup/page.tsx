@@ -271,12 +271,21 @@ function SignupPageContent() {
                     </form>
                 )}
 
-                <div className="mt-2 sm:mt-2.5 text-center text-xs text-gray-600">
-                    Already have an account?{" "}
-                    <Link href={loginHref} className="text-blue-600 hover:text-blue-700 font-medium hover:underline">
-                        Sign In
-                    </Link>
+                <div className="relative mt-2 sm:mt-2.5">
+                    <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-300"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs">
+                        <span className="px-2 bg-white text-gray-500">or</span>
+                    </div>
                 </div>
+
+                <Link
+                    href={loginHref}
+                    className="mt-2 sm:mt-2.5 block w-full px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium text-sm text-center"
+                >
+                    Sign In
+                </Link>
             </AuthLayout>
         </AuthGuard>
     );
