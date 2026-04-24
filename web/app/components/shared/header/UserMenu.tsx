@@ -53,7 +53,7 @@ export function UserMenu() {
                     href="/auth/signup"
                     className="px-4 py-2 bg-[#008ECC] text-white rounded-lg hover:bg-[#0077B5] transition-colors font-medium text-sm"
                 >
-                    Sign Up
+                    Create Account
                 </Link>
             </div>
         );

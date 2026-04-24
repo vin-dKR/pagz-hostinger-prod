@@ -109,7 +109,7 @@ export function MobileMenu({
                                     className="block w-full px-4 py-3 border border-[#008ECC] text-[#008ECC] text-center rounded-lg font-medium hover:bg-[#008ECC]/5 transition-colors"
                                     onClick={onClose}
                                 >
-                                    Sign Up
+                                    Create Account
                                 </Link>
                             </div>
                         )}
