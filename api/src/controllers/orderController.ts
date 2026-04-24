@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
-import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
+import { AppError, CartMinimumError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { getPublicFtpUrl, extractFtpPathFromUrl } from "../services/ftp.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
@@ -14,6 +14,7 @@ import {
     normalizeAddonIds,
     type AddonPricingRule,
 } from "../utils/addon-pricing.js";
+import { computeCategoryCartShortfalls, type CategoryLineContribution } from "../utils/category-min-cart-value.js";
 
 const CUSTOMER_CANCELLABLE_STATUSES = new Set(["PENDING_REVIEW", "ACCEPTED", "PROCESSING"]);
 const REFUND_TIMELINE_MESSAGE = "Refund will be credited to your bank account within 7 working days.";
@@ -121,6 +122,10 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             metadata?: any;
             fileCount: number;
         }> = [];
+        // Per-line base totals (base price * effective units / files) captured
+        // inline so we can later enforce per-category minimum cart values
+        // using the same numbers that feed into the subtotal.
+        const lineBaseTotals: number[] = [];
 
         // Validate and calculate prices (no database calls in loop)
         for (const item of items) {
@@ -169,10 +174,11 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             });
             const baseUsesFileMultiplier = Boolean((baseRule as { fileMultiplier?: boolean } | null)?.fileMultiplier);
 
+            let lineBaseTotal = 0;
             if (baseUsesFileMultiplier) {
                 const files = Math.max(1, orderLineFileCount);
-                const itemTotal = itemPrice * files;
-                subtotal += itemTotal;
+                lineBaseTotal = itemPrice * files;
+                subtotal += lineBaseTotal;
             } else if (pageCount && pageCount > 0) {
                 const { effectivePageCount, effectiveQuantity: effQty, hasHalfPage } = await calculateProductEffectivePages(
                     productId,
@@ -187,8 +193,8 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 if (hasHalfPage) {
                     // Calculate price based on effective pages instead of original pages
                     const effectivePages = effectivePageCount * copies;
-                    const itemTotal = itemPrice * effectivePages;
-                    subtotal += itemTotal;
+                    lineBaseTotal = itemPrice * effectivePages;
+                    subtotal += lineBaseTotal;
 
                     // Add half-page breakdown to metadata
                     const halfPageBreakdown = await getProductHalfPageBreakdown(
@@ -211,14 +217,15 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 } else {
                     // Normal pricing: use pageCount * copies
                     const effectivePages = pageCount * copies;
-                    const itemTotal = itemPrice * effectivePages;
-                    subtotal += itemTotal;
+                    lineBaseTotal = itemPrice * effectivePages;
+                    subtotal += lineBaseTotal;
                 }
             } else {
                 // No page count, use quantity
-                const itemTotal = itemPrice * quantity;
-                subtotal += itemTotal;
+                lineBaseTotal = itemPrice * quantity;
+                subtotal += lineBaseTotal;
             }
+            lineBaseTotals.push(lineBaseTotal);
 
             // Normalize addons to array (deduped, trimmed).
             const normalizedAddons = normalizeAddonIds(addons);
@@ -302,6 +309,29 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                     }
                 }
             }
+        }
+
+        // Enforce per-category minimum cart value before committing the order.
+        // Re-use the shared addon helper so the rule honours
+        // fileMultiplier / page-range gates exactly the same way the invoice
+        // math does — the per-category subtotal we compare against the
+        // minimum matches the amount the customer actually pays for that
+        // category, which is what the cart UI preview also displays.
+        const shortfallLines: CategoryLineContribution[] = orderItems.map((oi, index) => {
+            let lineAddonTotal = 0;
+            for (const addonId of oi.addons) {
+                const rule = addonMap.get(addonId);
+                if (!rule) continue;
+                lineAddonTotal += computeAddonLineTotal(rule, oi);
+            }
+            return {
+                productId: oi.productId,
+                lineTotal: (lineBaseTotals[index] ?? 0) + lineAddonTotal,
+            };
+        });
+        const categoryShortfalls = await computeCategoryCartShortfalls(shortfallLines);
+        if (categoryShortfalls.length > 0) {
+            throw new CartMinimumError(categoryShortfalls);
         }
 
         // Calculate final total (subtotal + addonsSubtotal - discount + shipping).

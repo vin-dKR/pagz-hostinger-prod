@@ -52,9 +52,13 @@ export function CreateCategoryForm() {
     description: '',
     parentId: undefined,
     priority: autoDisplayOrder,
+    minCartValue: null,
   });
-  
+
   const [parentId, setParentId] = useState<string | null>(null);
+  // Separate string state for the minimum cart value so the input can stay
+  // empty (null) without getting coerced to 0 on every re-render.
+  const [minCartValueInput, setMinCartValueInput] = useState<string>('');
 
   // Update priority when autoDisplayOrder changes
   useEffect(() => {
@@ -72,11 +76,23 @@ export function CreateCategoryForm() {
     setIsLoading(true);
 
     try {
+      // Parse minimum cart value: blank => null (no minimum); otherwise
+      // reject negative / non-numeric input up-front with a friendly error.
+      let minCartValue: number | null = null;
+      if (minCartValueInput.trim() !== '') {
+        const parsed = Number(minCartValueInput);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          throw new Error('Minimum cart value must be a non-negative number');
+        }
+        minCartValue = parsed > 0 ? parsed : null;
+      }
+
       const payload: CreateCategoryData = {
         name: formData.name.trim(),
         description: formData.description?.trim() || undefined,
         parentId: parentId || undefined,
         priority: formData.priority || autoDisplayOrder,
+        minCartValue,
       };
 
       await createCategory(payload);
@@ -158,6 +174,24 @@ export function CreateCategoryForm() {
               />
               <p className="text-xs text-gray-500">
                 Lower values appear first. Auto-set to {autoDisplayOrder} (max + 1), but you can customize it.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="minCartValue">Minimum Cart Value</Label>
+              <Input
+                id="minCartValue"
+                type="number"
+                value={minCartValueInput}
+                onChange={(e) => setMinCartValueInput(e.target.value)}
+                placeholder="0 (no minimum)"
+                min="0"
+                step="0.01"
+              />
+              <p className="text-xs text-gray-500">
+                Optional. Customers cannot check out unless the total for items
+                in this category reaches this amount. Leave blank (or 0) to
+                disable.
               </p>
             </div>
           </div>

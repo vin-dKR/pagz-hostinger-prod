@@ -26,6 +26,7 @@ export const getCategories = async (req: Request, res: Response, next: NextFunct
                 parentId: true,
                 isActive: true,
                 priority: true,
+                minCartValue: true,
                 // Only get primary image URL, not full image object
                 images: {
                     where: { isPrimary: true },
@@ -52,6 +53,7 @@ export const getCategories = async (req: Request, res: Response, next: NextFunct
                         description: true,
                         image: true,
                         priority: true,
+                        minCartValue: true,
                         images: {
                             where: { isPrimary: true },
                             take: 1,
@@ -213,6 +215,7 @@ export const getAdminCategories = async (req: Request, res: Response, next: Next
                     parentId: true,
                     isActive: true,
                     priority: true,
+                    minCartValue: true,
                     createdAt: true,
                     updatedAt: true,
                     parent: {
@@ -282,7 +285,7 @@ export const getAdminCategories = async (req: Request, res: Response, next: Next
 };
 
 export const createCategoties = async (req: Request, res: Response, next: NextFunction) => {
-    const { name, description, priority } = req.body
+    const { name, description, priority, minCartValue } = req.body
 
     try {
         if (!name) {
@@ -291,7 +294,19 @@ export const createCategoties = async (req: Request, res: Response, next: NextFu
 
         const { normalizePriority } = await import("../utils/category-ordering.js");
         const { generateSlug } = await import("../../constants/seed-utils.js");
-        
+
+        // Validate optional minCartValue (non-negative number)
+        let normalizedMinCartValue: Prisma.Decimal | null = null;
+        if (minCartValue !== undefined && minCartValue !== null && minCartValue !== "") {
+            const asNumber = Number(minCartValue);
+            if (!Number.isFinite(asNumber) || asNumber < 0) {
+                throw new ValidationError("minCartValue must be a non-negative number");
+            }
+            // Treat 0 as "no minimum" -> store NULL to keep behaviour consistent
+            // with null at the checkout-validation layer.
+            normalizedMinCartValue = asNumber > 0 ? new Prisma.Decimal(asNumber) : null;
+        }
+
         // Auto-generate slug from name
         const baseSlug = generateSlug(name);
         let uniqueSlug = baseSlug;
@@ -302,13 +317,14 @@ export const createCategoties = async (req: Request, res: Response, next: NextFu
             uniqueSlug = `${baseSlug}-${counter}`;
             counter++;
         }
-        
+
         const category = await prisma.category.create({
             data: {
                 name,
                 slug: uniqueSlug,
                 description,
                 priority: normalizePriority(priority),
+                minCartValue: normalizedMinCartValue,
             }
         })
 
@@ -324,7 +340,7 @@ export const createCategoties = async (req: Request, res: Response, next: NextFu
 export const updateCategory = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const id = getParamAsString(req.params.id, "Category ID");
-        const { name, description, parentId, priority } = req.body;
+        const { name, description, parentId, priority, minCartValue } = req.body;
 
         // Check if category exists
         const category = await prisma.category.findUnique({
@@ -360,6 +376,18 @@ export const updateCategory = async (req: Request, res: Response, next: NextFunc
         }
         if (description !== undefined) updateData.description = description || null;
         if (priority !== undefined) updateData.priority = normalizePriority(priority);
+        if (minCartValue !== undefined) {
+            if (minCartValue === null || minCartValue === "") {
+                updateData.minCartValue = null;
+            } else {
+                const asNumber = Number(minCartValue);
+                if (!Number.isFinite(asNumber) || asNumber < 0) {
+                    throw new ValidationError("minCartValue must be a non-negative number");
+                }
+                // Treat 0 as "no minimum" -> store NULL.
+                updateData.minCartValue = asNumber > 0 ? new Prisma.Decimal(asNumber) : null;
+            }
+        }
         if (parentId !== undefined) {
             if (parentId === null || parentId === '') {
                 updateData.parentId = null;

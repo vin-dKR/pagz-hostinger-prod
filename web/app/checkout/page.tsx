@@ -19,6 +19,10 @@ import { createRazorpayOrder, verifyRazorpayPayment } from "@/lib/api/payments";
 import { getShippingMethods } from "@/lib/api/shipping";
 import CheckoutFilesReview from "../components/CheckoutFilesReview";
 import { toastWarning, toastError } from "@/lib/utils/toast";
+import {
+    computeCategoryShortfalls,
+    formatInr,
+} from "@/lib/utils/category-min-cart-value";
 
 function CheckoutPageContent() {
     const searchParams = useSearchParams();
@@ -258,6 +262,16 @@ function CheckoutPageContent() {
     const hasNoShippingMethods = !isShippingLoading && !isShippingError && shippingMethods.length === 0;
     const requiresShippingSelection = shippingOptions.length > 0 && !selectedShippingId;
 
+    // Per-category minimum cart value: prevent payment if any category for the
+    // items being checked out is below its configured minimum. The API
+    // re-validates (see createOrder), but we fail fast in the UI so the user
+    // isn't surprised by a 400 after opening Razorpay.
+    const categoryShortfalls = useMemo(
+        () => computeCategoryShortfalls(cartItems),
+        [cartItems]
+    );
+    const hasCategoryShortfall = categoryShortfalls.length > 0;
+
     // Recalculate total with selected shipping (for selected items only).
     // Clamp at 0 so an oversized fixed-amount discount never surfaces a
     // negative payable in the billing summary or the Pay button.
@@ -283,6 +297,19 @@ function CheckoutPageContent() {
 
         if (requiresShippingSelection) {
             toastWarning("Please select a shipping method.");
+            return;
+        }
+
+        if (hasCategoryShortfall) {
+            const firstShortfall = categoryShortfalls[0];
+            if (firstShortfall) {
+                const diff = Math.max(0, firstShortfall.required - firstShortfall.current);
+                toastError(
+                    `Add ${formatInr(diff)} more to "${firstShortfall.categoryName}" to reach its minimum of ${formatInr(firstShortfall.required)}.`
+                );
+            } else {
+                toastError("Some categories are below the minimum cart value.");
+            }
             return;
         }
 
@@ -404,8 +431,20 @@ function CheckoutPageContent() {
             razorpay.open();
         } catch (err) {
             console.error("Payment error", err);
-            const message = err instanceof Error ? err.message : "Payment failed. Please try again.";
-            toastError(message);
+            // Surface per-category shortfall details (server rejected the order
+            // because one or more categories are below their minimum).
+            const details = (err as { details?: { shortfalls?: Array<{ categoryName: string; required: number; current: number }> } } | undefined)?.details;
+            const shortfalls = details?.shortfalls;
+            const firstShortfall = Array.isArray(shortfalls) ? shortfalls[0] : undefined;
+            if (firstShortfall) {
+                const diff = Math.max(0, firstShortfall.required - firstShortfall.current);
+                toastError(
+                    `Minimum not met for "${firstShortfall.categoryName}": add ${formatInr(diff)} (required ${formatInr(firstShortfall.required)}).`
+                );
+            } else {
+                const message = err instanceof Error ? err.message : "Payment failed. Please try again.";
+                toastError(message);
+            }
             setIsPaying(false);
         }
     };
@@ -555,6 +594,32 @@ function CheckoutPageContent() {
                             />
                         </CollapsibleSection>
 
+                        {hasCategoryShortfall && (
+                            <div
+                                role="alert"
+                                className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900"
+                            >
+                                <p className="text-sm font-semibold mb-2">
+                                    Minimum order value not met
+                                </p>
+                                <ul className="space-y-1.5 text-sm">
+                                    {categoryShortfalls.map((s) => {
+                                        const diff = Math.max(0, s.required - s.current);
+                                        return (
+                                            <li key={s.categoryId}>
+                                                <span className="font-medium">{s.categoryName}</span>:{' '}
+                                                current {formatInr(s.current)} / required{' '}
+                                                {formatInr(s.required)}{' '}
+                                                <span className="text-amber-800">
+                                                    (add {formatInr(diff)})
+                                                </span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+                        )}
+
                         {/* Billing Summary - Expanded */}
                         <BillingSummary
                             mrp={mrp || 0}
@@ -567,13 +632,15 @@ function CheckoutPageContent() {
                             itemCount={itemCount}
                             onPay={handlePay}
                             isPaying={isPaying}
-                            disabled={hasNoShippingMethods || requiresShippingSelection}
+                            disabled={hasNoShippingMethods || requiresShippingSelection || hasCategoryShortfall}
                             disabledMessage={
                                 hasNoShippingMethods
                                     ? "No shipping methods available right now. Please contact support."
                                     : requiresShippingSelection
                                         ? "Select a shipping method"
-                                        : undefined
+                                        : hasCategoryShortfall
+                                            ? "Some categories are below the minimum cart value"
+                                            : undefined
                             }
                         />
                     </div>

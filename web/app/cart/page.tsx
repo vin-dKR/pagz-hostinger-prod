@@ -17,6 +17,10 @@ import Link from "next/link";
 import { uploadOrderFilesToS3 } from "@/lib/api/uploads";
 import { updateCartItem } from "@/lib/api/cart";
 import { redirectGuestToLoginForCheckout } from "@/lib/utils/guest-cart";
+import {
+    computeCategoryShortfalls,
+    formatInr,
+} from "@/lib/utils/category-min-cart-value";
 
 function CartPageContent() {
     const { isAuthenticated, loading: authLoading } = useAuth();
@@ -196,6 +200,16 @@ function CartPageContent() {
         return selectedItemsList.every(item => itemHasImages(item));
     }, [selectedItemsList]);
 
+    // Per-category minimum cart value check: blocks checkout when the total
+    // for any category (across the *selected* items) falls below the
+    // configured minimum. The API's /cart/validate-minimums endpoint (and
+    // createOrder) is the authoritative check; this is the inline preview.
+    const categoryShortfalls = useMemo(
+        () => computeCategoryShortfalls(selectedItemsList),
+        [selectedItemsList]
+    );
+    const hasCategoryShortfall = categoryShortfalls.length > 0;
+
     const handleGoToCheckout = () => {
         // If (somehow) a logged-out user reaches the server-cart checkout
         // button, defer to the guest login-and-checkout flow instead of
@@ -230,6 +244,17 @@ function CartPageContent() {
                 element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
+            return;
+        }
+
+        // Per-category minimum cart value: surface the most-constrained
+        // categories up-front so the user knows exactly how much more to add.
+        const firstShortfall = categoryShortfalls[0];
+        if (firstShortfall) {
+            const diff = Math.max(0, firstShortfall.required - firstShortfall.current);
+            toastError(
+                `Add ${formatInr(diff)} more to "${firstShortfall.categoryName}" to reach its minimum of ${formatInr(firstShortfall.required)}.`
+            );
             return;
         }
 
@@ -424,6 +449,31 @@ function CartPageContent() {
                         {items.length > 0 && (
                             <div className="lg:col-span-1 order-1 lg:order-2">
                                 <div className="sticky top-4">
+                                    {hasCategoryShortfall && (
+                                        <div
+                                            role="alert"
+                                            className="mb-3 sm:mb-4 rounded-xl sm:rounded-2xl border border-amber-300 bg-amber-50 p-3 sm:p-4 text-amber-900"
+                                        >
+                                            <p className="text-sm font-semibold mb-2">
+                                                Minimum order value not met
+                                            </p>
+                                            <ul className="space-y-1.5 text-xs sm:text-sm">
+                                                {categoryShortfalls.map((s) => {
+                                                    const diff = Math.max(0, s.required - s.current);
+                                                    return (
+                                                        <li key={s.categoryId}>
+                                                            <span className="font-medium">{s.categoryName}</span>:{' '}
+                                                            current {formatInr(s.current)} / required{' '}
+                                                            {formatInr(s.required)}{' '}
+                                                            <span className="text-amber-800">
+                                                                (add {formatInr(diff)})
+                                                            </span>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </div>
+                                    )}
                                     <BillingSummary
                                         mrp={mrp || 0}
                                         subtotal={baseSubtotal || 0}
@@ -438,8 +488,8 @@ function CartPageContent() {
                                     />
                                     <button
                                         onClick={handleGoToCheckout}
-                                        disabled={selectedItems.size === 0 || !allSelectedItemsHaveImages}
-                                        className={`w-full mt-3 sm:mt-4 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base text-white transition-colors font-medium ${selectedItems.size > 0 && allSelectedItemsHaveImages
+                                        disabled={selectedItems.size === 0 || !allSelectedItemsHaveImages || hasCategoryShortfall}
+                                        className={`w-full mt-3 sm:mt-4 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base text-white transition-colors font-medium ${selectedItems.size > 0 && allSelectedItemsHaveImages && !hasCategoryShortfall
                                             ? "bg-[#1EADD8] hover:bg-blue-700"
                                             : "bg-gray-400 cursor-not-allowed"
                                             }`}
@@ -448,7 +498,9 @@ function CartPageContent() {
                                             ? 'Select items to checkout'
                                             : !allSelectedItemsHaveImages
                                                 ? 'Add images to all items'
-                                                : `Go to Checkout (${selectedItemsList.length} ${selectedItemsList.length === 1 ? 'item' : 'items'})`
+                                                : hasCategoryShortfall
+                                                    ? 'Minimum not met for some categories'
+                                                    : `Go to Checkout (${selectedItemsList.length} ${selectedItemsList.length === 1 ? 'item' : 'items'})`
                                         }
                                     </button>
                                 </div>

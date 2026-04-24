@@ -5,6 +5,7 @@ import {
     updateCartItem,
     removeFromCart,
     clearCart,
+    validateCartMinimums,
 } from "../controllers/cartController.js";
 import { customerAuth } from "../middleware/auth.js";
 
@@ -136,6 +137,39 @@ router.delete("/items/:itemId", removeFromCart);
  *         description: Unauthorized.
  */
 router.delete("/clear", clearCart);
+
+/**
+ * @openapi
+ * /api/v1/cart/validate-minimums:
+ *   post:
+ *     summary: Validate per-category minimum cart values
+ *     description: |
+ *       Preflight check used before navigating to checkout. Returns the list
+ *       of categories whose subtotal falls below their configured
+ *       `minCartValue`. Pass `itemIds` to limit the check to a subset of
+ *       cart items (matches the cart-page selection UX).
+ *     tags:
+ *       - Cart
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itemIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       '200':
+ *         description: Validation result (see `shortfalls`).
+ *       '401':
+ *         description: Unauthorized.
+ */
+router.post("/validate-minimums", validateCartMinimums);
 
 export default router;
 

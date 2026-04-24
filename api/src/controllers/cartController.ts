@@ -11,6 +11,7 @@ import {
     normalizeAddonIds,
     type AddonPricingRule,
 } from "../utils/addon-pricing.js";
+import { computeCategoryCartShortfalls } from "../utils/category-min-cart-value.js";
 
 /**
  * Shape of the `addons` include used for cart reads. Centralised so the cart
@@ -146,6 +147,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                                             name: true,
                                             slug: true,
                                             image: true,
+                                            minCartValue: true,
                                             images: {
                                                 select: {
                                                     id: true,
@@ -632,6 +634,134 @@ export const removeFromCart = async (req: Request, res: Response, next: NextFunc
         });
 
         return sendSuccess(res, null, "Item removed from cart successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Preflight validation: check the authenticated user's cart against each
+ * category's `minCartValue`. When a subset of cart item ids is posted (e.g.
+ * the user is checking out only a selection) only those items contribute to
+ * the per-category subtotal.
+ *
+ * Response shape:
+ *   { ok: true, shortfalls: [] }                                    when all OK
+ *   { ok: false, shortfalls: [{ categoryId, categoryName, required, current }] }
+ *
+ * Always returns 200 — the client decides how to surface the result. The
+ * order-creation endpoint is the source of truth and will still reject the
+ * order with a 400 if the rule is violated.
+ */
+export const validateCartMinimums = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            throw new UnauthorizedError("User not authenticated");
+        }
+
+        const itemIds: string[] | undefined = Array.isArray(req.body?.itemIds)
+            ? (req.body.itemIds as unknown[]).filter((v): v is string => typeof v === "string" && v.length > 0)
+            : undefined;
+
+        const cart = await prisma.cart.findUnique({
+            where: { userId: req.user.id },
+            select: {
+                items: {
+                    select: {
+                        id: true,
+                        productId: true,
+                        quantity: true,
+                        customDesignUrl: true,
+                        metadata: true,
+                        product: {
+                            select: {
+                                id: true,
+                                basePrice: true,
+                                sellingPrice: true,
+                            },
+                        },
+                        variant: {
+                            select: { priceModifier: true },
+                        },
+                        addons: {
+                            select: CART_ADDON_SELECT,
+                        },
+                    },
+                },
+            },
+        });
+
+        const items = (cart?.items ?? []).filter((item) =>
+            !itemIds || itemIds.length === 0 ? true : itemIds.includes(item.id)
+        );
+
+        if (items.length === 0) {
+            return sendSuccess(res, { ok: true, shortfalls: [] });
+        }
+
+        const lines = await Promise.all(items.map(async (item) => {
+            const productBasePrice = Number(item.product.sellingPrice ?? item.product.basePrice);
+            const variantPrice = item.variant ? Number(item.variant.priceModifier) : 0;
+            const unitBasePrice = productBasePrice + variantPrice;
+
+            const pageCount = (item.metadata as any)?.pageCount || null;
+            const copies = (item.metadata as any)?.copies || 1;
+
+            const { effectivePageCount, hasHalfPage } = await calculateProductEffectivePages(
+                item.productId,
+                pageCount,
+                item.quantity,
+                copies,
+            );
+
+            const effectivePages = pageCount && pageCount > 0
+                ? (hasHalfPage ? effectivePageCount : pageCount) * copies
+                : item.quantity;
+
+            const lineFileCount = normalizeDesignUrls(item.customDesignUrl).length;
+            const baseRule = await prisma.categoryPricingRule.findFirst({
+                where: {
+                    productId: item.productId,
+                    ruleType: { in: ["BASE_PRICE", "SPECIFICATION_COMBINATION"] },
+                    isActive: true,
+                },
+                select: { fileMultiplier: true },
+            });
+            const baseUsesFileMultiplier = Boolean((baseRule as { fileMultiplier?: boolean } | null)?.fileMultiplier);
+            const safeFileCount = Math.max(1, lineFileCount);
+
+            const baseTotal = baseUsesFileMultiplier
+                ? unitBasePrice * safeFileCount
+                : pageCount && pageCount > 0
+                    ? unitBasePrice * effectivePages
+                    : unitBasePrice * item.quantity;
+
+            let addonTotal = 0;
+            if (item.addons && item.addons.length > 0) {
+                const pricingLine = {
+                    quantity: item.quantity,
+                    addons: (item.addons as AddonPricingRule[]).map((a) => a.id),
+                    metadata: {
+                        pageCount: pageCount && pageCount > 0
+                            ? (hasHalfPage ? effectivePageCount : pageCount)
+                            : null,
+                        copies,
+                    },
+                    fileCount: lineFileCount,
+                };
+                for (const addon of item.addons as AddonPricingRule[]) {
+                    addonTotal += computeAddonLineTotal(addon, pricingLine);
+                }
+            }
+
+            return {
+                productId: item.productId,
+                lineTotal: baseTotal + addonTotal,
+            };
+        }));
+
+        const shortfalls = await computeCategoryCartShortfalls(lines);
+        return sendSuccess(res, { ok: shortfalls.length === 0, shortfalls });
     } catch (error) {
         next(error);
     }

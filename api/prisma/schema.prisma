@@ -78,16 +78,17 @@ model Brand {
 
 // Category model
 model Category {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  slug        String   @unique
-  description String?
-  image       String? // Keep for backward compatibility
-  parentId    String? // For subcategories
-  isActive    Boolean  @default(true)
-  priority    Int      @default(0) // Higher priority = displayed first
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String   @unique
+  slug         String   @unique
+  description  String?
+  image        String? // Keep for backward compatibility
+  parentId     String? // For subcategories
+  isActive     Boolean  @default(true)
+  priority     Int      @default(0) // Higher priority = displayed first
+  minCartValue Decimal? @db.Decimal(10, 2) // Minimum cart subtotal (per category) required to place an order. Null/0 disables the check.
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   parent         Category?               @relation("CategoryToCategory", fields: [parentId], references: [id])
   children       Category[]              @relation("CategoryToCategory")

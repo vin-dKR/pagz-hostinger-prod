@@ -9,7 +9,7 @@ export const errorHandler = (
     next: NextFunction
 ) => {
     if (err instanceof AppError) {
-        return sendError(res, err.message, err.statusCode);
+        return sendError(res, err.message, err.statusCode, err.details);
     }
 
     // Handle database connection errors specifically
