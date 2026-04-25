@@ -163,24 +163,15 @@ export function MobileMenu({
                                 Track Order
                             </Link>
                             {isAuthenticated && (
-                                <>
-                                    <Link
-                                        href="/account"
-                                        className="block px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                                        onClick={onClose}
-                                    >
-                                        My Account
-                                    </Link>
-                                    <button
-                                        onClick={() => {
-                                            logout();
-                                            onClose();
-                                        }}
-                                        className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                    >
-                                        Sign Out
-                                    </button>
-                                </>
+                                <button
+                                    onClick={() => {
+                                        logout();
+                                        onClose();
+                                    }}
+                                    className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                >
+                                    Sign Out
+                                </button>
                             )}
                         </div>
                     </div>
