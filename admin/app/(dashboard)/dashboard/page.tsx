@@ -13,6 +13,8 @@ import { RecentCustomers } from '@/app/components/features/dashboard/recent-cust
 import { RecentCoupons } from '@/app/components/features/dashboard/recent-coupons';
 import { getDashboardOverview } from '@/lib/server/dashboard-data';
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardPage() {
     let data;
     try {

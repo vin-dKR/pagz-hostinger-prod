@@ -26,7 +26,7 @@ import {
     type PricingRuleType,
     type CategorySpecification,
 } from '@/lib/api/categories.service';
-import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X, RefreshCw, ChevronLeft, Plus } from 'lucide-react';
+import { Package, ExternalLink, Edit2, Trash2, Upload, CheckCircle2, XCircle, X, RefreshCw, ChevronLeft, Plus, Copy } from 'lucide-react';
 import Link from 'next/link';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastPromise } from '@/lib/utils/toast';
@@ -63,6 +63,10 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
 
     // Form sidebar visibility state
     const [isFormVisible, setIsFormVisible] = useState(true);
+
+    // Column filter state per table
+    const [specComboColFilters, setSpecComboColFilters] = useState<Record<string, string>>({});
+    const [addonColFilters, setAddonColFilters] = useState<Record<string, string>>({});
 
     const [form, setForm] = useState<{
         id?: string;
@@ -358,6 +362,99 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         });
     };
 
+    const handleDuplicateRule = (rule: CategoryPricingRule) => {
+        setIsFormVisible(true);
+        const existingValues = (rule.specificationValues || {}) as Record<string, any>;
+        const nextFilters: Record<string, string> = {};
+        Object.entries(existingValues).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+                nextFilters[key] = String(value);
+            }
+        });
+
+        setForm({
+            // no id — creates new rule on submit
+            ruleType: rule.ruleType,
+            basePrice: rule.ruleType === 'ADDON'
+                ? ''
+                : rule.basePrice != null ? String(rule.basePrice) : '',
+            priceModifier: rule.ruleType === 'SPECIFICATION_COMBINATION'
+                ? ''
+                : rule.priceModifier != null ? String(rule.priceModifier) : '',
+            quantityMultiplier: rule.quantityMultiplier,
+            fileMultiplier: (rule as any).fileMultiplier ?? false,
+            minQuantity:
+                (rule.ruleType === 'ADDON' || rule.ruleType === 'QUANTITY_TIER') && rule.minQuantity != null
+                    ? String(rule.minQuantity)
+                    : '',
+            maxQuantity:
+                (rule.ruleType === 'ADDON' || rule.ruleType === 'QUANTITY_TIER') && rule.maxQuantity != null
+                    ? String(rule.maxQuantity)
+                    : '',
+            isActive: rule.isActive,
+            priority: String(getAutoPriority(rule.ruleType)),
+        });
+        setSpecFilters(nextFilters);
+        // copy addon selection from source rule (if any)
+        const storedAddons = ruleAddonsMap[rule.id];
+        setRuleAddonIds(storedAddons ? [...storedAddons] : []);
+
+        if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    };
+
+    // Apply column filters to a rule list
+    const applyColumnFilters = (
+        list: CategoryPricingRule[],
+        filters: Record<string, string>,
+    ): CategoryPricingRule[] => {
+        const hasAny = Object.values(filters).some((v) => v && v.length > 0);
+        if (!hasAny) return list;
+        return list.filter((rule) => {
+            // type/multiplier
+            if (filters.type) {
+                const kind = (rule as any).fileMultiplier ? 'files' : rule.quantityMultiplier ? 'qty' : 'fixed';
+                if (kind !== filters.type) return false;
+            }
+            // spec values
+            for (const spec of specs) {
+                const f = filters[`spec_${spec.slug}`];
+                if (!f) continue;
+                const val = (rule.specificationValues || {})[spec.slug];
+                if (f === '__any__') {
+                    if (val !== undefined && val !== null && val !== '') return false;
+                } else if (String(val ?? '') !== f) {
+                    return false;
+                }
+            }
+            // price (substring on rendered numbers)
+            if (filters.price) {
+                const q = filters.price.toLowerCase();
+                const hay = `${rule.basePrice ?? ''} ${rule.priceModifier ?? ''}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            // qty range
+            if (filters.qty) {
+                const q = filters.qty.toLowerCase();
+                const hay = `${rule.minQuantity ?? ''}-${rule.maxQuantity ?? ''}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            // priority
+            if (filters.priority) {
+                if (String(rule.priority ?? 0) !== filters.priority) return false;
+            }
+            // status
+            if (filters.status) {
+                if (filters.status === 'active' && !rule.isActive) return false;
+                if (filters.status === 'inactive' && rule.isActive) return false;
+                if (filters.status === 'published' && !rule.isPublished) return false;
+                if (filters.status === 'unpublished' && rule.isPublished) return false;
+            }
+            return true;
+        });
+    };
+
     // Get available addons for the category
     const availableAddons = useMemo(() => {
         return rules.filter(rule => rule.ruleType === 'ADDON' && rule.isActive);
@@ -398,6 +495,17 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
 
         return groups;
     }, [rules]) as Record<string, CategoryPricingRule[]>;
+
+    const filteredSpecCombo = useMemo(
+        () => applyColumnFilters(groupedRules.SPECIFICATION_COMBINATION ?? [], specComboColFilters),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [groupedRules.SPECIFICATION_COMBINATION, specComboColFilters, specs],
+    );
+    const filteredAddons = useMemo(
+        () => applyColumnFilters(groupedRules.ADDON ?? [], addonColFilters),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [groupedRules.ADDON, addonColFilters, specs],
+    );
 
     const handlePublishProduct = async (ruleId: string) => {
         const rule = rules.find(r => r.id === ruleId);
@@ -822,20 +930,20 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
 
                 {error && <Alert variant="error">{error}</Alert>}
 
-                <div className="flex gap-6 relative">
+                <div className="flex gap-6 relative items-start">
                     {/* Rule form - Sidebar */}
                     <div className={`
                         ${isFormVisible ? 'block' : 'hidden'}
                         ${isFormVisible ? 'md:w-80' : 'md:w-0'}
                         transition-all duration-300 ease-in-out
-                        overflow-hidden
-                        md:shrink-0
+                        overflow-hidden md:overflow-visible
+                        md:shrink-0 md:self-start md:sticky md:top-6
                         ${isFormVisible ? 'md:opacity-100' : 'md:opacity-0 md:pointer-events-none'}
                         ${isFormVisible ? 'fixed md:relative inset-0 md:inset-auto z-50 md:z-auto' : ''}
                     `}>
                         {/* Mobile overlay */}
                         {isFormVisible && (
-                            <div 
+                            <div
                                 className="md:hidden fixed inset-0 bg-black/50 z-40"
                                 onClick={() => setIsFormVisible(false)}
                             />
@@ -847,7 +955,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                             ${isFormVisible ? 'fixed md:relative right-0 top-0 md:top-auto h-full md:h-auto z-50 md:z-auto bg-white md:bg-transparent overflow-y-auto md:overflow-visible' : ''}
                             ${isFormVisible ? 'w-[90vw] sm:w-96 md:w-full' : ''}
                         `}>
-                            <Card className="sticky top-6 md:sticky md:top-6 h-full md:h-auto">
+                            <Card className="h-full md:h-auto md:max-h-[calc(100vh-3rem)] md:overflow-y-auto">
                                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
                                 <CardTitle>{form.id ? 'Edit Pricing Rule' : 'Add Pricing Rule'}</CardTitle>
                                     <Button
@@ -1190,9 +1298,92 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                     <th className="text-center py-3 px-3 font-semibold text-gray-700">Status</th>
                                                     <th className="text-center py-3 px-3 font-semibold text-gray-700">Actions</th>
                                                 </tr>
+                                                <tr className="border-b border-gray-200 bg-gray-50/60">
+                                                    <th className="py-2 px-2">
+                                                        <select
+                                                            className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                            value={specComboColFilters.type ?? ''}
+                                                            onChange={(e) => setSpecComboColFilters((p) => ({ ...p, type: e.target.value }))}
+                                                        >
+                                                            <option value="">All</option>
+                                                            <option value="qty">× Qty</option>
+                                                            <option value="files">× Files</option>
+                                                            <option value="fixed">Fixed</option>
+                                                        </select>
+                                                    </th>
+                                                    {specs.map((spec) => (
+                                                        <th key={spec.id} className="py-2 px-1">
+                                                            <select
+                                                                className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                                value={specComboColFilters[`spec_${spec.slug}`] ?? ''}
+                                                                onChange={(e) => setSpecComboColFilters((p) => ({ ...p, [`spec_${spec.slug}`]: e.target.value }))}
+                                                            >
+                                                                <option value="">All</option>
+                                                                <option value="__any__">Any (unset)</option>
+                                                                {spec.options.map((opt) => (
+                                                                    <option key={opt.id} value={opt.value}>{opt.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </th>
+                                                    ))}
+                                                    <th className="py-2 px-2">
+                                                        <Input
+                                                            type="text"
+                                                            placeholder="₹"
+                                                            value={specComboColFilters.price ?? ''}
+                                                            onChange={(e) => setSpecComboColFilters((p) => ({ ...p, price: e.target.value }))}
+                                                            className="h-7 text-[11px]"
+                                                        />
+                                                    </th>
+                                                    <th className="py-2 px-2">
+                                                        <Input
+                                                            type="text"
+                                                            placeholder="e.g. 1-10"
+                                                            value={specComboColFilters.qty ?? ''}
+                                                            onChange={(e) => setSpecComboColFilters((p) => ({ ...p, qty: e.target.value }))}
+                                                            className="h-7 text-[11px]"
+                                                        />
+                                                    </th>
+                                                    <th className="py-2 px-2">
+                                                        <Input
+                                                            type="number"
+                                                            placeholder="#"
+                                                            value={specComboColFilters.priority ?? ''}
+                                                            onChange={(e) => setSpecComboColFilters((p) => ({ ...p, priority: e.target.value }))}
+                                                            className="h-7 text-[11px]"
+                                                        />
+                                                    </th>
+                                                    <th className="py-2 px-2">
+                                                        <select
+                                                            className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                            value={specComboColFilters.status ?? ''}
+                                                            onChange={(e) => setSpecComboColFilters((p) => ({ ...p, status: e.target.value }))}
+                                                        >
+                                                            <option value="">All</option>
+                                                            <option value="active">Active</option>
+                                                            <option value="inactive">Inactive</option>
+                                                            <option value="published">Published</option>
+                                                            <option value="unpublished">Unpublished</option>
+                                                        </select>
+                                                    </th>
+                                                    <th className="py-2 px-2 text-center">
+                                                        {Object.values(specComboColFilters).some((v) => v) && (
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-7 px-2 text-[11px]"
+                                                                onClick={() => setSpecComboColFilters({})}
+                                                                title="Clear filters"
+                                                            >
+                                                                Clear
+                                                            </Button>
+                                                        )}
+                                                    </th>
+                                                </tr>
                                             </thead>
                                             <tbody>
-                                                            {groupedRules.SPECIFICATION_COMBINATION.map((rule) => {
+                                                            {filteredSpecCombo.map((rule) => {
                                                         const specEntries = Object.entries(rule.specificationValues || {});
                                                         const specValuesMap = new Map(specEntries);
 
@@ -1303,6 +1494,15 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             title="Edit rule"
                                                                         >
                                                                             <Edit2 className="h-4 w-4 text-blue-600" />
+                                                                        </Button>
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            onClick={() => handleDuplicateRule(rule)}
+                                                                            className="h-8 w-8 p-0"
+                                                                            title="Duplicate rule"
+                                                                        >
+                                                                            <Copy className="h-4 w-4 text-amber-600" />
                                                                         </Button>
                                                                         {!rule.isPublished && rule.basePrice && (
                                                                             <Button
@@ -1394,9 +1594,92 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                 <th className="text-center py-3 px-3 font-semibold text-gray-700">Status</th>
                                                                 <th className="text-center py-3 px-3 font-semibold text-gray-700">Actions</th>
                                                             </tr>
+                                                            <tr className="border-b border-gray-200 bg-gray-50/60">
+                                                                <th className="py-2 px-2">
+                                                                    <select
+                                                                        className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                                        value={addonColFilters.type ?? ''}
+                                                                        onChange={(e) => setAddonColFilters((p) => ({ ...p, type: e.target.value }))}
+                                                                    >
+                                                                        <option value="">All</option>
+                                                                        <option value="qty">× Qty</option>
+                                                                        <option value="files">× Files</option>
+                                                                        <option value="fixed">Fixed</option>
+                                                                    </select>
+                                                                </th>
+                                                                {specs.map((spec) => (
+                                                                    <th key={spec.id} className="py-2 px-1">
+                                                                        <select
+                                                                            className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                                            value={addonColFilters[`spec_${spec.slug}`] ?? ''}
+                                                                            onChange={(e) => setAddonColFilters((p) => ({ ...p, [`spec_${spec.slug}`]: e.target.value }))}
+                                                                        >
+                                                                            <option value="">All</option>
+                                                                            <option value="__any__">Any (unset)</option>
+                                                                            {spec.options.map((opt) => (
+                                                                                <option key={opt.id} value={opt.value}>{opt.label}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </th>
+                                                                ))}
+                                                                <th className="py-2 px-2">
+                                                                    <Input
+                                                                        type="text"
+                                                                        placeholder="₹"
+                                                                        value={addonColFilters.price ?? ''}
+                                                                        onChange={(e) => setAddonColFilters((p) => ({ ...p, price: e.target.value }))}
+                                                                        className="h-7 text-[11px]"
+                                                                    />
+                                                                </th>
+                                                                <th className="py-2 px-2">
+                                                                    <Input
+                                                                        type="text"
+                                                                        placeholder="e.g. 1-10"
+                                                                        value={addonColFilters.qty ?? ''}
+                                                                        onChange={(e) => setAddonColFilters((p) => ({ ...p, qty: e.target.value }))}
+                                                                        className="h-7 text-[11px]"
+                                                                    />
+                                                                </th>
+                                                                <th className="py-2 px-2">
+                                                                    <Input
+                                                                        type="number"
+                                                                        placeholder="#"
+                                                                        value={addonColFilters.priority ?? ''}
+                                                                        onChange={(e) => setAddonColFilters((p) => ({ ...p, priority: e.target.value }))}
+                                                                        className="h-7 text-[11px]"
+                                                                    />
+                                                                </th>
+                                                                <th className="py-2 px-2">
+                                                                    <select
+                                                                        className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                                        value={addonColFilters.status ?? ''}
+                                                                        onChange={(e) => setAddonColFilters((p) => ({ ...p, status: e.target.value }))}
+                                                                    >
+                                                                        <option value="">All</option>
+                                                                        <option value="active">Active</option>
+                                                                        <option value="inactive">Inactive</option>
+                                                                        <option value="published">Published</option>
+                                                                        <option value="unpublished">Unpublished</option>
+                                                                    </select>
+                                                                </th>
+                                                                <th className="py-2 px-2 text-center">
+                                                                    {Object.values(addonColFilters).some((v) => v) && (
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-7 px-2 text-[11px]"
+                                                                            onClick={() => setAddonColFilters({})}
+                                                                            title="Clear filters"
+                                                                        >
+                                                                            Clear
+                                                                        </Button>
+                                                                    )}
+                                                                </th>
+                                                            </tr>
                                                         </thead>
                                                         <tbody>
-                                                            {groupedRules.ADDON.map((rule) => {
+                                                            {filteredAddons.map((rule) => {
                                                         const specEntries = Object.entries(rule.specificationValues || {});
                                                         const specValuesMap = new Map(specEntries);
 
@@ -1507,6 +1790,15 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             title="Edit rule"
                                                                         >
                                                                             <Edit2 className="h-4 w-4 text-blue-600" />
+                                                                        </Button>
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            onClick={() => handleDuplicateRule(rule)}
+                                                                            className="h-8 w-8 p-0"
+                                                                            title="Duplicate rule"
+                                                                        >
+                                                                            <Copy className="h-4 w-4 text-amber-600" />
                                                                         </Button>
                                                                         {!rule.isPublished && rule.basePrice && (
                                                                             <Button
@@ -1711,6 +2003,15 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                     title="Edit rule"
                                                                                 >
                                                                                     <Edit2 className="h-4 w-4 text-blue-600" />
+                                                                                </Button>
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="ghost"
+                                                                                    onClick={() => handleDuplicateRule(rule)}
+                                                                                    className="h-8 w-8 p-0"
+                                                                                    title="Duplicate rule"
+                                                                                >
+                                                                                    <Copy className="h-4 w-4 text-amber-600" />
                                                                                 </Button>
                                                                                 {!rule.isPublished && rule.basePrice && (
                                                                                     <Button
