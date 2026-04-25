@@ -267,10 +267,17 @@ export default function ProductDocumentUpload({
                 onQuantityChange(finalPageCount);
             }
 
-            // Upload files via FTP (orders/ folder) for both authenticated and unauthenticated users
-            newFileDetails.forEach((fileDetail) => {
-                uploadFileToS3(fileDetail);
-            });
+            // Upload all newly-selected files in one batch POST.
+            // Earlier code spawned N parallel `uploadOrderFilesToS3([file])`
+            // calls (one per file), which:
+            //   - raced against shared `setUploadedFilesS3` updates so a
+            //     few completions sometimes overwrote each other,
+            //   - opened N concurrent FTP connections which the upstream
+            //     basic-ftp pool throttled, ending up with only the
+            //     first file actually uploaded.
+            // Single batched POST is faster, atomic, and matches the
+            // multer `.array("files", 10)` route on the server.
+            uploadFilesBatch(newFileDetails);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to process files';
             setError(errorMessage);
@@ -280,6 +287,78 @@ export default function ProductDocumentUpload({
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
+        }
+    };
+
+    /**
+     * Upload N newly-selected files in a single batch POST. Marks all of
+     * them `uploading` up-front, then on response writes each one's
+     * `s3Key` into local state by matching the response array order to
+     * the input `fileDetails` order. Mirrors how `uploadFileToS3` did
+     * its single-file work, so the upload-status / pending-callback
+     * plumbing keeps working without changes.
+     */
+    const uploadFilesBatch = async (fileDetails: FileDetail[]) => {
+        if (fileDetails.length === 0) return;
+
+        const ids = new Set(fileDetails.map((fd) => fd.id));
+
+        // Mark all as uploading.
+        setUploadedFilesS3((prev) => {
+            const updated = prev.map((fd) =>
+                ids.has(fd.id) ? { ...fd, uploadStatus: 'uploading' as const } : fd
+            );
+            const files = updated.map((fd) => fd.file);
+            const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+            pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
+            return updated;
+        });
+
+        try {
+            const response = await uploadOrderFilesToS3(fileDetails.map((fd) => fd.file));
+
+            if (!response.success || !response.data || response.data.files.length === 0) {
+                throw new Error(response.error || 'Upload failed');
+            }
+
+            const uploaded = response.data.files;
+            // Pair each input file with its response by position. The
+            // server preserves order in `uploadMultipleFiles`.
+            const keyById = new Map<string, string>();
+            fileDetails.forEach((fd, idx) => {
+                const key = uploaded[idx]?.key;
+                if (key) keyById.set(fd.id, key);
+            });
+
+            setUploadedFilesS3((prev) => {
+                const updated = prev.map((fd) => {
+                    const key = keyById.get(fd.id);
+                    if (key) return { ...fd, uploadStatus: 'uploaded' as const, s3Key: key };
+                    if (ids.has(fd.id)) return { ...fd, uploadStatus: 'error' as const };
+                    return fd;
+                });
+                const files = updated.map((fd) => fd.file);
+                const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+                pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
+                return updated;
+            });
+
+            const failed = fileDetails.filter((fd) => !keyById.has(fd.id));
+            if (failed.length > 0) {
+                toastError(`Failed to upload ${failed.map((f) => f.file.name).join(', ')}`);
+            }
+        } catch (err) {
+            setUploadedFilesS3((prev) => {
+                const updated = prev.map((fd) =>
+                    ids.has(fd.id) ? { ...fd, uploadStatus: 'error' as const } : fd
+                );
+                const files = updated.map((fd) => fd.file);
+                const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+                pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
+                return updated;
+            });
+            const message = err instanceof Error ? err.message : 'Failed to upload files';
+            toastError(message);
         }
     };
 
@@ -429,7 +508,7 @@ export default function ProductDocumentUpload({
                         id="document-upload"
                         accept={acceptedTypes}
                         onChange={handleFileChange}
-                        multiple
+                        multiple={true}
                         className="hidden"
                         disabled={isProcessing}
                     />
@@ -451,7 +530,7 @@ export default function ProductDocumentUpload({
                         )}
                     </label>
                     <p className="mt-2 text-xs text-gray-500">
-                        Supported formats: Images (JPG, PNG - Max {IMAGE_MAX_SIZE_MB}MB) and PDFs (Max {PDF_MAX_SIZE_MB}MB)
+                        JPG / PNG ≤ {IMAGE_MAX_SIZE_MB} MB · PDF ≤ {PDF_MAX_SIZE_MB} MB · multiple files supported (hold Ctrl / ⌘ to select more)
                         {maxFiles && ` • Max ${maxFiles} files`}
                     </p>
                     {hasPageControllerRules && maxPages !== null && (

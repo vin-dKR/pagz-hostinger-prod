@@ -47,11 +47,17 @@ export interface PendingPurchaseData {
         templateFormImages?: string[];
         fileHasPassword?: boolean;
         filePassword?: string;
+        /** User-selected spec values (slug → option value). Server uses
+         *  this to re-derive option-driven rules (half-page detection,
+         *  page-controller caps) without trusting the cached values
+         *  below. */
+        specifications?: Record<string, any>;
         // Half-page ("Both Sides") reduction state — written by the service
         // page when the user picks an option flagged `metadata.isHalfPage`.
-        // The cart UI (GuestCart, CartItem) needs all three to (a) feed the
-        // reduced count into addon-pricing math and (b) explain the page
-        // delta in the breakdown.
+        // Cart UI uses these for the `483 → 242 (Both Sides)` annotation
+        // only. The server NEVER reads these for pricing — it re-derives
+        // half-page from `metadata.specifications` against live category
+        // option metadata to block client tampering.
         effectivePageCount?: number;
         originalPageCount?: number;
         hasHalfPageAdjustment?: boolean;
