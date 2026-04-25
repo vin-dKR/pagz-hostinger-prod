@@ -41,6 +41,7 @@ import {
     prepareFilesForStorage,
     type PendingPurchaseData
 } from "@/lib/utils/pending-purchase";
+import { formatInr } from "@/lib/utils/category-min-cart-value";
 
 interface DynamicServicePageProps {
     params: Promise<{ categorySlug: string }>;
@@ -675,6 +676,20 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             return;
         }
 
+        // Per-category minimum cart value gate. Server enforces this at
+        // addToCart / createOrder, but a guest only hits the server after
+        // login — they'd previously discover the rule mid-checkout. Mirror
+        // the check client-side so the error surfaces at the moment they
+        // click Add to Cart, before any redirect.
+        const minCartValue = Number(category?.minCartValue ?? 0);
+        if (Number.isFinite(minCartValue) && minCartValue > 0 && totalPrice + 1e-6 < minCartValue) {
+            const diff = Math.max(0, minCartValue - totalPrice);
+            toastError(
+                `Add ${formatInr(diff)} more to "${category?.name ?? 'this category'}" to reach the minimum order of ${formatInr(minCartValue)}.`
+            );
+            return;
+        }
+
         // Check authentication - if not authenticated, save data and redirect
         if (!isAuthenticated) {
             try {
@@ -969,6 +984,18 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const handleBuyNow = async () => {
         if (!pageController.isValid) {
             toastError(pageController.errorMessage || 'Page limit exceeded');
+            return;
+        }
+
+        // Same minimum-cart-value gate as `handleAddToCart` — surface the
+        // shortfall before any pending-purchase save / redirect, so a
+        // guest sees the error immediately instead of after login.
+        const minCartValue = Number(category?.minCartValue ?? 0);
+        if (Number.isFinite(minCartValue) && minCartValue > 0 && totalPrice + 1e-6 < minCartValue) {
+            const diff = Math.max(0, minCartValue - totalPrice);
+            toastError(
+                `Add ${formatInr(diff)} more to "${category?.name ?? 'this category'}" to reach the minimum order of ${formatInr(minCartValue)}.`
+            );
             return;
         }
 

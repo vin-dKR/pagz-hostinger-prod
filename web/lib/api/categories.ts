@@ -82,6 +82,12 @@ export interface Category {
     parentId?: string | null;
     isActive: boolean;
     priority: number;
+    /** Minimum order subtotal required for items in this category, in
+     *  rupees. Null or 0 means no minimum. Server enforces it via
+     *  /cart/validate-minimums and createOrder; the client mirrors the
+     *  check to surface a clear error at add-to-cart time so guests
+     *  don't discover the rule only after logging in. */
+    minCartValue?: number | string | null;
     specifications: CategorySpecification[];
     pricingRules: CategoryPricingRule[];
     configuration?: CategoryConfiguration;
