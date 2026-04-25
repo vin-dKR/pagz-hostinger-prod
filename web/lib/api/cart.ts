@@ -52,10 +52,12 @@ export interface CartItem {
         templatePreviewImage?: string;
         templateFormData?: Record<string, any>;
         templateFormImages?: string[];
+        /** User-selected spec values (slug → option value). Server uses this
+         *  to re-derive half-page authoritatively. */
+        specifications?: Record<string, any>;
         // Half-page ("Both Sides") reduction state, written by the cart
-        // controller after pricing. Pages-based addon math reads
-        // effectivePageCount via getEffectivePages so the per-line breakdown
-        // matches the server-computed addonTotal.
+        // controller after pricing. Display-only — server re-derives from
+        // `specifications` for math.
         effectivePageCount?: number;
         originalPageCount?: number;
         hasHalfPageAdjustment?: boolean;

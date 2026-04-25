@@ -881,13 +881,19 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         .map((s) => s.trim())
                         .filter(Boolean)
                     : undefined,
-                // Snapshot the half-page reduction the public calculate-price
-                // endpoint already produced. Server-side ProductSpecification
-                // metadata can be stale (a product published before the
-                // option's isHalfPage flag was added still won't carry it),
-                // so the cart/order pipeline trusts these client-supplied
-                // fields when present and falls back to its own detection
-                // otherwise. See cartController.calculateProductEffectivePages.
+                // Persist the user-selected specs so the server can resolve
+                // half-page (and other option-driven rules) authoritatively
+                // by looking up the live category option metadata. The
+                // server NEVER trusts client effectivePageCount /
+                // hasHalfPageAdjustment for pricing — those fields are
+                // display-only and the half-page check is always
+                // re-derived server-side from this `specifications` map.
+                specifications: Object.keys(selectedSpecifications).length > 0
+                    ? selectedSpecifications
+                    : undefined,
+                // Display-only snapshot of the reduction (cart UI / order
+                // detail page render this as `483 → 242 (Both Sides)` text).
+                // Server ignores these for math.
                 effectivePageCount: hasHalfPageAdjustment ? effectivePageCount : undefined,
                 originalPageCount: hasHalfPageAdjustment ? originalPageCount : undefined,
                 hasHalfPageAdjustment: hasHalfPageAdjustment || undefined,

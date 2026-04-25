@@ -92,6 +92,13 @@ function buildMetadata(pendingData: PendingPurchaseData): PendingCartMetadata | 
         metadata.templateFormImages = pendingData.templateFormImages;
     }
 
+    // Carry the user-selected specs into cart metadata so the server can
+    // re-derive half-page (and any other option-driven rules) without
+    // trusting client `effectivePageCount` / `hasHalfPageAdjustment`.
+    if (pendingData.specifications && !metadata.specifications) {
+        metadata.specifications = pendingData.specifications;
+    }
+
     const selectedAddons = getSelectedAddons(pendingData);
     if (selectedAddons.length > 0 && !metadata.selectedAddons) {
         metadata.selectedAddons = selectedAddons;

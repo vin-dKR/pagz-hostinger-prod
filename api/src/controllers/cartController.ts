@@ -3,6 +3,7 @@ import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
 import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
+import { deriveHalfPageFromSelectedSpecs } from "../utils/half-page-from-specs.js";
 import { deleteFromFTP, extractFtpPathFromUrl } from "../services/ftp.js";
 import { getParamAsString } from "../utils/db-utils.js";
 import {
@@ -199,23 +200,29 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             const pageCount = (item.metadata as any)?.pageCount || null;
             const copies = (item.metadata as any)?.copies || 1;
 
-            // Half-page detection. ProductSpecification.metadata can lag
-            // behind reality (a product published before the option's
-            // isHalfPage flag was added doesn't carry the flag), so when
-            // the client has already resolved the half-page state via the
-            // public calculate-price endpoint and snapshotted it onto the
-            // cart metadata, we trust that as authoritative. Falls back to
-            // server-side detection for older items written before this
-            // field was added.
-            const clientHasHalfPage = !!(item.metadata as any)?.hasHalfPageAdjustment;
-            const clientEffectivePageCount = Number((item.metadata as any)?.effectivePageCount) || 0;
+            // Half-page detection. Authoritative source of truth, in order:
+            //   1. user-selected specs against live category options
+            //      (`metadata.specifications` + isHalfPage flag) — handles
+            //      products published before the option's isHalfPage flag
+            //      was set without trusting client-supplied numbers.
+            //   2. ProductSpecification snapshot — kept as a legacy
+            //      fallback for items written before metadata.specifications
+            //      was persisted.
+            // The reduced page count is ALWAYS computed as ceil(pageCount/2)
+            // server-side. We never accept a client-supplied
+            // `effectivePageCount` or `hasHalfPageAdjustment` value for
+            // pricing — doing so would let an attacker spoof
+            // effectivePageCount=1 on a 100-page job and pay ₹1.10 instead
+            // of ₹110.
+            const userSpecs = (item.metadata as any)?.specifications;
+            const specsHalfPage = await deriveHalfPageFromSelectedSpecs(item.productId, userSpecs);
 
             let effectivePageCount: number;
             let effectiveQuantity: number;
             let hasHalfPage: boolean;
-            if (clientHasHalfPage && clientEffectivePageCount > 0 && pageCount && pageCount > 0) {
-                effectivePageCount = clientEffectivePageCount;
-                effectiveQuantity = clientEffectivePageCount * (copies || 1);
+            if (specsHalfPage && pageCount && pageCount > 0) {
+                effectivePageCount = Math.ceil(pageCount / 2);
+                effectiveQuantity = effectivePageCount * (copies || 1);
                 hasHalfPage = true;
             } else {
                 ({ effectivePageCount, effectiveQuantity, hasHalfPage } = await calculateProductEffectivePages(

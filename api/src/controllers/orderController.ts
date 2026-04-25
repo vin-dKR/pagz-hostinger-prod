@@ -4,6 +4,7 @@ import { sendSuccess } from "../utils/response.js";
 import { AppError, CartMinimumError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { getPublicFtpUrl, extractFtpPathFromUrl } from "../services/ftp.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
+import { deriveHalfPageFromSelectedSpecs } from "../utils/half-page-from-specs.js";
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
 import {
     collectAddonIds,
@@ -180,23 +181,23 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 lineBaseTotal = itemPrice * files;
                 subtotal += lineBaseTotal;
             } else if (pageCount && pageCount > 0) {
-                // Trust client-supplied half-page snapshot when present —
-                // ProductSpecification.metadata lags published products that
-                // existed before the option's isHalfPage flag was added.
-                // Cart preview uses the public calculate-price endpoint which
-                // detects via the live category options, so its result is
-                // the authoritative one and gets persisted onto the cart
-                // item's metadata at add-to-cart time. See cartController
-                // for the matching trust path.
-                const clientHasHalfPage = !!(metadata as any)?.hasHalfPageAdjustment;
-                const clientEffectivePageCount = Number((metadata as any)?.effectivePageCount) || 0;
+                // Server-derived half-page. See cartController for the full
+                // rationale; same priority order applies here:
+                //   1. metadata.specifications against live category options
+                //   2. ProductSpecification fallback for legacy items
+                // Reduced page count is always recomputed as ceil(pageCount/2)
+                // — client-supplied `effectivePageCount` /
+                // `hasHalfPageAdjustment` are ignored to block the spoof
+                // path that let `effectivePageCount: 1` slash any order.
+                const userSpecs = (metadata as any)?.specifications;
+                const specsHalfPage = await deriveHalfPageFromSelectedSpecs(productId, userSpecs);
 
                 let effectivePageCount: number;
                 let hasHalfPage: boolean;
                 let effQty: number;
-                if (clientHasHalfPage && clientEffectivePageCount > 0) {
-                    effectivePageCount = clientEffectivePageCount;
-                    effQty = clientEffectivePageCount * (copies || 1);
+                if (specsHalfPage) {
+                    effectivePageCount = Math.ceil(pageCount / 2);
+                    effQty = effectivePageCount * (copies || 1);
                     hasHalfPage = true;
                 } else {
                     ({ effectivePageCount, effectiveQuantity: effQty, hasHalfPage } = await calculateProductEffectivePages(
