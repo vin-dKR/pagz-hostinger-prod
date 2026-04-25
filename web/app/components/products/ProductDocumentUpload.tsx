@@ -222,7 +222,23 @@ export default function ProductDocumentUpload({
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
+        // DIAGNOSTIC — investigating why multi-select sometimes only uploads
+        // one file. Remove once root cause is identified.
+        // eslint-disable-next-line no-console
+        console.log('[upload-debug] picked files', {
+            count: files.length,
+            names: files.map((f) => f.name),
+            sizes: files.map((f) => f.size),
+            types: files.map((f) => f.type),
+            inputMultiple: fileInputRef.current?.multiple,
+            inputAccept: fileInputRef.current?.accept,
+            hasPageControllerRules,
+            maxPages,
+            existingCount: uploadedFilesS3?.length ?? 0,
+        });
         if (files.length === 0) {
+            // eslint-disable-next-line no-console
+            console.warn('[upload-debug] e.target.files was empty');
             return;
         }
 
@@ -231,6 +247,8 @@ export default function ProductDocumentUpload({
 
         // Check max files limit
         if (maxFiles && files.length > maxFiles) {
+            // eslint-disable-next-line no-console
+            console.warn('[upload-debug] rejected by maxFiles', { maxFiles, picked: files.length });
             setError(`Maximum ${maxFiles} files allowed`);
             return;
         }
@@ -241,6 +259,12 @@ export default function ProductDocumentUpload({
         try {
             // Process files locally (calculate page count, etc.)
             const { fileDetails: newFileDetails } = await processFiles(files);
+            // eslint-disable-next-line no-console
+            console.log('[upload-debug] processed', {
+                inputCount: files.length,
+                outputCount: newFileDetails.length,
+                output: newFileDetails.map((fd) => ({ name: fd.file.name, type: fd.type, pageCount: fd.pageCount, id: fd.id })),
+            });
 
             // Combine with existing files
             const allFileDetails = [...(uploadedFilesS3 || []), ...newFileDetails];
@@ -249,6 +273,11 @@ export default function ProductDocumentUpload({
 
             // Hard guard: never upload files if page-controller max page limit is exceeded.
             if (hasPageControllerRules && maxPages !== null && finalPageCount > maxPages) {
+                // eslint-disable-next-line no-console
+                console.warn('[upload-debug] rejected by maxPages', {
+                    finalPageCount,
+                    maxPages,
+                });
                 setError(
                     `Uploaded pages (${finalPageCount}) exceed allowed limit (${maxPages}) for the current selection.`
                 );
@@ -268,17 +297,17 @@ export default function ProductDocumentUpload({
             }
 
             // Upload all newly-selected files in one batch POST.
-            // Earlier code spawned N parallel `uploadOrderFilesToS3([file])`
-            // calls (one per file), which:
-            //   - raced against shared `setUploadedFilesS3` updates so a
-            //     few completions sometimes overwrote each other,
-            //   - opened N concurrent FTP connections which the upstream
-            //     basic-ftp pool throttled, ending up with only the
-            //     first file actually uploaded.
-            // Single batched POST is faster, atomic, and matches the
-            // multer `.array("files", 10)` route on the server.
+            // Single batched POST matches the multer `.array("files", 10)`
+            // route on the server.
+            // eslint-disable-next-line no-console
+            console.log('[upload-debug] starting batch upload', {
+                count: newFileDetails.length,
+                ids: newFileDetails.map((fd) => fd.id),
+            });
             uploadFilesBatch(newFileDetails);
         } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error('[upload-debug] handleFileChange threw', err);
             const errorMessage = err instanceof Error ? err.message : 'Failed to process files';
             setError(errorMessage);
             toastError(errorMessage);
@@ -302,6 +331,11 @@ export default function ProductDocumentUpload({
         if (fileDetails.length === 0) return;
 
         const ids = new Set(fileDetails.map((fd) => fd.id));
+        // eslint-disable-next-line no-console
+        console.log('[upload-debug] uploadFilesBatch invoked', {
+            count: fileDetails.length,
+            files: fileDetails.map((fd) => ({ name: fd.file.name, size: fd.file.size, type: fd.type })),
+        });
 
         // Mark all as uploading.
         setUploadedFilesS3((prev) => {
@@ -316,6 +350,12 @@ export default function ProductDocumentUpload({
 
         try {
             const response = await uploadOrderFilesToS3(fileDetails.map((fd) => fd.file));
+            // eslint-disable-next-line no-console
+            console.log('[upload-debug] batch upload response', {
+                success: response.success,
+                error: response.error,
+                returnedCount: response.data?.files.length ?? 0,
+            });
 
             if (!response.success || !response.data || response.data.files.length === 0) {
                 throw new Error(response.error || 'Upload failed');
