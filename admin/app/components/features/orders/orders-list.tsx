@@ -330,7 +330,13 @@ export function OrdersList() {
                                                             </div>
                                                         )}
                                                         <div>
-                                                            <div className="font-medium">{order.id.slice(0, 8)}...</div>
+                                                            <Link
+                                                                href={`/orders/${order.id}`}
+                                                                className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                                                title={order.id}
+                                                            >
+                                                                {order.id.slice(0, 8)}…
+                                                            </Link>
                                                             <div className="text-xs text-gray-500">
                                                                 {formatDateTime(order.createdAt)}
                                                             </div>
