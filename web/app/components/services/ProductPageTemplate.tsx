@@ -547,6 +547,9 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                             : addToCartLabel}
                                 </Button>
 
+                                {/* Buy Now hidden for now — temporarily disabled
+                                    pending UX review. Restore by un-commenting. */}
+                                {/*
                                 <Button
                                     variant="primary"
                                     size="lg"
@@ -563,6 +566,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                             ? 'Calculating...'
                                             : buyNowLabel}
                                 </Button>
+                                */}
                                 </div>
 
                                 {/* One shared message below buttons (no duplication) */}
