@@ -37,7 +37,16 @@ export interface AddonPricingRule {
 export interface AddonLineItemInput {
     quantity: number;
     addons: string[];
-    metadata?: { pageCount?: number | null; copies?: number | null } | null | undefined;
+    metadata?:
+        | {
+              pageCount?: number | null;
+              copies?: number | null;
+              /** Half-page-reduced page count, when a "Both Sides"-style option
+               *  is selected. Authoritative for addon page-range matching. */
+              effectivePageCount?: number | null;
+          }
+        | null
+        | undefined;
     /** Count of uploaded files on the cart/order item; used by fileMultiplier rules. */
     fileCount?: number;
 }
@@ -67,15 +76,30 @@ export const getAddonUnitPrice = (addon: AddonPricingRule): number => {
  * Derive the "effective pages" used for quantityMultiplier calculations.
  * Returns null when the line item is not a print-job (no pageCount), in which
  * case addon consumers should fall back to the cart/order quantity.
+ *
+ * When the line carries `metadata.effectivePageCount` (set by the cart /
+ * order pipeline whenever a half-page "Both Sides" option reduces pages),
+ * that value is authoritative — addon page-range matching and the
+ * quantityMultiplier multiplier must use the reduced count, not the raw
+ * uploaded page count, otherwise an addon configured for the reduced
+ * range silently contributes zero and the order persists without the
+ * addon amount the customer was just charged. The web copy of this util
+ * (`web/lib/utils/addon-pricing.ts:getEffectivePages`) mirrors this logic.
  */
 export const getEffectivePages = (
     metadata: AddonLineItemInput["metadata"]
 ): number | null => {
-    const pageCount = metadata?.pageCount ? Number(metadata.pageCount) : 0;
-    if (!pageCount || pageCount <= 0) return null;
-    const copies = metadata?.copies ? Number(metadata.copies) : 1;
+    const meta = metadata as
+        | { pageCount?: number | null; effectivePageCount?: number | null; copies?: number | null }
+        | null
+        | undefined;
+    const reduced = meta?.effectivePageCount ? Number(meta.effectivePageCount) : 0;
+    const raw = meta?.pageCount ? Number(meta.pageCount) : 0;
+    const pages = reduced > 0 ? reduced : raw;
+    if (!pages || pages <= 0) return null;
+    const copies = meta?.copies ? Number(meta.copies) : 1;
     const safeCopies = copies > 0 ? copies : 1;
-    return pageCount * safeCopies;
+    return pages * safeCopies;
 };
 
 /**

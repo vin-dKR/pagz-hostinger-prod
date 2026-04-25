@@ -979,8 +979,13 @@ export const calculateCategoryPrice = async (
                 // Shared across the range check and the quantityMultiplier math
                 // so the admin preview agrees with the server-side cart /
                 // checkout / invoice path (which runs `computeAddonLineTotal`).
+                // When half-page is selected, addon page-range must compare
+                // against the reduced effective count (else ranges configured
+                // for the post-Both-Sides count silently miss).
+                const reducedPages =
+                    effectivePageCount > 0 ? effectivePageCount : pageCount;
                 const effectivePages =
-                    pageCount != null ? pageCount * (copies != null ? copies : 1) : null;
+                    reducedPages != null ? reducedPages * (copies != null ? copies : 1) : null;
 
                 if (hasPageRange) {
                     if (effectivePages == null) {
