@@ -20,6 +20,10 @@ export interface FileDetail {
 interface ProductDocumentUploadProps {
     onFileSelect: (files: File[], pageCount: number, fileDetails?: FileDetail[]) => void;
     onQuantityChange?: (quantity: number) => void;
+    /** Browser-level filter. Restricted to JPG/PNG/PDF MIME + extensions
+     *  so the OS picker hides mp3/mp4/etc. by default. The user can still
+     *  override via "All files" — `validateFiles` enforces the same rule
+     *  server-side-style on the client before upload. */
     acceptedTypes?: string;
     maxSizeMB?: number;
     maxFiles?: number;
@@ -35,7 +39,7 @@ interface ProductDocumentUploadProps {
 export default function ProductDocumentUpload({
     onFileSelect,
     onQuantityChange,
-    acceptedTypes = "image/*,.pdf",
+    acceptedTypes = "image/jpeg,image/jpg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf",
     maxSizeMB = 50,
     maxFiles,
     className = "",

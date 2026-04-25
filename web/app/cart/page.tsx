@@ -424,7 +424,7 @@ function CartPageContent() {
                                     </Link>
                                 </div>
                             ) : (
-                                <div className="space-y-4 sm:space-y-6 border border-gray-100 rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 bg-white">
+                                <div className="space-y-2.5 sm:space-y-3">
                                     {items.map((item) => (
                                         <CartItem
                                             key={item.id}

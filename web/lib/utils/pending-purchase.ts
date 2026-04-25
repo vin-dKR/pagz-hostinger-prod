@@ -47,6 +47,14 @@ export interface PendingPurchaseData {
         templateFormImages?: string[];
         fileHasPassword?: boolean;
         filePassword?: string;
+        // Half-page ("Both Sides") reduction state — written by the service
+        // page when the user picks an option flagged `metadata.isHalfPage`.
+        // The cart UI (GuestCart, CartItem) needs all three to (a) feed the
+        // reduced count into addon-pricing math and (b) explain the page
+        // delta in the breakdown.
+        effectivePageCount?: number;
+        originalPageCount?: number;
+        hasHalfPageAdjustment?: boolean;
     };
     currentPrice?: number;
     totalPrice?: number;

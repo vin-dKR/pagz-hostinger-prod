@@ -199,13 +199,32 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             const pageCount = (item.metadata as any)?.pageCount || null;
             const copies = (item.metadata as any)?.copies || 1;
 
-            // Calculate effective pages considering half-page option
-            const { effectivePageCount, effectiveQuantity, hasHalfPage } = await calculateProductEffectivePages(
-                item.productId,
-                pageCount,
-                item.quantity,
-                copies
-            );
+            // Half-page detection. ProductSpecification.metadata can lag
+            // behind reality (a product published before the option's
+            // isHalfPage flag was added doesn't carry the flag), so when
+            // the client has already resolved the half-page state via the
+            // public calculate-price endpoint and snapshotted it onto the
+            // cart metadata, we trust that as authoritative. Falls back to
+            // server-side detection for older items written before this
+            // field was added.
+            const clientHasHalfPage = !!(item.metadata as any)?.hasHalfPageAdjustment;
+            const clientEffectivePageCount = Number((item.metadata as any)?.effectivePageCount) || 0;
+
+            let effectivePageCount: number;
+            let effectiveQuantity: number;
+            let hasHalfPage: boolean;
+            if (clientHasHalfPage && clientEffectivePageCount > 0 && pageCount && pageCount > 0) {
+                effectivePageCount = clientEffectivePageCount;
+                effectiveQuantity = clientEffectivePageCount * (copies || 1);
+                hasHalfPage = true;
+            } else {
+                ({ effectivePageCount, effectiveQuantity, hasHalfPage } = await calculateProductEffectivePages(
+                    item.productId,
+                    pageCount,
+                    item.quantity,
+                    copies
+                ));
+            }
 
             // Use effective page count for pricing if half-page is applied
             const effectivePages = pageCount && pageCount > 0
@@ -280,7 +299,16 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                 );
             }
 
-            // Update metadata with half-page info if applicable
+            // Update metadata with half-page info if applicable. Dedupe the
+            // half-page breakdown row by label prefix — getCart runs on every
+            // cart fetch, so without dedupe the priceBreakdown grows by one
+            // duplicate row each refresh and ends up rendered N times in the
+            // order detail view (which copies metadata.priceBreakdown over).
+            const halfPageLabelPrefix = "Both Side";
+            const existingBreakdown = ((item.metadata as any)?.priceBreakdown || []).filter(
+                (entry: { label?: string } | null | undefined) =>
+                    !(entry?.label && String(entry.label).startsWith(halfPageLabelPrefix))
+            );
             const updatedMetadata = {
                 ...(item.metadata as any || {}),
                 ...(hasHalfPage && {
@@ -290,7 +318,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                 }),
                 ...(halfPageBreakdown && {
                     priceBreakdown: [
-                        ...((item.metadata as any)?.priceBreakdown || []),
+                        ...existingBreakdown,
                         halfPageBreakdown,
                     ],
                 }),

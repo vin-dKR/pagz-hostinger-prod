@@ -49,6 +49,16 @@ interface OrderItem {
     templatePreviewImage?: string;
     templateFormData?: Record<string, any>;
     templateFormImages?: string[];
+    // Half-page reduction snapshot — drives the Both-Sides note + the
+    // "effective" quantity shown in the per-item header. Source of truth
+    // is the cart/order metadata persisted at order creation time.
+    pageCount?: number;
+    copies?: number;
+    effectivePageCount?: number;
+    hasHalfPageAdjustment?: boolean;
+    /** Server-rendered breakdown rows (`{ label, value }`). The detailed
+     *  itemised math we surface in place of the old Unit/Qty/Total tiles. */
+    priceBreakdown?: Array<{ label: string; value: number }>;
 }
 
 interface OrderStatusHistoryDisplay {
@@ -268,6 +278,13 @@ function transformOrder(order: Order): OrderDetails {
                 templatePreviewImage: metadata.templatePreviewImage,
                 templateFormData: metadata.templateFormData,
                 templateFormImages: templateFormImages,
+                pageCount: metadata.pageCount,
+                copies: metadata.copies,
+                effectivePageCount: metadata.effectivePageCount,
+                hasHalfPageAdjustment: !!metadata.hasHalfPageAdjustment,
+                priceBreakdown: Array.isArray(metadata.priceBreakdown)
+                    ? metadata.priceBreakdown
+                    : undefined,
             } as OrderItem;
         }),
         shippingAddress: {
@@ -505,31 +522,173 @@ function OrderDetailsPageContent({
 
                                         {/* Product Details */}
                                         <div className="flex-1 min-w-0">
-                                            <h3 className="text-sm sm:text-base font-medium text-gray-900 mb-1 truncate">
-                                                {item.name}
-                                            </h3>
-                                            <div className="flex flex-wrap gap-2 text-xs sm:text-sm text-gray-600 mb-2">
-                                                {item.variant && (
-                                                    <span className="bg-gray-50 px-2 py-1 rounded">
-                                                        Variant: {item.variant}
-                                                    </span>
-                                                )}
-                                                <span className="bg-gray-50 px-2 py-1 rounded">
-                                                    Qty: {item.quantity}
-                                                </span>
-                                                {item.customDesignUrl && (
-                                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded">
-                                                        Custom Design
-                                                    </span>
-                                                )}
-                                            </div>
+                                            {(() => {
+                                                // Display the printed-sheet count rather than raw
+                                                // PDF pages when a half-page option reduced the
+                                                // job. Item total is derived from the persisted
+                                                // priceBreakdown (sum of priced rows) instead of
+                                                // `price × quantity`, because the latter
+                                                // skipped the ceil() rounding the rule does
+                                                // and under-priced odd-page half-page jobs.
+                                                const displayQuantity = item.hasHalfPageAdjustment && item.effectivePageCount
+                                                    ? Number(item.effectivePageCount) * Number(item.copies || 1)
+                                                    : item.quantity;
+                                                const breakdown = item.priceBreakdown;
+                                                // Customer-side Item total = base only (per-page ×
+                                                // effective pages × copies). Addons are listed
+                                                // in the breakdown panel below but excluded from
+                                                // the headline number per UX request — the
+                                                // checkout summary already shows the addon
+                                                // subtotal separately so the customer sees both
+                                                // sides of the math.
+                                                const baseRowTop = breakdown?.find((pb) =>
+                                                    typeof pb.label === 'string' && pb.label.toLowerCase().startsWith('base')
+                                                );
+                                                const breakdownItemTotal = baseRowTop
+                                                    ? Number(baseRowTop.value)
+                                                    : item.price * item.quantity;
+                                                // Pull the rule's true per-page rate from the
+                                                // Base row (`baseValue / pages × copies`) so
+                                                // the header sub-line shows ₹1.10 not the
+                                                // stored half-rate ₹0.55.
+                                                const parseMultiplier = (label: string) => {
+                                                    const pages = Number(label.match(/(\d+(?:\.\d+)?)\s*pages?\b/i)?.[1] ?? 0);
+                                                    const copies = Number(label.match(/(\d+(?:\.\d+)?)\s*cop(?:y|ies)\b/i)?.[1] ?? 0);
+                                                    const files = Number(label.match(/(\d+(?:\.\d+)?)\s*files?\b/i)?.[1] ?? 0);
+                                                    let m = 1;
+                                                    if (pages > 0) m *= pages;
+                                                    if (copies > 0) m *= copies;
+                                                    if (m === 1 && files > 0) m = files;
+                                                    return m;
+                                                };
+                                                const baseRow = breakdown?.find((pb) =>
+                                                    typeof pb.label === 'string' && pb.label.toLowerCase().startsWith('base')
+                                                );
+                                                const baseMult = baseRow ? parseMultiplier(String(baseRow.label)) : 1;
+                                                const displayUnitPrice = baseRow && baseMult > 1
+                                                    ? Number(baseRow.value) / baseMult
+                                                    : item.price;
+                                                const hasReduction = item.hasHalfPageAdjustment
+                                                    && item.effectivePageCount
+                                                    && item.pageCount
+                                                    && item.effectivePageCount !== item.pageCount;
+                                                return (
+                                                    <>
+                                                        <div className="flex items-start justify-between gap-3 mb-2">
+                                                            <div className="min-w-0 flex-1">
+                                                                <h3 className="text-sm sm:text-base font-medium text-gray-900 truncate">
+                                                                    {item.name}
+                                                                </h3>
+                                                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                                                                    {item.variant && <span>Variant: {item.variant}</span>}
+                                                                    {item.pageCount && (
+                                                                        <span>
+                                                                            {item.pageCount} {item.pageCount === 1 ? 'page' : 'pages'}
+                                                                            {hasReduction && (
+                                                                                <span className="text-blue-600">
+                                                                                    {' '}→ {item.effectivePageCount} (Both Sides)
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
+                                                                    )}
+                                                                    {item.copies && (
+                                                                        <span>{item.copies} {item.copies === 1 ? 'copy' : 'copies'}</span>
+                                                                    )}
+                                                                    {item.customDesignUrl && (
+                                                                        <span className="text-blue-700">Custom design</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right shrink-0">
+                                                                <div className="text-[10px] uppercase tracking-wide text-gray-400">Item total</div>
+                                                                <div className="text-base sm:text-lg font-bold text-blue-600 leading-none">
+                                                                    ₹{breakdownItemTotal.toFixed(2)}
+                                                                </div>
+                                                                <div className="mt-0.5 text-[10px] text-gray-400">
+                                                                    {displayQuantity} × ₹{displayUnitPrice.toFixed(2)}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                );
+                                            })()}
                                             <div className="flex flex-col gap-1">
-                                                <div className="flex items-center justify-between">
-                                                    <p className="text-sm sm:text-base font-hkgb text-gray-900">
-                                                        ₹{item.price.toFixed(2)}
-                                                    </p>
-                                                </div>
-                                                {typeof item.addonsTotal === "number" && item.addonsTotal > 0 && (
+                                                {/* Detailed price breakdown — replaces the
+                                                    Unit/Qty/Total trio so the math is
+                                                    visible end-to-end. Falls back to a
+                                                    derived 2-row breakdown when metadata
+                                                    is missing. */}
+                                                {(() => {
+                                                    const bd = item.priceBreakdown && item.priceBreakdown.length > 0
+                                                        ? item.priceBreakdown
+                                                        : null;
+                                                    if (!bd) return null;
+                                                    const parseMath = (label: string, value: number) => {
+                                                        const pages = Number(label.match(/(\d+(?:\.\d+)?)\s*pages?\b/i)?.[1] ?? 0);
+                                                        const copies = Number(label.match(/(\d+(?:\.\d+)?)\s*cop(?:y|ies)\b/i)?.[1] ?? 0);
+                                                        const files = Number(label.match(/(\d+(?:\.\d+)?)\s*files?\b/i)?.[1] ?? 0);
+                                                        const parts: string[] = [];
+                                                        let m = 1;
+                                                        if (pages > 0) { parts.push(`${pages} ${pages === 1 ? 'page' : 'pages'}`); m *= pages; }
+                                                        if (copies > 0) { parts.push(`${copies} ${copies === 1 ? 'copy' : 'copies'}`); m *= copies; }
+                                                        if (parts.length === 0 && files > 0) { parts.push(`${files} ${files === 1 ? 'file' : 'files'}`); m = files; }
+                                                        if (m <= 1) return null;
+                                                        const unit = value / m;
+                                                        return `${parts.join(' × ')} × ₹${unit.toFixed(2)} = ₹${value.toFixed(2)}`;
+                                                    };
+                                                    // Item total in the breakdown footer also = base only,
+                                                    // matching the headline number above the panel.
+                                                    const baseRowFooter = bd.find((pb) =>
+                                                        typeof pb.label === 'string' && pb.label.toLowerCase().startsWith('base')
+                                                    );
+                                                    const itemTotalSum = baseRowFooter ? Number(baseRowFooter.value) : 0;
+                                                    return (
+                                                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                                                            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-100">
+                                                                Price breakdown
+                                                            </div>
+                                                            <div className="divide-y divide-gray-100">
+                                                                {bd.map((pb, pbIdx) => {
+                                                                    const isInfo = pb.value === 0;
+                                                                    const isHalfPageNote = isInfo && typeof pb.label === 'string' && pb.label.includes('→');
+                                                                    // Math sub-line only on the Base row.
+                                                                    const isBase = !isInfo && typeof pb.label === 'string'
+                                                                        && pb.label.toLowerCase().startsWith('base');
+                                                                    const mathStr = isBase ? parseMath(String(pb.label), Number(pb.value)) : null;
+                                                                    return (
+                                                                        <div
+                                                                            key={pbIdx}
+                                                                            className={`flex justify-between gap-3 px-3 py-1.5 text-xs ${isHalfPageNote ? 'bg-blue-50 text-blue-900' : isInfo ? 'bg-gray-50 text-gray-600' : 'text-gray-800'}`}
+                                                                        >
+                                                                            <div className="min-w-0 break-words">
+                                                                                <div>{pb.label}</div>
+                                                                                {mathStr && (
+                                                                                    <div className="mt-0.5 text-[10px] text-gray-500 font-mono">
+                                                                                        {mathStr}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                            {pb.value > 0 ? (
+                                                                                <span className="font-semibold shrink-0 tabular-nums">₹{Number(pb.value).toFixed(2)}</span>
+                                                                            ) : (
+                                                                                <span className="italic shrink-0 text-[10px]">
+                                                                                    {isHalfPageNote ? 'reduction' : 'info'}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                                <div className="flex justify-between gap-3 px-3 py-1.5 text-xs bg-blue-50/60 border-t border-blue-200">
+                                                                    <span className="font-bold text-blue-900">Item total</span>
+                                                                    <span className="font-bold text-blue-700 shrink-0 tabular-nums">
+                                                                        ₹{itemTotalSum.toFixed(2)}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+                                                {typeof item.addonsTotal === "number" && item.addonsTotal > 0 && !item.priceBreakdown?.length && (
                                                     <div className="mt-2 space-y-1">
                                                         <p className="text-xs text-gray-600">
                                                             Addons: <span className="font-medium">₹{item.addonsTotal.toFixed(2)}</span>

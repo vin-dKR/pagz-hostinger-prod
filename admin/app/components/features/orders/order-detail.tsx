@@ -45,6 +45,7 @@ import { toastError, toastSuccess } from '@/lib/utils/toast';
 import Image from 'next/image';
 import { imageLoader } from '@/lib/utils/image-loader';
 import { TemplateDisplay } from './TemplateDisplay';
+import { AdminFileTile } from './AdminFileTile';
 const { getInvoicePDFUrl } = await import('@/lib/api/invoice.service');
 
 
@@ -495,369 +496,372 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                     </Card>
                 </TabsContent>
 
-                {/* Items Tab */}
+                {/* Items Tab — readable admin view. Each item is a card with
+                    a clear header row (image + name + meta + price tiles)
+                    and labelled sections beneath: design files (with image
+                    / PDF first-page thumbnails), addons, then price
+                    breakdown. Half-page reduction shown inline next to
+                    page count. Addons placed before breakdown so the
+                    customer-visible upsell numbers are read first. */}
                 <TabsContent value="items">
                     <Card>
                         <CardHeader>
                             <CardTitle>Order Items ({order.items.length})</CardTitle>
                         </CardHeader>
-                        <CardContent>
-                            <div className="space-y-8">
-                                {order.items.map((item, index) => (
-                                    <Card key={item.id || index} className="border-2">
-                                        <CardContent className="p-6">
-                                            <div className="space-y-3">
-                                                {/* Main Product Info Section */}
-                                                <div className="flex flex-col lg:flex-row gap-6 items-start">
-                                                    {/* Product Image */}
-                                                    {item.product?.images?.[0] && (
-                                                        <div className="w-32 h-32 rounded-lg border-2 overflow-hidden bg-gray-50 shrink-0 flex items-center justify-center">
-                                                            <Image
-                                                                src={item.product.images[0].url}
-                                                                alt={item.product.name}
-                                                                className="w-full h-full object-cover"
-                                                                width={128}
-                                                                height={128}
-                                                                loader={imageLoader}
-                                                            />
-                                                        </div>
+                        <CardContent className="space-y-6">
+                            {order.items.map((item, index) => {
+                                const meta = item.metadata as any;
+                                const pageCount = meta?.pageCount;
+                                const copies = meta?.copies;
+                                const effectivePages = meta?.effectivePageCount;
+                                const hasHalfPage = !!meta?.hasHalfPageAdjustment;
+
+                                const rawUrls: string[] = Array.isArray(item.customDesignUrl)
+                                    ? (item.customDesignUrl as string[]).filter(Boolean)
+                                    : typeof item.customDesignUrl === 'string' && item.customDesignUrl
+                                        ? [item.customDesignUrl]
+                                        : [];
+                                const publicUrls: string[] = Array.isArray(item.customDesignPresignedUrls)
+                                    ? (item.customDesignPresignedUrls as string[]).filter(Boolean)
+                                    : [];
+                                const fileCount = Math.max(rawUrls.length, publicUrls.length);
+
+                                const breakdown = meta?.priceBreakdown as Array<{ label: string; value: number }> | undefined;
+                                const addons = (item as any).addons as Array<any> | undefined;
+
+                                // Display the effective (post-Both-Sides) quantity so admins
+                                // see what was actually printed, not the raw PDF page count.
+                                const displayQuantity = hasHalfPage && effectivePages
+                                    ? Number(effectivePages) * Number(copies || 1)
+                                    : item.quantity;
+
+                                // Derive math from each priced breakdown row. Pulls "N pages",
+                                // "M copies", or "K files" out of the label and computes the
+                                // implied per-unit rate so the row can render the full
+                                // formula `pages × copies × ₹rate = ₹total`. Returns null
+                                // when the label has no parseable multiplier (e.g. flat-fee
+                                // addons, half-page info rows).
+                                const parseBreakdownMath = (label: string, value: number) => {
+                                    const pagesMatch = label.match(/(\d+(?:\.\d+)?)\s*pages?\b/i);
+                                    const copiesMatch = label.match(/(\d+(?:\.\d+)?)\s*cop(?:y|ies)\b/i);
+                                    const filesMatch = label.match(/(\d+(?:\.\d+)?)\s*files?\b/i);
+                                    const pages = pagesMatch ? Number(pagesMatch[1]) : 0;
+                                    const copies = copiesMatch ? Number(copiesMatch[1]) : 0;
+                                    const files = filesMatch ? Number(filesMatch[1]) : 0;
+                                    const parts: string[] = [];
+                                    let multiplier = 1;
+                                    if (pages > 0) {
+                                        parts.push(`${pages} ${pages === 1 ? 'page' : 'pages'}`);
+                                        multiplier *= pages;
+                                    }
+                                    if (copies > 0) {
+                                        parts.push(`${copies} ${copies === 1 ? 'copy' : 'copies'}`);
+                                        multiplier *= copies;
+                                    }
+                                    if (files > 0 && parts.length === 0) {
+                                        parts.push(`${files} ${files === 1 ? 'file' : 'files'}`);
+                                        multiplier = files;
+                                    }
+                                    if (multiplier <= 1) return null;
+                                    const unit = value / multiplier;
+                                    return {
+                                        mathStr: `${parts.join(' × ')} × ${formatCurrency(unit)} = ${formatCurrency(value)}`,
+                                        unit,
+                                    };
+                                };
+
+                                // Item total is recomputed from the breakdown (sum of all
+                                // priced rows) rather than from the raw stored
+                                // `price × quantity` product. The latter under-priced
+                                // half-page jobs because the order pipeline stored
+                                // `unit = halfRate, qty = rawPages` so `unit × qty` skipped
+                                // the ceil() rounding that the pricing rule does. Falls back
+                                // to stored math when no breakdown is persisted.
+                                const breakdownItemTotal = breakdown && breakdown.length > 0
+                                    ? breakdown.reduce((sum, pb) => sum + (pb.value > 0 ? Number(pb.value) : 0), 0)
+                                    : item.price * item.quantity;
+
+                                // Show the actual rule per-unit rate (e.g. ₹1.10 per page),
+                                // not the stored item.price which can be a stale half-rate
+                                // for half-page-published products. Derive from the Base row
+                                // in the breakdown when present.
+                                const baseRow = breakdown?.find((pb) =>
+                                    typeof pb.label === 'string' && pb.label.toLowerCase().startsWith('base')
+                                );
+                                const baseRowMath = baseRow ? parseBreakdownMath(baseRow.label, Number(baseRow.value)) : null;
+                                const displayUnitPrice = baseRowMath?.unit ?? item.price;
+
+                                return (
+                                    <div
+                                        key={item.id || index}
+                                        className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+                                    >
+                                        {/* Header row */}
+                                        <div className="flex flex-col lg:flex-row gap-4 p-5 border-b border-gray-100 bg-gray-50/50">
+                                            {item.product?.images?.[0] && (
+                                                <div className="relative w-20 h-20 lg:w-24 lg:h-24 rounded-lg border overflow-hidden bg-white shrink-0">
+                                                    <Image
+                                                        src={item.product.images[0].url}
+                                                        alt={item.product.name}
+                                                        fill
+                                                        className="object-cover"
+                                                        sizes="96px"
+                                                        loader={imageLoader}
+                                                    />
+                                                </div>
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="text-lg font-bold text-gray-900 leading-snug">
+                                                    {item.product?.name || `Product ${item.productId}`}
+                                                </h3>
+                                                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                                                    {item.product?.category && (
+                                                        <span><span className="text-gray-400">Category:</span> {item.product.category.name}</span>
                                                     )}
+                                                    {item.product?.sku && (
+                                                        <span className="font-mono"><span className="text-gray-400">SKU:</span> {item.product.sku}</span>
+                                                    )}
+                                                    {item.variant && (
+                                                        <span><span className="text-gray-400">Variant:</span> {item.variant.name}</span>
+                                                    )}
+                                                </div>
+                                                {(pageCount || copies) && (
+                                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                                                        {pageCount && (
+                                                            <span>
+                                                                <span className="text-gray-400">Pages:</span>{' '}
+                                                                <span className="font-medium text-gray-900">{pageCount}</span>
+                                                                {hasHalfPage && effectivePages && effectivePages !== pageCount && (
+                                                                    <span className="text-blue-600 ml-1">
+                                                                        → {effectivePages} effective (Both Sides)
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                        {copies && (
+                                                            <span>
+                                                                <span className="text-gray-400">Copies:</span>{' '}
+                                                                <span className="font-medium text-gray-900">{copies}</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {/* Item total derived from breakdown sum; sub-line
+                                                shows the rule's actual per-unit rate. */}
+                                            <div className="text-right px-4 py-3 bg-blue-50 rounded-lg border border-blue-200 shrink-0 min-w-[120px]">
+                                                <div className="text-[10px] uppercase tracking-wide text-blue-500 font-semibold">Item Total</div>
+                                                <div className="text-2xl font-bold text-blue-700 mt-1">{formatCurrency(breakdownItemTotal)}</div>
+                                                <div className="text-[10px] text-blue-500 mt-0.5">
+                                                    {displayQuantity} {displayQuantity === 1 ? 'unit' : 'units'} @ {formatCurrency(displayUnitPrice)}
+                                                </div>
+                                            </div>
+                                        </div>
 
-                                                    {/* Product Details and Price */}
-                                                    <div className="flex-1 min-w-0 w-full">
-                                                        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
-                                                            {/* Product Info */}
-                                                            <div className="flex-1 min-w-0">
-                                                                <h3 className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
-                                                                    {item.product?.name || `Product ${item.productId}`}
-                                                                </h3>
-                                                                <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-600">
-                                                                    {item.product?.sku && (
-                                                                        <span className="flex items-center gap-1">
-                                                                            <span className="font-medium">SKU:</span>
-                                                                            <span className="font-mono">{item.product.sku}</span>
-                                                                        </span>
-                                                                    )}
-                                                                    {item.variant && (
-                                                                        <span className="flex items-center gap-1">
-                                                                            <span className="font-medium">Variant:</span>
-                                                                            <span>{item.variant.name}</span>
-                                                                        </span>
-                                                                    )}
-                                                                    {item.product?.category && (
-                                                                        <span className="flex items-center gap-1">
-                                                                            <span className="font-medium">Category:</span>
-                                                                            <span>{item.product.category.name}</span>
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
+                                        {/* Body */}
+                                        <div className="p-5 space-y-5">
+                                            {/* PDF password */}
+                                            {(meta?.fileHasPassword || meta?.filePassword) && (
+                                                <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 flex flex-wrap gap-2 items-baseline text-sm text-rose-900">
+                                                    <span className="text-[11px] uppercase tracking-wide font-bold text-rose-700">PDF Password</span>
+                                                    {meta?.filePassword ? (
+                                                        <span className="font-mono text-rose-900">{meta.filePassword}</span>
+                                                    ) : (
+                                                        <span className="italic">Protected · password not provided</span>
+                                                    )}
+                                                </div>
+                                            )}
 
-                                                            {/* Price Section */}
-                                                            <div className="flex flex-row gap-3 shrink-0 justify-start lg:justify-end">
-                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[100px] lg:min-w-[120px]">
-                                                                    <p className="text-xs text-gray-600 mb-1">Unit Price</p>
-                                                                    <p className="text-base lg:text-lg font-semibold text-gray-900">
-                                                                        {formatCurrency(item.price)}
-                                                                    </p>
-                                                                </div>
-                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[80px] lg:min-w-[100px]">
-                                                                    <p className="text-xs text-gray-600 mb-1">Quantity</p>
-                                                                    <p className="text-base lg:text-lg font-semibold text-gray-900">
-                                                                        {item.quantity}
-                                                                    </p>
-                                                                </div>
-                                                                <div className="bg-gray-50 rounded-lg px-4 py-3 border text-center min-w-[110px] lg:min-w-[140px]">
-                                                                    <p className="text-xs text-gray-600 mb-1">Total</p>
-                                                                    <p className="text-lg lg:text-xl font-bold text-gray-900">
-                                                                        {formatCurrency(item.price * item.quantity)}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                            {/* Custom text */}
+                                            {item.customText && (
+                                                <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 text-sm">
+                                                    <div className="text-[11px] uppercase tracking-wide font-bold text-gray-500 mb-1">Custom Text</div>
+                                                    <p className="text-gray-800 break-words">{item.customText}</p>
+                                                </div>
+                                            )}
+
+                                            {/* Design files */}
+                                            {fileCount > 0 && (
+                                                <div>
+                                                    <h4 className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+                                                        Design Files ({fileCount})
+                                                    </h4>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {Array.from({ length: fileCount }).map((_, fileIndex) => {
+                                                            const rawPath = rawUrls[fileIndex] ?? '';
+                                                            const href = getPublicFileUrl(publicUrls[fileIndex] || rawPath);
+                                                            const fileName = rawPath
+                                                                ? getFilenameFromPath(rawPath)
+                                                                : `File ${fileIndex + 1}`;
+                                                            return (
+                                                                <AdminFileTile
+                                                                    key={fileIndex}
+                                                                    name={fileName}
+                                                                    href={href || '#'}
+                                                                />
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
+                                            )}
 
-                                                {/* Specifications Section */}
-                                                {(item.metadata?.pageCount || item.metadata?.copies) && (
-                                                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                                        <h4 className="font-semibold text-blue-900 mb-3 text-sm uppercase tracking-wide">
-                                                            Specifications
-                                                        </h4>
-                                                        <div className="flex gap-6">
-                                                            {item.metadata.pageCount && (
-                                                                <div>
-                                                                    <span className="text-xs text-blue-700 font-medium">Pages</span>
-                                                                    <p className="text-lg font-bold text-blue-900">{item.metadata.pageCount}</p>
-                                                                </div>
-                                                            )}
-                                                            {item.metadata.copies && (
-                                                                <div>
-                                                                    <span className="text-xs text-blue-700 font-medium">Copies</span>
-                                                                    <p className="text-lg font-bold text-blue-900">{item.metadata.copies}</p>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* File Password (if provided) */}
-                                                {(item.metadata?.fileHasPassword || item.metadata?.filePassword) && (
-                                                    <div className="bg-rose-50 rounded-lg p-4 border border-rose-200">
-                                                        <h4 className="font-semibold text-rose-900 mb-2 text-sm uppercase tracking-wide">
-                                                            File Password
-                                                        </h4>
-                                                        <div className="space-y-1 text-sm text-rose-900">
-                                                            <p>
-                                                                <span className="font-medium">Password Protected:</span>{' '}
-                                                                {item.metadata?.fileHasPassword ? 'Yes' : 'Not specified'}
-                                                            </p>
-                                                            {item.metadata?.filePassword && (
-                                                                <p>
-                                                                    <span className="font-medium">Password:</span>{' '}
-                                                                    <span className="font-mono">{item.metadata.filePassword}</span>
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                        <p className="mt-2 text-xs text-rose-700">
-                                                            Use this password to open the customer’s uploaded PDF/document.
-                                                        </p>
-                                                    </div>
-                                                )}
-
-                                                {/* Custom Text */}
-                                                {item.customText && (
-                                                    <div className="bg-gray-50 rounded-lg p-4 border">
-                                                        <h4 className="font-semibold text-gray-900 mb-2 text-sm uppercase tracking-wide">
-                                                            Custom Text
-                                                        </h4>
-                                                        <p className="text-base text-gray-800">{item.customText}</p>
-                                                    </div>
-                                                )}
-
-                                                {/* Custom Design Files */}
-                                                {(() => {
-                                                    // Build a unified list of file entries from all possible sources,
-                                                    // always resolving the href through getPublicFileUrl so S3/FTP URLs
-                                                    // are consistently served from pagz.in.
-                                                    const rawUrls: string[] = Array.isArray(item.customDesignUrl)
-                                                        ? (item.customDesignUrl as string[]).filter(Boolean)
-                                                        : typeof item.customDesignUrl === 'string' && item.customDesignUrl
-                                                        ? [item.customDesignUrl]
-                                                        : [];
-
-                                                    // customDesignPresignedUrls are now public FTP URLs from the backend
-                                                    const publicUrls: string[] = Array.isArray(item.customDesignPresignedUrls)
-                                                        ? (item.customDesignPresignedUrls as string[]).filter(Boolean)
-                                                        : [];
-
-                                                    if (rawUrls.length === 0 && publicUrls.length === 0 && !item.customDesignPresignedUrl) {
-                                                        return null;
-                                                    }
-
-                                                    const fileCount = Math.max(rawUrls.length, publicUrls.length);
-
-                                                    return (
-                                                        <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
-                                                            <h4 className="font-semibold text-indigo-900 mb-3 text-sm uppercase tracking-wide">
-                                                                Custom Design Files {fileCount > 0 ? `(${fileCount})` : ''}
-                                                            </h4>
-                                                            <div className="space-y-2">
-                                                                {fileCount > 0 ? (
-                                                                    Array.from({ length: fileCount }).map((_, fileIndex) => {
-                                                                        const rawPath = rawUrls[fileIndex] ?? '';
-                                                                        // Prefer the backend-resolved public URL; fall back to
-                                                                        // constructing it client-side from the raw stored path.
-                                                                        const href = getPublicFileUrl(
-                                                                            publicUrls[fileIndex] || rawPath
-                                                                        );
-                                                                        console.log(publicUrls[fileIndex], rawPath, href);
-                                                                        const fileName = rawPath
-                                                                            ? getFilenameFromPath(rawPath)
-                                                                            : `File ${fileIndex + 1}`;
-                                                                        return (
-                                                                            <a
-                                                                                key={fileIndex}
-                                                                                href={href || '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                                className="flex items-center gap-2 p-3 bg-white rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors"
-                                                                            >
-                                                                                <Download className="h-5 w-5 text-indigo-600 shrink-0" />
-                                                                                <span className="text-sm font-medium text-indigo-900 flex-1 truncate" title={fileName}>
-                                                                                    {fileName}
-                                                                                </span>
-                                                                            </a>
-                                                                        );
-                                                                    })
-                                                                ) : (
-                                                                    // Legacy single-file fallback
-                                                                    <a
-                                                                        href={getPublicFileUrl(item.customDesignPresignedUrl || (typeof item.customDesignUrl === 'string' ? item.customDesignUrl : '') || '') || '#'}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="flex items-center gap-2 p-3 bg-white rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors"
-                                                                    >
-                                                                        <Download className="h-5 w-5 text-indigo-600 shrink-0" />
-                                                                        <span className="text-sm font-medium text-indigo-900">
-                                                                            View/Download File
-                                                                        </span>
-                                                                    </a>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })()}
-
-                                                {/* Template Data and Price Breakdown in Row */}
-                                                {(item.metadata?.templateId || (item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0)) && (
-                                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                                        {/* Template Data */}
-                                                        {item.metadata?.templateId && (
-                                                            <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-                                                                <h4 className="font-semibold text-amber-900 mb-3 text-sm uppercase tracking-wide">
-                                                                    Template Information
-                                                                </h4>
-                                                                <TemplateDisplay
-                                                                    templateId={item.metadata.templateId}
-                                                                    categoryId={item.product?.category?.id}
-                                                                    formData={item.metadata.templateFormData}
-                                                                    formImages={item.metadata.templateFormImages}
-                                                                />
-                                                            </div>
-                                                        )}
-
-                                                        {/* Price Breakdown */}
-                                                        {item.metadata?.priceBreakdown && item.metadata.priceBreakdown.length > 0 && (
-                                                            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                                                                <h4 className="font-semibold text-green-900 mb-3 text-sm uppercase tracking-wide">
-                                                                    Price Breakdown
-                                                                </h4>
-                                                                <div className="space-y-2">
-                                                                    {item.metadata.priceBreakdown.map((pbItem, pbIdx) => {
-                                                                        const isHalfPageAdjustment = pbItem.value === 0 &&
-                                                                            typeof pbItem.label === 'string' &&
-                                                                            (pbItem.label.toLowerCase().includes('both side') ||
-                                                                                pbItem.label.toLowerCase().includes('half page') ||
-                                                                                pbItem.label.toLowerCase().includes('→'));
-
-                                                                        return (
-                                                                            <div
-                                                                                key={pbIdx}
-                                                                                className={`flex justify-between items-center p-2 rounded ${isHalfPageAdjustment
-                                                                                    ? 'bg-blue-100 border border-blue-300'
-                                                                                    : 'bg-white border border-green-200'
-                                                                                    }`}
-                                                                            >
-                                                                                <span className={`text-sm ${isHalfPageAdjustment
-                                                                                    ? 'text-blue-900 font-medium'
-                                                                                    : 'text-green-900'
-                                                                                    }`}>
-                                                                                    {pbItem.label}
-                                                                        </span>
-                                                                        {pbItem.value > 0 ? (
-                                                                            <span className={`text-sm font-semibold ${isHalfPageAdjustment
-                                                                                ? 'text-blue-900'
-                                                                                : 'text-green-900'
-                                                                                }`}>
-                                                                                {formatCurrency(pbItem.value)}
-                                                                            </span>
-                                                                        ) : isHalfPageAdjustment && (
-                                                                            <span className="text-xs text-blue-600 italic">
-                                                                                Info
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {/* Addons Section */}
-                                                {Array.isArray((item as any).addons) && (item as any).addons.length > 0 && (
-                                                    <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                                                        <h4 className="font-semibold text-purple-900 mb-3 text-sm uppercase tracking-wide">
-                                                            Addons ({(item as any).addons.length})
-                                                        </h4>
-                                                        <div className="space-y-2">
-                                                            {((item as any).addons as any[]).map((addon, addonIdx) => {
+                                            {/* Addons (placed before breakdown per UX request — shows
+                                                what the customer added before the line-by-line totals). */}
+                                            {addons && addons.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+                                                        Addons ({addons.length})
+                                                    </h4>
+                                                    <div className="rounded-lg border border-purple-200 bg-purple-50/40 overflow-hidden">
+                                                        <div className="divide-y divide-purple-100">
+                                                            {addons.map((addon, addonIdx) => {
                                                                 const rawPrice =
-                                                                    addon.priceModifier !== null && addon.priceModifier !== undefined
+                                                                    addon.priceModifier != null
                                                                         ? Number(addon.priceModifier)
-                                                                        : addon.basePrice !== null && addon.basePrice !== undefined
+                                                                        : addon.basePrice != null
                                                                             ? Number(addon.basePrice)
                                                                             : 0;
-                                                                const pageCount = (item as any).metadata?.pageCount || 1;
-                                                                const copies = (item as any).metadata?.copies || 1;
-                                                                const effectivePages = pageCount > 1 ? pageCount * copies : null;
+                                                                const reducedPages = hasHalfPage && effectivePages
+                                                                    ? Number(effectivePages)
+                                                                    : Number(pageCount || 0);
+                                                                const reducedEffective = reducedPages > 0
+                                                                    ? reducedPages * Number(copies || 1)
+                                                                    : null;
                                                                 const multiplier = addon.quantityMultiplier
-                                                                    ? (effectivePages != null ? effectivePages : item.quantity)
+                                                                    ? (reducedEffective ?? item.quantity)
                                                                     : 1;
                                                                 const total = rawPrice * multiplier;
                                                                 const specValues = (addon.specificationValues || {}) as Record<string, any>;
                                                                 const specDetails = Object.entries(specValues)
-                                                                    .map(([key, value]) => `${key}: ${value}`)
-                                                                    .join(', ');
-
+                                                                    .map(([k, v]) => `${k}: ${v}`)
+                                                                    .join(', ') || `Addon ${addonIdx + 1}`;
                                                                 return (
-                                                                    <div key={addonIdx} className="bg-white rounded-lg p-3 border border-purple-200">
-                                                                        <div className="flex justify-between items-start gap-4">
-                                                                            <div className="flex-1">
-                                                                                <p className="font-medium text-purple-900 text-sm mb-1">
-                                                                                    {specDetails || `Addon ${addonIdx + 1}`}
+                                                                    <div
+                                                                        key={addonIdx}
+                                                                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-3 py-2.5 bg-white"
+                                                                    >
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-sm font-medium text-purple-900">{specDetails}</p>
+                                                                            {multiplier > 1 && (
+                                                                                <p className="text-xs text-purple-500 mt-0.5">
+                                                                                    {formatCurrency(rawPrice)} × {multiplier}
                                                                                 </p>
-                                                                                {addon.ruleType && (
-                                                                                    <p className="text-xs text-purple-600">
-                                                                                        Type: {addon.ruleType.replace(/_/g, ' ')}
-                                                                                    </p>
-                                                                                )}
-                                                                            </div>
-                                                                            <div className="text-right shrink-0">
-                                                                                <p className="text-sm font-semibold text-purple-900">
-                                                                                    {formatCurrency(rawPrice)}
-                                                                                    {multiplier > 1 && (
-                                                                                        <span className="text-xs text-purple-600 ml-1">
-                                                                                            × {multiplier}
-                                                                                        </span>
-                                                                                    )}
-                                                                                </p>
-                                                                                {multiplier > 1 && (
-                                                                                    <p className="text-xs font-bold text-purple-900 mt-1">
-                                                                                        = {formatCurrency(total)}
-                                                                                    </p>
-                                                                                )}
-                                                                            </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="text-sm font-semibold text-purple-900 shrink-0 sm:text-right">
+                                                                            {formatCurrency(total)}
                                                                         </div>
                                                                     </div>
                                                                 );
                                                             })}
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-                                ))}
+                                                </div>
+                                            )}
 
-                                {/* Summary Footer */}
-                                <div className="pt-6 border-t-2">
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <p className="text-sm text-gray-600 mb-1">Total Items</p>
-                                            <p className="text-2xl font-bold text-gray-900">
-                                                {order.items.reduce((sum, item) => sum + item.quantity, 0)} item(s)
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-sm text-gray-600 mb-1">Order Total</p>
-                                            <p className="text-3xl font-bold text-gray-900">
-                                                {formatCurrency(order.total)}
-                                            </p>
+                                            {/* Price breakdown — explicit math. Replaces the
+                                                Unit/Qty/Total tiles that didn't visually
+                                                balance for half-page orders. Each row
+                                                renders the full formula (e.g. "₹0.55 ×
+                                                242 = ₹133.10") from the persisted
+                                                metadata.priceBreakdown labels, plus a
+                                                synthetic Item Total summing all priced
+                                                rows so the math foots end-to-end. */}
+                                            {breakdown && breakdown.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+                                                        Price Breakdown
+                                                    </h4>
+                                                    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                                                        <div className="divide-y divide-gray-100">
+                                                            {breakdown.map((pb, pbIdx) => {
+                                                                const isInfo = pb.value === 0;
+                                                                const isHalfPageNote = isInfo && typeof pb.label === 'string' && pb.label.includes('→');
+                                                                // Only annotate the Base row with explicit
+                                                                // `pages × copies × ₹rate` math. Addons can be
+                                                                // flat / per-file / per-page — exposing the
+                                                                // implied multiplier on every row added more
+                                                                // noise than clarity per UX feedback.
+                                                                const isBase = !isInfo && typeof pb.label === 'string'
+                                                                    && pb.label.toLowerCase().startsWith('base');
+                                                                const math = isBase
+                                                                    ? parseBreakdownMath(String(pb.label), Number(pb.value))
+                                                                    : null;
+                                                                return (
+                                                                    <div
+                                                                        key={pbIdx}
+                                                                        className={`flex justify-between gap-3 px-3 py-2.5 text-sm ${isHalfPageNote ? 'bg-blue-50 text-blue-900' : isInfo ? 'bg-gray-50 text-gray-700' : 'text-gray-900'}`}
+                                                                    >
+                                                                        <div className="min-w-0 break-words">
+                                                                            <div>{pb.label}</div>
+                                                                            {math && (
+                                                                                <div className="mt-0.5 text-[11px] text-gray-500 font-mono">
+                                                                                    {math.mathStr}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        {pb.value > 0 ? (
+                                                                            <span className="font-semibold shrink-0 tabular-nums">{formatCurrency(pb.value)}</span>
+                                                                        ) : (
+                                                                            <span className="italic shrink-0 text-xs">
+                                                                                {isHalfPageNote ? 'reduction' : 'info'}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            <div className="flex justify-between gap-3 px-3 py-2.5 text-sm bg-blue-50/60 border-t border-blue-200">
+                                                                <span className="font-bold text-blue-900">Item Total</span>
+                                                                <span className="font-bold text-blue-700 shrink-0 tabular-nums">
+                                                                    {formatCurrency(breakdownItemTotal)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Template */}
+                                            {meta?.templateId && (
+                                                <div>
+                                                    <h4 className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+                                                        Template
+                                                    </h4>
+                                                    <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+                                                        <TemplateDisplay
+                                                            templateId={meta.templateId}
+                                                            categoryId={item.product?.category?.id}
+                                                            formData={meta.templateFormData}
+                                                            formImages={meta.templateFormImages}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
+                                );
+                            })}
+
+                            {/* Summary footer — sum effective (post-Both-Sides)
+                                quantities so the unit count matches what's
+                                actually printed, not the raw uploaded page
+                                count. Mirrors the per-item displayQuantity. */}
+                            <div className="pt-4 border-t-2 flex justify-between items-baseline">
+                                <div>
+                                    <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Total Items</p>
+                                    <p className="text-xl font-bold text-gray-900 mt-0.5">
+                                        {order.items.reduce((sum, item) => {
+                                            const m = item.metadata as any;
+                                            const eff = m?.hasHalfPageAdjustment && m?.effectivePageCount
+                                                ? Number(m.effectivePageCount) * Number(m.copies || 1)
+                                                : item.quantity;
+                                            return sum + eff;
+                                        }, 0)} unit(s)
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Order Total</p>
+                                    <p className="text-2xl font-bold text-gray-900 mt-0.5">{formatCurrency(order.total)}</p>
                                 </div>
                             </div>
                         </CardContent>

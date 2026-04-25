@@ -180,12 +180,32 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 lineBaseTotal = itemPrice * files;
                 subtotal += lineBaseTotal;
             } else if (pageCount && pageCount > 0) {
-                const { effectivePageCount, effectiveQuantity: effQty, hasHalfPage } = await calculateProductEffectivePages(
-                    productId,
-                    pageCount,
-                    quantity,
-                    copies
-                );
+                // Trust client-supplied half-page snapshot when present —
+                // ProductSpecification.metadata lags published products that
+                // existed before the option's isHalfPage flag was added.
+                // Cart preview uses the public calculate-price endpoint which
+                // detects via the live category options, so its result is
+                // the authoritative one and gets persisted onto the cart
+                // item's metadata at add-to-cart time. See cartController
+                // for the matching trust path.
+                const clientHasHalfPage = !!(metadata as any)?.hasHalfPageAdjustment;
+                const clientEffectivePageCount = Number((metadata as any)?.effectivePageCount) || 0;
+
+                let effectivePageCount: number;
+                let hasHalfPage: boolean;
+                let effQty: number;
+                if (clientHasHalfPage && clientEffectivePageCount > 0) {
+                    effectivePageCount = clientEffectivePageCount;
+                    effQty = clientEffectivePageCount * (copies || 1);
+                    hasHalfPage = true;
+                } else {
+                    ({ effectivePageCount, effectiveQuantity: effQty, hasHalfPage } = await calculateProductEffectivePages(
+                        productId,
+                        pageCount,
+                        quantity,
+                        copies
+                    ));
+                }
 
                 effectiveQuantity = effQty;
 
@@ -204,13 +224,23 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                         copies
                     );
 
+                    // The cart endpoint already appends the half-page row to
+                    // metadata.priceBreakdown on every fetch; dedupe by label
+                    // before adding ours so the order detail view doesn't
+                    // render two identical "Both Side: X pages → Y pages"
+                    // rows in the price breakdown.
+                    const halfPageLabelPrefix = "Both Side";
+                    const existingBreakdown = ((metadata as any)?.priceBreakdown || []).filter(
+                        (entry: { label?: string } | null | undefined) =>
+                            !(entry?.label && String(entry.label).startsWith(halfPageLabelPrefix))
+                    );
                     updatedMetadata = {
                         ...(metadata as any || {}),
                         effectivePageCount,
                         originalPageCount: pageCount,
                         hasHalfPageAdjustment: true,
                         priceBreakdown: [
-                            ...((metadata as any)?.priceBreakdown || []),
+                            ...existingBreakdown,
                             ...(halfPageBreakdown ? [halfPageBreakdown] : []),
                         ],
                     };

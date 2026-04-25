@@ -29,12 +29,20 @@ export const getAddonUnitPrice = (addon: AddonRule): number => {
     return 0;
 };
 
-/** Effective page count used as the multiplier for quantityMultiplier addons. */
+/** Effective page count used as the multiplier for quantityMultiplier addons.
+ *  When the line item has had a half-page (both-sides) reduction applied, the
+ *  shared `metadata.effectivePageCount` is the authoritative number — fall back
+ *  to the raw `pageCount` only when no reduction is on the record. This matches
+ *  the server-side cart math (`api/src/utils/addon-pricing.ts` is fed the
+ *  reduced page count by cartController), so the UI total = the server total. */
 export const getEffectivePages = (metadata: CartItem["metadata"]): number | null => {
-    const pageCount = metadata?.pageCount ? Number(metadata.pageCount) : 0;
-    if (!pageCount || pageCount <= 0) return null;
-    const copies = metadata?.copies ? Number(metadata.copies) : 1;
-    return pageCount * (copies > 0 ? copies : 1);
+    const meta = metadata as { effectivePageCount?: number | null; pageCount?: number | null; copies?: number | null } | null | undefined;
+    const reduced = meta?.effectivePageCount ? Number(meta.effectivePageCount) : 0;
+    const raw = meta?.pageCount ? Number(meta.pageCount) : 0;
+    const pages = reduced > 0 ? reduced : raw;
+    if (!pages || pages <= 0) return null;
+    const copies = meta?.copies ? Number(meta.copies) : 1;
+    return pages * (copies > 0 ? copies : 1);
 };
 
 /** Whether an addon's configured page range is satisfied. */
