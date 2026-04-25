@@ -52,6 +52,13 @@ export interface CartItem {
         templatePreviewImage?: string;
         templateFormData?: Record<string, any>;
         templateFormImages?: string[];
+        // Half-page ("Both Sides") reduction state, written by the cart
+        // controller after pricing. Pages-based addon math reads
+        // effectivePageCount via getEffectivePages so the per-line breakdown
+        // matches the server-computed addonTotal.
+        effectivePageCount?: number;
+        originalPageCount?: number;
+        hasHalfPageAdjustment?: boolean;
     } | null;
     createdAt: string;
     updatedAt: string;

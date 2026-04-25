@@ -393,9 +393,14 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
         const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 
-        // Effective pages = pages × copies when files uploaded
+        // Effective pages = (effective ?? raw) × copies. When a half-page
+        // ("Both Sides") option is active the price-calc API returns
+        // effectivePageCount = ceil(pages / 2); addons must use that same
+        // number so a rule configured for the reduced range fires correctly.
+        const reducedPages =
+            effectivePageCount && effectivePageCount > 0 ? effectivePageCount : pageCount;
         const effectivePages =
-            pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
+            reducedPages > 0 ? reducedPages * (copies > 0 ? copies : 1) : null;
 
         return availableAddons
             .filter((rule) => {
@@ -419,7 +424,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 return true;
             })
             .map((rule) => rule.id);
-    }, [availableAddons, selectedSpecifications, pageCount, copies]);
+    }, [availableAddons, selectedSpecifications, pageCount, copies, effectivePageCount]);
 
     // Check if a specification should be visible based on dependencies
     const isSpecificationVisible = (spec: CategorySpecification): boolean => {
@@ -710,6 +715,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         templateId: selectedTemplateId || undefined,
                         templateFormData: selectedTemplateId ? templateFormData : undefined,
                         templateFormImages: selectedTemplateId ? templateFormImages : undefined,
+                        // Snapshot half-page reduction so GuestCart can render
+                        // the same numbers a logged-in cart would show without
+                        // having to re-derive from the spec metadata.
+                        effectivePageCount: hasHalfPageAdjustment ? effectivePageCount : undefined,
+                        originalPageCount: hasHalfPageAdjustment ? originalPageCount : undefined,
+                        hasHalfPageAdjustment: hasHalfPageAdjustment || undefined,
                     },
                     currentPrice: totalPrice,
                     totalPrice,
@@ -870,6 +881,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         .map((s) => s.trim())
                         .filter(Boolean)
                     : undefined,
+                // Snapshot the half-page reduction the public calculate-price
+                // endpoint already produced. Server-side ProductSpecification
+                // metadata can be stale (a product published before the
+                // option's isHalfPage flag was added still won't carry it),
+                // so the cart/order pipeline trusts these client-supplied
+                // fields when present and falls back to its own detection
+                // otherwise. See cartController.calculateProductEffectivePages.
+                effectivePageCount: hasHalfPageAdjustment ? effectivePageCount : undefined,
+                originalPageCount: hasHalfPageAdjustment ? originalPageCount : undefined,
+                hasHalfPageAdjustment: hasHalfPageAdjustment || undefined,
             };
 
             // Include template data if template is selected
@@ -985,6 +1006,11 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         templateFormImages: selectedTemplateId ? templateFormImages : undefined,
                         fileHasPassword: fileHasPassword ? true : undefined,
                         filePassword: fileHasPassword ? (filePassword || undefined) : undefined,
+                        // Snapshot half-page reduction so post-login merge keeps the
+                        // same totals seen in the guest cart (see GuestCart.tsx).
+                        effectivePageCount: hasHalfPageAdjustment ? effectivePageCount : undefined,
+                        originalPageCount: hasHalfPageAdjustment ? originalPageCount : undefined,
+                        hasHalfPageAdjustment: hasHalfPageAdjustment || undefined,
                     },
                     currentPrice: totalPrice,
                     totalPrice,
@@ -1589,7 +1615,15 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                 // Determine if any addon rule matches this selection with current specs.
                                                 // String-normalise comparison to match the memo above.
                                                 const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
-                                                const effectivePages = pageCount > 0 ? pageCount * (copies > 0 ? copies : 1) : null;
+                                                // Mirror the addon-id memo: prefer reduced pages so that
+                                                // a half-page ("Both Sides") selection routes to addons
+                                                // configured for the reduced range, not the original.
+                                                const reducedPages =
+                                                    effectivePageCount && effectivePageCount > 0
+                                                        ? effectivePageCount
+                                                        : pageCount;
+                                                const effectivePages =
+                                                    reducedPages > 0 ? reducedPages * (copies > 0 ? copies : 1) : null;
                                                 const matchingAddonRules = availableAddons.filter((rule) => {
                                                     const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
                                                     for (const [slug, val] of Object.entries(ruleSpecs)) {
@@ -1608,9 +1642,17 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                 if (matchingAddonRules.length === 0) {
                                                     const optionLabel =
                                                         availableOptions.find((opt) => opt.value === value)?.label || value;
+                                                    // When half-page is on, surface the reduced count so
+                                                    // the admin can configure a matching range easily.
+                                                    const pagesNote =
+                                                        effectivePages != null && hasHalfPageAdjustment
+                                                            ? ` (effective pages: ${effectivePages} after Both Sides reduction)`
+                                                            : effectivePages != null
+                                                                ? ` (current pages: ${effectivePages})`
+                                                                : "";
                                                     setSpecWarning(
                                                         spec.slug,
-                                                        `Pricing for “${optionLabel}” is not configured yet. Please choose another option or contact support.`
+                                                        `Pricing for “${optionLabel}” is not configured yet${pagesNote}. Please choose another option or contact support.`
                                                     );
                                                     // Reset dropdown back to default
                                                     handleSpecificationChange(spec.slug, '');
