@@ -2438,6 +2438,8 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                 phone: order.user?.phone || undefined,
             },
             shippingAddress: {
+                name: (order.address as { name?: string | null } | null)?.name ?? null,
+                phone: (order.address as { phone?: string | null } | null)?.phone ?? null,
                 street: order.address?.street || '',
                 city: order.address?.city || '',
                 state: order.address?.state || '',

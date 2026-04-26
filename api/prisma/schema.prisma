@@ -40,6 +40,12 @@ model User {
 model Address {
   id        String   @id @default(uuid())
   userId    String
+  /// Recipient name for this delivery address. Falls back to the user's
+  /// account name when null (legacy rows pre-dating this column).
+  name      String?
+  /// Recipient phone for this delivery address (10-digit local + optional
+  /// country code). Falls back to user.phone when null.
+  phone     String?
   street    String
   city      String
   state     String

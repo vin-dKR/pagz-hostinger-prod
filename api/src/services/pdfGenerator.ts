@@ -12,6 +12,10 @@ export interface InvoiceData {
         phone?: string;
     };
     shippingAddress: {
+        /** Per-address recipient name (falls back to customer.name on render). */
+        name?: string | null;
+        /** Per-address recipient phone (falls back to customer.phone). */
+        phone?: string | null;
         street: string;
         city: string;
         state: string;
@@ -252,10 +256,17 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                 billY = writeLine(invoiceData.customer.phone, billX, billY, lineOpts);
             }
 
-            // Ship column
+            // Ship column — prefer the per-address recipient name + phone
+            // when present so the courier sees the right contact for THIS
+            // delivery; fall back to the account-level customer fields.
             let shipY = y;
-            shipY = writeLine(invoiceData.customer.name, shipX, shipY, nameOpts);
+            const shipName = invoiceData.shippingAddress.name || invoiceData.customer.name;
+            shipY = writeLine(shipName, shipX, shipY, nameOpts);
             shipY += 4;
+            const shipPhone = invoiceData.shippingAddress.phone || invoiceData.customer.phone;
+            if (shipPhone) {
+                shipY = writeLine(shipPhone, shipX, shipY, lineOpts);
+            }
             const shipLines = [
                 invoiceData.shippingAddress.street,
                 `${invoiceData.shippingAddress.city}, ${invoiceData.shippingAddress.state} ${invoiceData.shippingAddress.zipCode}`.trim(),
