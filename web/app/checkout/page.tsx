@@ -364,6 +364,7 @@ function CheckoutPageContent() {
                     couponCode: appliedCoupon?.coupon?.code,
                     shippingCharges: selectedShippingFee,
                     shippingMethodId: selectedShippingId ?? undefined,
+                    customerComment: orderComment.trim() || undefined,
                 });
 
                 if (!freeOrderResp.success || !freeOrderResp.data) {
