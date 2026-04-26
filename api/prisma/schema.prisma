@@ -499,6 +499,10 @@ model Order {
   phonePeOrderId  String?       @unique
   couponId        String? // Applied coupon
   shippingMethodId String?
+  /// Optional free-form note from the customer at checkout (e.g. delivery
+  /// instructions, special requests). Visible to admin on the order
+  /// detail page and to the customer on their order detail page.
+  customerComment String?       @db.Text
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -661,6 +665,10 @@ model PendingPayment {
   amount          Decimal  @db.Decimal(10, 2)
   couponCode      String?
   shippingCharges Decimal? @db.Decimal(10, 2)
+  /// Free-form note from the customer at checkout. Persisted here so it
+  /// survives the create-order → verify-payment hop and lands on the
+  /// final Order row.
+  customerComment String?  @db.Text
   status          String   @default("PENDING")
   createdAt       DateTime @default(now())
   expiresAt       DateTime

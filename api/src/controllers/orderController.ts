@@ -69,7 +69,10 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             throw new NotFoundError("Address not found");
         }
 
-        const { couponCode, shippingCharges = 0, shippingMethodId } = req.body;
+        const { couponCode, shippingCharges = 0, shippingMethodId, customerComment } = req.body;
+        const trimmedCustomerComment = typeof customerComment === "string"
+            ? customerComment.trim().slice(0, 2000)
+            : null;
 
         // Resolve shipping method (server-authoritative price when method id is provided)
         let resolvedShippingMethodId: string | null = null;
@@ -387,6 +390,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                 total,
                 paymentMethod,
                 couponId,
+                customerComment: trimmedCustomerComment,
                 status: "PENDING_REVIEW",
                 refundStatus: "NOT_REQUIRED",
                 refundEligibleAmount: 0,

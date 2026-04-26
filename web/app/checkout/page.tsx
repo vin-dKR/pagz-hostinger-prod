@@ -54,6 +54,10 @@ function CheckoutPageContent() {
     const [isPaying, setIsPaying] = useState(false);
     const [isSyncingReorder, setIsSyncingReorder] = useState(false);
     const [isCompletingPayment, setIsCompletingPayment] = useState(false);
+    // Free-form comment from the customer (delivery instructions etc).
+    // Lifted out of `BillingSummary` so we can include it in the
+    // create-order payload — server persists on Order.customerComment.
+    const [orderComment, setOrderComment] = useState("");
 
     const itemsParam = searchParams.get('items');
 
@@ -414,6 +418,7 @@ function CheckoutPageContent() {
                 couponCode: appliedCoupon?.coupon?.code,
                 shippingCharges: selectedShippingFee,
                 shippingMethodId: selectedShippingId,
+                customerComment: orderComment.trim() || undefined,
             });
 
             if (!response.success || !response.data) {
@@ -690,6 +695,8 @@ function CheckoutPageContent() {
                             itemCount={itemCount}
                             onPay={handlePay}
                             isPaying={isPaying}
+                            orderComment={orderComment}
+                            onOrderCommentChange={setOrderComment}
                             disabled={hasNoShippingMethods || requiresShippingSelection || hasCategoryShortfall}
                             disabledMessage={
                                 hasNoShippingMethods
