@@ -7,6 +7,10 @@ import { get, post, put, del, ApiResponse } from '../api-client';
 export interface Address {
   id: string;
   userId: string;
+  /** Per-address recipient name. Falls back to the account's user.name. */
+  name?: string | null;
+  /** Per-address recipient phone. Falls back to the account's user.phone. */
+  phone?: string | null;
   street: string;
   city: string;
   state: string;
@@ -18,6 +22,8 @@ export interface Address {
 }
 
 export interface CreateAddressData {
+  name?: string;
+  phone?: string;
   street: string;
   city: string;
   state: string;
@@ -27,6 +33,8 @@ export interface CreateAddressData {
 }
 
 export interface UpdateAddressData {
+  name?: string;
+  phone?: string;
   street?: string;
   city?: string;
   state?: string;

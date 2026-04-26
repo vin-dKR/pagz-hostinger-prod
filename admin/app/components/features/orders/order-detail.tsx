@@ -436,6 +436,13 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-1">
+                                    {(address.name || address.phone) && (
+                                        <p className="text-sm">
+                                            {address.name && <span className="font-semibold">{address.name}</span>}
+                                            {address.name && address.phone && <span className="text-gray-400"> · </span>}
+                                            {address.phone && <span className="text-gray-700">{address.phone}</span>}
+                                        </p>
+                                    )}
                                     <p className="font-medium">{address.street}</p>
                                     <p>
                                         {address.city}, {address.state} {address.zipCode}

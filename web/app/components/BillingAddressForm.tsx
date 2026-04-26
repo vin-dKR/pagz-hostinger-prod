@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useAddresses } from "@/hooks/addresses/useAddresses";
-import { CreateAddressData } from "@/lib/api/addresses";
-import { MapPin, Plus } from "lucide-react";
+import { CreateAddressData, UpdateAddressData, Address } from "@/lib/api/addresses";
+import { MapPin, Plus, Pencil, X } from "lucide-react";
 import { toastWarning, toastError, toastSuccess, toastPromise } from "@/lib/utils/toast";
 
 interface BillingAddressFormProps {
@@ -17,10 +17,13 @@ export default function BillingAddressForm({
     onAddressSelect,
     onDataChange,
 }: BillingAddressFormProps) {
-    const { addresses, loading, createAddress, refetch } = useAddresses();
+    const { addresses, loading, createAddress, updateAddress, refetch } = useAddresses();
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
     const [formData, setFormData] = useState<CreateAddressData>({
+        name: "",
+        phone: "",
         street: "",
         city: "",
         state: "",
@@ -28,6 +31,7 @@ export default function BillingAddressForm({
         country: "India",
         isDefault: false,
     });
+    const [editForm, setEditForm] = useState<UpdateAddressData>({});
 
     // Sort addresses: default first, then selected, then others
 
@@ -74,6 +78,56 @@ export default function BillingAddressForm({
         }
     }, [addresses.length, previousAddressCount, pendingIsDefault, addresses, onAddressSelect]);
 
+    /** Open the inline edit form for a saved address. Pre-fills with the
+     *  current values; closes the create form so only one editor is open
+     *  at a time. */
+    const handleStartEdit = (address: Address) => {
+        setEditingAddressId(address.id);
+        setEditForm({
+            name: address.name ?? "",
+            phone: address.phone ?? "",
+            street: address.street,
+            city: address.city,
+            state: address.state,
+            zipCode: address.zipCode,
+            country: address.country,
+        });
+        setShowCreateForm(false);
+        // Make sure the address being edited is also the selected one so the
+        // user doesn't fix details on a row they aren't checking out with.
+        onAddressSelect(address.id);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingAddressId(null);
+        setEditForm({});
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingAddressId) return;
+        if (!editForm.street || !editForm.city || !editForm.state || !editForm.zipCode) {
+            toastWarning("Please fill in street, city, state, and PIN code");
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            const ok = await toastPromise(
+                updateAddress(editingAddressId, editForm),
+                {
+                    loading: "Updating address…",
+                    success: "Address updated",
+                    error: "Failed to update address. Please try again.",
+                }
+            );
+            if (ok) {
+                await refetch();
+                handleCancelEdit();
+            }
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -103,6 +157,8 @@ export default function BillingAddressForm({
 
                 // Reset form
                 setFormData({
+                    name: "",
+                    phone: "",
                     street: "",
                     city: "",
                     state: "",
@@ -145,44 +201,160 @@ export default function BillingAddressForm({
                         Select Address
                     </label>
                     <div className="space-y-2">
-                        {addresses.map((address) => (
-                            <label
-                                key={address.id}
-                                className={`flex items-start gap-3 p-3 border-2 rounded-lg cursor-pointer transition-colors ${selectedAddressId === address.id
-                                    ? "border-blue-500 bg-blue-50"
-                                    : "border-gray-200 hover:border-gray-300"
-                                    }`}
-                            >
-                                <input
-                                    type="radio"
-                                    name="address"
-                                    value={address.id}
-                                    checked={selectedAddressId === address.id}
-                                    onChange={() => {
-                                        onAddressSelect(address.id);
-                                        setShowCreateForm(false);
-                                    }}
-                                    className="mt-1 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                                />
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <MapPin size={16} className="text-gray-500" />
-                                        <span className="font-medium text-gray-900">
-                                            {address.street}
-                                        </span>
-                                        {address.isDefault && (
-                                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                                                Default
-                                            </span>
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-gray-600">
-                                        {address.city}, {address.state} {address.zipCode}
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-1">{address.country}</p>
+                        {addresses.map((address) => {
+                            const isEditing = editingAddressId === address.id;
+                            return (
+                                <div
+                                    key={address.id}
+                                    className={`border-2 rounded-lg transition-colors ${selectedAddressId === address.id
+                                        ? "border-blue-500 bg-blue-50"
+                                        : "border-gray-200 hover:border-gray-300"
+                                        }`}
+                                >
+                                    <label className="flex items-start gap-3 p-3 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="address"
+                                            value={address.id}
+                                            checked={selectedAddressId === address.id}
+                                            onChange={() => {
+                                                onAddressSelect(address.id);
+                                                setShowCreateForm(false);
+                                                if (editingAddressId && editingAddressId !== address.id) {
+                                                    handleCancelEdit();
+                                                }
+                                            }}
+                                            className="mt-1 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                <MapPin size={16} className="text-gray-500" />
+                                                <span className="font-medium text-gray-900">
+                                                    {address.name || "Address"}
+                                                </span>
+                                                {address.phone && (
+                                                    <span className="text-xs text-gray-600">· {address.phone}</span>
+                                                )}
+                                                {address.isDefault && (
+                                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                                        Default
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-gray-700 truncate">{address.street}</p>
+                                            <p className="text-sm text-gray-600">
+                                                {address.city}, {address.state} {address.zipCode}
+                                            </p>
+                                            <p className="text-xs text-gray-500 mt-1">{address.country}</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                if (isEditing) {
+                                                    handleCancelEdit();
+                                                } else {
+                                                    handleStartEdit(address);
+                                                }
+                                            }}
+                                            className="shrink-0 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 px-2 py-1 rounded border border-blue-200 hover:bg-blue-50"
+                                        >
+                                            {isEditing ? (
+                                                <>
+                                                    <X size={12} /> Cancel
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Pencil size={12} /> Edit
+                                                </>
+                                            )}
+                                        </button>
+                                    </label>
+
+                                    {/* Inline edit form — same fields as the
+                                        create form, scoped to this address. */}
+                                    {isEditing && (
+                                        <div className="border-t border-blue-200 p-3 bg-white space-y-3">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editForm.name ?? ""}
+                                                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded outline-none focus:ring-2 focus:ring-blue-500"
+                                                        placeholder="Recipient name"
+                                                        maxLength={120}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-700 mb-1">Mobile</label>
+                                                    <input
+                                                        type="tel"
+                                                        inputMode="tel"
+                                                        value={editForm.phone ?? ""}
+                                                        onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded outline-none focus:ring-2 focus:ring-blue-500"
+                                                        placeholder="10-digit mobile"
+                                                        maxLength={32}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-700 mb-1">Street</label>
+                                                <input
+                                                    type="text"
+                                                    value={editForm.street ?? ""}
+                                                    onChange={(e) => setEditForm({ ...editForm, street: e.target.value })}
+                                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="Street"
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <input
+                                                    type="text"
+                                                    value={editForm.city ?? ""}
+                                                    onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                                                    className="px-3 py-2 text-sm border border-gray-300 rounded outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="City"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={editForm.state ?? ""}
+                                                    onChange={(e) => setEditForm({ ...editForm, state: e.target.value })}
+                                                    className="px-3 py-2 text-sm border border-gray-300 rounded outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="State"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={editForm.zipCode ?? ""}
+                                                    onChange={(e) => setEditForm({ ...editForm, zipCode: e.target.value })}
+                                                    className="px-3 py-2 text-sm border border-gray-300 rounded outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="PIN"
+                                                />
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    disabled={isSubmitting}
+                                                    onClick={handleSaveEdit}
+                                                    className="px-4 py-2 text-sm bg-[#008ECC] text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                                                >
+                                                    {isSubmitting ? "Saving…" : "Save changes"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCancelEdit}
+                                                    className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            </label>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -229,6 +401,37 @@ export default function BillingAddressForm({
             {/* Create Address Form - Show when "Add New Address" is clicked */}
             {showCreateForm && (
                 <form onSubmit={handleSubmit} className="space-y-4">
+
+                    {/* Recipient Name + Mobile */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Recipient Name
+                            </label>
+                            <input
+                                type="text"
+                                value={formData.name ?? ""}
+                                onChange={(e) => handleChange("name", e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Full name for this address"
+                                maxLength={120}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Mobile Number
+                            </label>
+                            <input
+                                type="tel"
+                                inputMode="tel"
+                                value={formData.phone ?? ""}
+                                onChange={(e) => handleChange("phone", e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="10-digit mobile number"
+                                maxLength={32}
+                            />
+                        </div>
+                    </div>
 
                     {/* Street Address */}
                     <div>

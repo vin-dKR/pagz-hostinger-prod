@@ -13,6 +13,8 @@ function AddressesPageContent() {
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [formData, setFormData] = useState<CreateAddressData>({
+        name: "",
+        phone: "",
         street: "",
         city: "",
         state: "",
@@ -26,6 +28,8 @@ function AddressesPageContent() {
     const handleEdit = (address: Address) => {
         setEditingId(address.id);
         setFormData({
+            name: address.name ?? "",
+            phone: address.phone ?? "",
             street: address.street,
             city: address.city,
             state: address.state,
@@ -38,11 +42,13 @@ function AddressesPageContent() {
     const handleCancelEdit = () => {
         setEditingId(null);
         setFormData({
+            name: "",
+            phone: "",
             street: "",
             city: "",
             state: "",
             zipCode: "",
-            country: "IN",
+            country: "India",
         });
     };
 
@@ -85,6 +91,8 @@ function AddressesPageContent() {
             if (editingId) {
                 // Update existing address
                 const updateData: UpdateAddressData = {
+                    name: formData.name ?? "",
+                    phone: formData.phone ?? "",
                     street: formData.street,
                     city: formData.city,
                     state: formData.state,
@@ -115,11 +123,13 @@ function AddressesPageContent() {
                 if (success) {
                     setShowAddForm(false);
                     setFormData({
+                        name: "",
+                        phone: "",
                         street: "",
                         city: "",
                         state: "",
                         zipCode: "",
-                        country: "IN",
+                        country: "India",
                     });
                 }
             }
@@ -221,22 +231,38 @@ function AddressesPageContent() {
                         </div>
 
                         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-                            {/* User Info Display */}
-                            {user && (
-                                <div className="bg-gray-50/50 rounded-xl p-3 sm:p-4">
-                                    <p className="text-sm text-gray-600 mb-1">
-                                        <strong>Name:</strong> {user.name || user.email}
-                                    </p>
-                                    {user.phone && (
-                                        <p className="text-sm text-gray-600">
-                                            <strong>Phone:</strong> {user.phone}
-                                        </p>
-                                    )}
-                                    <p className="text-xs text-gray-500 mt-2">
-                                        This information will be used for all deliveries to this address.
-                                    </p>
+                            {/* Recipient name + phone — per-address. Used by
+                                the courier and on the invoice. Falls back to
+                                the account profile fields when left blank. */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
+                                        Recipient Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={formData.name ?? ""}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#008ECC] focus:border-transparent text-sm sm:text-base"
+                                        placeholder={user?.name || "Full name for this address"}
+                                        maxLength={120}
+                                    />
                                 </div>
-                            )}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 sm:mb-2">
+                                        Mobile Number
+                                    </label>
+                                    <input
+                                        type="tel"
+                                        inputMode="tel"
+                                        value={formData.phone ?? ""}
+                                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#008ECC] focus:border-transparent text-sm sm:text-base"
+                                        placeholder={user?.phone || "10-digit mobile number"}
+                                        maxLength={32}
+                                    />
+                                </div>
+                            </div>
 
                             {/* Address Details */}
                             <div>
@@ -374,19 +400,17 @@ function AddressesPageContent() {
                                     </div>
                                 )}
 
-                                {/* Address Details */}
+                                {/* Address Details — prefer the per-address
+                                    name/phone with profile fallback so existing
+                                    rows continue to render usable info. */}
                                 <div className="space-y-2 sm:space-y-3 mb-4 sm:mb-6">
-                                    {user && (
-                                        <>
-                                            <p className="text-sm sm:text-base font-hkgb text-gray-900">
-                                                {user.name || user.email}
-                                            </p>
-                                            {user.phone && (
-                                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                    <span>{user.phone}</span>
-                                                </div>
-                                            )}
-                                        </>
+                                    <p className="text-sm sm:text-base font-hkgb text-gray-900">
+                                        {address.name || user?.name || user?.email || ""}
+                                    </p>
+                                    {(address.phone || user?.phone) && (
+                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                            <span>{address.phone || user?.phone}</span>
+                                        </div>
                                     )}
                                     <div className="space-y-1 text-sm text-gray-700">
                                         <p>{address.street}</p>

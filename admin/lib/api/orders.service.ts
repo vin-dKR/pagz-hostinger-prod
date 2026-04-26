@@ -154,6 +154,8 @@ export interface Payment {
 }
 
 export interface Address {
+    name?: string | null;
+    phone?: string | null;
     street: string;
     city: string;
     state: string;
