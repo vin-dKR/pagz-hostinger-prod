@@ -2452,12 +2452,26 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                     metadata,
                     fileCount: lineFileCount,
                 };
+                // Surface the persisted per-item price breakdown so the
+                // invoice PDF can render the same row-by-row math as the
+                // order detail screen.
+                const breakdownRaw = (metadata as any)?.priceBreakdown;
+                const priceBreakdown = Array.isArray(breakdownRaw)
+                    ? breakdownRaw
+                          .filter((row: any) => row && typeof row.label === 'string')
+                          .map((row: any) => ({
+                              label: String(row.label),
+                              value: Number(row.value) || 0,
+                          }))
+                    : undefined;
+
                 return {
                     name: item.product?.name || 'Product',
                     variant: item.variant?.name,
                     quantity: item.quantity,
                     price: Number(item.price),
                     total: Number(item.price) * item.quantity,
+                    priceBreakdown,
                     addons: addons.length > 0 ? addons.map((addon: any) => {
                         const specValues = (addon.specificationValues || {}) as Record<string, any>;
                         const addonName = Object.entries(specValues)
@@ -2479,16 +2493,37 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                 tax,
                 total,
             },
-            payment: {
-                method: order.paymentMethod === 'ONLINE' ? 'Online Payment' : 'Cash on Delivery',
-                status: order.paymentStatus,
-                transactionId: order.payments?.[0]?.phonePeTransactionId || order.payments?.[0]?.phonePeOrderId || undefined,
-            },
+            payment: (() => {
+                // The payment-gateway pipeline marks ₹0 orders (e.g. fully
+                // discounted via coupons) as COD/OFFLINE because they
+                // skip the Razorpay flow. From the customer's perspective
+                // those are still prepaid online orders — they paid the
+                // ₹0 balance up-front, no cash is collected on delivery.
+                // Surface them as Online + Prepaid in the invoice.
+                const isZeroAmountOnline = Number(order.total ?? 0) === 0;
+                const method = order.paymentMethod === 'ONLINE' || isZeroAmountOnline
+                    ? 'Online Payment'
+                    : 'Cash on Delivery';
+                const status = isZeroAmountOnline
+                    ? 'Prepaid'
+                    : order.paymentStatus === 'SUCCESS'
+                        ? 'Prepaid'
+                        : order.paymentStatus;
+                return {
+                    method,
+                    status,
+                    transactionId:
+                        order.payments?.[0]?.phonePeTransactionId
+                        || order.payments?.[0]?.phonePeOrderId
+                        || undefined,
+                };
+            })(),
             company: {
-                name: process.env.COMPANY_NAME || 'pagz',
-                address: process.env.COMPANY_ADDRESS || 'Company Address',
-                phone: process.env.COMPANY_PHONE || '+91 1234567890',
-                email: process.env.COMPANY_EMAIL || 'info@pagz.com',
+                name: process.env.COMPANY_NAME || 'PAGZ',
+                address: process.env.COMPANY_ADDRESS
+                    || 'Amber Chowk, Kahchari Road, Bihar Sharif (Nalanda), pin-803101',
+                phone: process.env.COMPANY_PHONE || '7500905010',
+                email: process.env.COMPANY_EMAIL || 'info@pagz.in',
                 gstin: process.env.COMPANY_GSTIN,
             },
         };
