@@ -14,6 +14,18 @@ export interface FormattedOrder {
     quantity: number;
     price: number;
     image?: string;
+    /** Per-item half-page snapshot + breakdown rows so the orders list
+     *  can show the real effective qty + per-page rate (mirrors the
+     *  order detail page derivation). Stored `price × quantity` lies
+     *  on half-page jobs because the rule's ceil(pages/2) rounding
+     *  isn't reflected in either field. */
+    metadata?: {
+      pageCount?: number;
+      copies?: number;
+      effectivePageCount?: number;
+      hasHalfPageAdjustment?: boolean;
+      priceBreakdown?: Array<{ label: string; value: number }>;
+    };
   }[];
 }
 
@@ -77,13 +89,29 @@ export const useOrders = () => {
 
       const orderNumber = `ORD-${order.id.slice(0, 8).toUpperCase()}`;
 
-      const formattedItems = order.items.map((item) => ({
-        id: item.id,
-        name: item.product?.name || 'Unknown Product',
-        quantity: item.quantity,
-        price: item.price,
-        image: item.product?.images?.[0]?.url,
-      }));
+      const formattedItems = order.items.map((item) => {
+        const meta = (item as any).metadata as Record<string, any> | null | undefined;
+        return {
+          id: item.id,
+          name: item.product?.name || 'Unknown Product',
+          quantity: item.quantity,
+          price: item.price,
+          image: item.product?.images?.[0]?.url,
+          metadata: meta
+            ? {
+                pageCount: typeof meta.pageCount === 'number' ? meta.pageCount : undefined,
+                copies: typeof meta.copies === 'number' ? meta.copies : undefined,
+                effectivePageCount: typeof meta.effectivePageCount === 'number' ? meta.effectivePageCount : undefined,
+                hasHalfPageAdjustment: !!meta.hasHalfPageAdjustment,
+                priceBreakdown: Array.isArray(meta.priceBreakdown)
+                  ? meta.priceBreakdown
+                      .filter((row: any) => row && typeof row.label === 'string')
+                      .map((row: any) => ({ label: String(row.label), value: Number(row.value) || 0 }))
+                  : undefined,
+              }
+            : undefined,
+        };
+      });
 
       return {
         id: order.id,

@@ -287,54 +287,87 @@ function OrdersPageContent() {
 
                                 {/* Order Items */}
                                 <div className="space-y-3 mb-4">
-                                    {order.items.map((item) => (
-                                        <div
-                                            key={item.id}
-                                            className="flex items-center gap-3 sm:gap-4 p-3 bg-gray-50 rounded-xl"
-                                        >
-                                            {/* Item Image */}
-                                            <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gray-200 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative">
-                                                {item.image ? (
-                                                    <Image
-                                                        src={item.image}
-                                                        alt={item.name}
-                                                        fill
-                                                        className="object-cover"
-                                                        sizes="(max-width: 640px) 56px, 64px"
-                                                        loader={imageLoader}
-                                                    />
-                                                ) : (
-                                                    <Package className="text-gray-400 w-6 h-6 sm:w-7 sm:h-7" />
-                                                )}
-                                            </div>
+                                    {order.items.map((item) => {
+                                        // Derive the real per-item math from the persisted
+                                        // breakdown (same approach as orders/[id]/page.tsx
+                                        // and the invoice PDF). Stored `price × quantity`
+                                        // is wrong on half-page jobs because the rule's
+                                        // ceil(pages/2) rounding is missing from `quantity`.
+                                        const breakdown = item.metadata?.priceBreakdown;
+                                        const baseRow = breakdown?.find(
+                                            (pb) => typeof pb.label === 'string' && pb.label.toLowerCase().startsWith('base'),
+                                        );
+                                        const parseMultiplier = (label: string): number => {
+                                            const pages = Number(label.match(/(\d+(?:\.\d+)?)\s*pages?\b/i)?.[1] ?? 0);
+                                            const copies = Number(label.match(/(\d+(?:\.\d+)?)\s*cop(?:y|ies)\b/i)?.[1] ?? 0);
+                                            const files = Number(label.match(/(\d+(?:\.\d+)?)\s*files?\b/i)?.[1] ?? 0);
+                                            let m = 1;
+                                            if (pages > 0) m *= pages;
+                                            if (copies > 0) m *= copies;
+                                            if (m === 1 && files > 0) m = files;
+                                            return m;
+                                        };
+                                        const baseMult = baseRow ? parseMultiplier(String(baseRow.label)) : 0;
+                                        const displayQuantity = baseMult > 0 ? baseMult : item.quantity;
+                                        const displayUnit = baseRow && baseMult > 1
+                                            ? Number(baseRow.value) / baseMult
+                                            : Number(item.price);
+                                        const itemTotal = breakdown && breakdown.length > 0
+                                            ? breakdown.reduce(
+                                                (sum, pb) => sum + (Number(pb.value) > 0 ? Number(pb.value) : 0),
+                                                0,
+                                            )
+                                            : Number(item.price) * Number(item.quantity);
 
-                                            {/* Item Details */}
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-900 truncate">
-                                                    {item.name}
-                                                </p>
-                                                <div className="flex items-center gap-3 mt-1">
-                                                    <p className="text-xs text-gray-600">
-                                                        Qty: {item.quantity}
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                className="flex items-center gap-3 sm:gap-4 p-3 bg-gray-50 rounded-xl"
+                                            >
+                                                {/* Item Image */}
+                                                <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gray-200 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative">
+                                                    {item.image ? (
+                                                        <Image
+                                                            src={item.image}
+                                                            alt={item.name}
+                                                            fill
+                                                            className="object-cover"
+                                                            sizes="(max-width: 640px) 56px, 64px"
+                                                            loader={imageLoader}
+                                                        />
+                                                    ) : (
+                                                        <Package className="text-gray-400 w-6 h-6 sm:w-7 sm:h-7" />
+                                                    )}
+                                                </div>
+
+                                                {/* Item Details */}
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-gray-900 truncate">
+                                                        {item.name}
                                                     </p>
-                                                    <span className="text-gray-300">•</span>
-                                                    <p className="text-xs text-gray-600">
-                                                        ₹{(Number(item.price)).toFixed(2)} each
+                                                    <div className="flex items-center gap-3 mt-1">
+                                                        <p className="text-xs text-gray-600">
+                                                            Qty: {displayQuantity}
+                                                        </p>
+                                                        <span className="text-gray-300">•</span>
+                                                        <p className="text-xs text-gray-600">
+                                                            ₹{displayUnit.toFixed(2)} each
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Item Total — full breakdown sum (base + addons) */}
+                                                <div className="text-right">
+                                                    <p className="text-sm font-hkgb text-gray-900">
+                                                        ₹{itemTotal.toFixed(2)}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Total
                                                     </p>
                                                 </div>
                                             </div>
-
-                                            {/* Item Price */}
-                                            <div className="text-right">
-                                                <p className="text-sm font-hkgb text-gray-900">
-                                                    ₹{(Number(item.price) * Number(item.quantity)).toFixed(2)}
-                                                </p>
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    Subtotal
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
 
                                 {/* Order Actions */}

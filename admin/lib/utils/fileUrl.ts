@@ -35,7 +35,14 @@ export function getPublicFileUrl(pathOrUrl: string): string {
         return pathOrUrl;
     }
     const cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl.substring(1) : pathOrUrl;
-    return `${UPLOADS_BASE_URL}/${cleanPath}`;
+    // URL-encode each segment so filenames with `&`, `@`, spaces, or
+    // other reserved characters survive Hostinger's static-file router.
+    // Keep `/` separators intact between segments.
+    const encoded = cleanPath
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/');
+    return `${UPLOADS_BASE_URL}/${encoded}`;
 }
 
 /**
