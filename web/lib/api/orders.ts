@@ -135,6 +135,9 @@ export interface CreateOrderData {
     couponCode?: string;
     shippingCharges?: number;
     shippingMethodId?: string;
+    /** Free-form note from the customer at checkout. Server trims + caps
+     *  at 2000 chars and persists on Order.customerComment. */
+    customerComment?: string;
 }
 
 export interface OrdersResponse {
