@@ -27,7 +27,7 @@ export const createPhonePeOrderFromCart = async (req: Request, res: Response, ne
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { items, addressId, amount, couponCode, shippingCharges } = req.body;
+        const { items, addressId, amount, couponCode, shippingCharges, customerComment } = req.body;
 
         if (!items || !Array.isArray(items) || items.length === 0) {
             throw new ValidationError("Order items are required");
@@ -43,6 +43,12 @@ export const createPhonePeOrderFromCart = async (req: Request, res: Response, ne
         if (Number(amount) < 1) {
             throw new ValidationError("Minimum payable amount for Razorpay is ₹1.00");
         }
+
+        // Trim + cap free-form customer comment so adversarial input can't
+        // bloat the row or hold control characters.
+        const trimmedComment = typeof customerComment === "string"
+            ? customerComment.trim().slice(0, 2000)
+            : null;
 
         // Verify address belongs to user
         const address = await prisma.address.findFirst({
@@ -74,6 +80,7 @@ export const createPhonePeOrderFromCart = async (req: Request, res: Response, ne
                 amount: Number(amount),
                 couponCode: couponCode || null,
                 shippingCharges: shippingCharges ? Number(shippingCharges) : null,
+                customerComment: trimmedComment,
                 status: "PENDING",
                 expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
             },
@@ -107,7 +114,7 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { items, addressId, amount, couponCode, shippingCharges } = req.body;
+        const { items, addressId, amount, couponCode, shippingCharges, customerComment } = req.body;
         if (!items || !Array.isArray(items) || items.length === 0) {
             throw new ValidationError("Order items are required");
         }
@@ -117,6 +124,10 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
         if (!amount || Number(amount) <= 0) {
             throw new ValidationError("Valid amount is required");
         }
+
+        const trimmedComment = typeof customerComment === "string"
+            ? customerComment.trim().slice(0, 2000)
+            : null;
 
         const razorKeyId = process.env.RAZOR_LIVE_ID;
         const razorKeySecret = process.env.RAZOR_LIVE_SECRET_KEY;
@@ -146,6 +157,7 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
                 amount: Number(amount),
                 couponCode: couponCode || null,
                 shippingCharges: shippingCharges ? Number(shippingCharges) : null,
+                customerComment: trimmedComment,
                 status: "PENDING",
                 expiresAt: new Date(Date.now() + 60 * 60 * 1000),
             },
@@ -245,6 +257,7 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
         const addressId = pendingPayment.addressId;
         const couponCode = pendingPayment.couponCode;
         const shippingCharges = Number(pendingPayment.shippingCharges || 0);
+        const pendingCustomerComment = (pendingPayment as { customerComment?: string | null }).customerComment ?? null;
 
         const address = await prisma.address.findFirst({
             where: { id: addressId, userId: req.user.id },
@@ -401,6 +414,7 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
                 paymentStatus: "SUCCESS",
                 refundStatus: "PENDING",
                 refundEligibleAmount: total,
+                customerComment: pendingCustomerComment,
                 couponId,
                 phonePeOrderId: merchantOrderId,
                 status: "PENDING_REVIEW",
@@ -543,6 +557,7 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
         const items = pendingPayment.items as any[];
         const addressId = pendingPayment.addressId;
         const couponCode = pendingPayment.couponCode;
+        const pendingCustomerComment = (pendingPayment as { customerComment?: string | null }).customerComment ?? null;
         const shippingCharges = Number(pendingPayment.shippingCharges || 0);
 
         // Verify address belongs to user
@@ -729,6 +744,7 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
                 paymentStatus: "SUCCESS",
                 refundStatus: "PENDING",
                 refundEligibleAmount: total,
+                customerComment: pendingCustomerComment,
                 couponId,
                 phonePeOrderId: merchantOrderId,
                 status: "PENDING_REVIEW",

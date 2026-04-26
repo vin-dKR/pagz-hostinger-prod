@@ -89,6 +89,9 @@ export interface Order {
     cancelledAt?: string;
     cancelledBy?: 'CUSTOMER' | 'ADMIN' | 'SYSTEM';
     cancellationReason?: string;
+    /** Free-form note the customer left at checkout. Surfaced on order
+     *  detail (web + admin). */
+    customerComment?: string | null;
     phonePeOrderId?: string;
     couponId?: string;
     createdAt: string;

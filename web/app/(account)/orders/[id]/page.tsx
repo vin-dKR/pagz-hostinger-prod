@@ -93,6 +93,7 @@ interface OrderDetails {
     refundStatus?: string;
     refundMessage?: string;
     cancellationReason?: string;
+    customerComment?: string;
     trackingNumber?: string;
     estimatedDelivery?: string;
     statusHistory: OrderStatusHistoryDisplay[];
@@ -303,6 +304,7 @@ function transformOrder(order: Order): OrderDetails {
             ? "Refund will be credited to your bank account within 7 working days."
             : undefined,
         cancellationReason: order.cancellationReason || undefined,
+        customerComment: order.customerComment || undefined,
         statusHistory,
     };
 }
@@ -1024,6 +1026,14 @@ function OrderDetailsPageContent({
                                         {order.refundMessage && (
                                             <p className="text-xs text-gray-500 mt-2">{order.refundMessage}</p>
                                         )}
+                                    </div>
+                                )}
+                                {order.customerComment && (
+                                    <div>
+                                        <p className="text-sm text-gray-600 mb-1">Your note</p>
+                                        <p className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap break-words">
+                                            {order.customerComment}
+                                        </p>
                                     </div>
                                 )}
                             </div>

@@ -84,6 +84,8 @@ export interface Order {
     cancelledAt?: string | null;
     cancelledBy?: 'CUSTOMER' | 'ADMIN' | 'SYSTEM' | null;
     cancellationReason?: string | null;
+    /** Free-form note the customer left at checkout. */
+    customerComment?: string | null;
     phonePeOrderId?: string | null;
     couponId?: string | null;
     address: Address;

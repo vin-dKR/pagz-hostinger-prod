@@ -18,6 +18,12 @@ interface BillingSummaryProps {
     hideCouponAndShipping?: boolean; // Hide coupon and shipping (for cart page)
     disabled?: boolean; // Externally disable the Pay button
     disabledMessage?: string; // Helper text shown when externally disabled
+    /** Lifted-state hook for the Order Comment textarea — checkout
+     *  needs the value at submit time so the api can persist it on the
+     *  Order row. When omitted the component falls back to local state
+     *  for non-checkout surfaces (cart preview etc). */
+    orderComment?: string;
+    onOrderCommentChange?: (value: string) => void;
 }
 
 export default function BillingSummary({
@@ -34,8 +40,18 @@ export default function BillingSummary({
     hideCouponAndShipping = false,
     disabled = false,
     disabledMessage,
+    orderComment: orderCommentProp,
+    onOrderCommentChange,
 }: BillingSummaryProps) {
-    const [orderComment, setOrderComment] = useState("");
+    // When the parent doesn't lift state, fall back to a local buffer so
+    // the textarea remains usable on cart / preview surfaces that don't
+    // need to read it back.
+    const [localOrderComment, setLocalOrderComment] = useState("");
+    const orderComment = orderCommentProp ?? localOrderComment;
+    const setOrderComment = (value: string) => {
+        if (onOrderCommentChange) onOrderCommentChange(value);
+        else setLocalOrderComment(value);
+    };
     const [agreedToTerms, setAgreedToTerms] = useState(false);
 
     return (
@@ -102,8 +118,9 @@ export default function BillingSummary({
                         <textarea
                             value={orderComment}
                             onChange={(e) => setOrderComment(e.target.value)}
-                            placeholder="Type here..."
+                            placeholder="Special instructions, delivery notes, etc."
                             rows={4}
+                            maxLength={2000}
                             className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
                         />
                     </div>

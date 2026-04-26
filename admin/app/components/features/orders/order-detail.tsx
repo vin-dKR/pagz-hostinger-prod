@@ -283,6 +283,14 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                         <PaymentStatusBadge status={order.paymentStatus} />
                                     </div>
                                 </div>
+                                {order.customerComment && (
+                                    <div>
+                                        <p className="text-sm text-gray-600 mb-1">Customer Note</p>
+                                        <p className="text-sm text-gray-800 bg-amber-50 border border-amber-200 rounded p-3 whitespace-pre-wrap break-words">
+                                            {order.customerComment}
+                                        </p>
+                                    </div>
+                                )}
                                 <div className="pt-4 border-t">
                                     {/* Use stored values from database, with fallback calculation */}
                                     {(() => {
