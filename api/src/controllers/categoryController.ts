@@ -979,13 +979,12 @@ export const calculateCategoryPrice = async (
                 // Shared across the range check and the quantityMultiplier math
                 // so the admin preview agrees with the server-side cart /
                 // checkout / invoice path (which runs `computeAddonLineTotal`).
-                // When half-page is selected, addon page-range must compare
-                // against the reduced effective count (else ranges configured
-                // for the post-Both-Sides count silently miss).
-                const reducedPages =
-                    effectivePageCount > 0 ? effectivePageCount : pageCount;
+                // Addon range gates on RAW upload volume (pageCount × copies),
+                // not the half-page-reduced sheet count. Half-page reduction
+                // is a base-price concern only — addons gate on the document
+                // size the customer uploaded.
                 const effectivePages =
-                    reducedPages != null ? reducedPages * (copies != null ? copies : 1) : null;
+                    pageCount != null ? pageCount * (copies != null ? copies : 1) : null;
 
                 if (hasPageRange) {
                     if (effectivePages == null) {
@@ -1570,13 +1569,14 @@ export const calculateCategoryPricePublic = async (
             } else if (rule.ruleType === "ADDON") {
                 const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
 
-                // effectivePages = pageCount * copies when a print-job with
-                // pages is being priced; null otherwise. Shared with the range
-                // check AND the quantityMultiplier math below so the preview
-                // agrees with the server-side cart / checkout / invoice path
-                // (which calls `computeAddonLineTotal` with the same input).
+                // effectivePages = RAW pageCount × copies (not the
+                // half-page-reduced sheet count). Addon ranges gate on
+                // upload volume; mirrors `computeAddonLineTotal` so cart,
+                // checkout, and invoice all agree on the gating number.
                 const effectivePages =
-                    effectivePageCount > 0 ? effectivePageCount * (copies != null ? copies : 1) : null;
+                    pageCount != null && pageCount > 0
+                        ? pageCount * (copies != null ? copies : 1)
+                        : null;
 
                 if (hasPageRange) {
                     if (effectivePages == null) {
