@@ -73,29 +73,25 @@ export const getAddonUnitPrice = (addon: AddonPricingRule): number => {
 };
 
 /**
- * Derive the "effective pages" used for quantityMultiplier calculations.
- * Returns null when the line item is not a print-job (no pageCount), in which
- * case addon consumers should fall back to the cart/order quantity.
+ * Total pages used for addon page-range matching + per-page multipliers.
  *
- * When the line carries `metadata.effectivePageCount` (set by the cart /
- * order pipeline whenever a half-page "Both Sides" option reduces pages),
- * that value is authoritative — addon page-range matching and the
- * quantityMultiplier multiplier must use the reduced count, not the raw
- * uploaded page count, otherwise an addon configured for the reduced
- * range silently contributes zero and the order persists without the
- * addon amount the customer was just charged. The web copy of this util
- * (`web/lib/utils/addon-pricing.ts:getEffectivePages`) mirrors this logic.
+ * Always returns the RAW upload volume (`pageCount × copies`), not the
+ * half-page-reduced sheet count. Addons are configured against the
+ * document size the customer uploads — a 50-page PDF × 10 copies is
+ * 500 pages worth of binding / lamination / page-numbering, even when
+ * the print job is duplexed onto 250 sheets. Half-page reduction
+ * stays a base-price concern and is not applied here. The web copy of
+ * this util (`web/lib/utils/addon-pricing.ts`) mirrors the same
+ * logic so cart preview, server cart math, and order totals agree.
  */
 export const getEffectivePages = (
     metadata: AddonLineItemInput["metadata"]
 ): number | null => {
     const meta = metadata as
-        | { pageCount?: number | null; effectivePageCount?: number | null; copies?: number | null }
+        | { pageCount?: number | null; copies?: number | null }
         | null
         | undefined;
-    const reduced = meta?.effectivePageCount ? Number(meta.effectivePageCount) : 0;
-    const raw = meta?.pageCount ? Number(meta.pageCount) : 0;
-    const pages = reduced > 0 ? reduced : raw;
+    const pages = meta?.pageCount ? Number(meta.pageCount) : 0;
     if (!pages || pages <= 0) return null;
     const copies = meta?.copies ? Number(meta.copies) : 1;
     const safeCopies = copies > 0 ? copies : 1;

@@ -29,17 +29,18 @@ export const getAddonUnitPrice = (addon: AddonRule): number => {
     return 0;
 };
 
-/** Effective page count used as the multiplier for quantityMultiplier addons.
- *  When the line item has had a half-page (both-sides) reduction applied, the
- *  shared `metadata.effectivePageCount` is the authoritative number — fall back
- *  to the raw `pageCount` only when no reduction is on the record. This matches
- *  the server-side cart math (`api/src/utils/addon-pricing.ts` is fed the
- *  reduced page count by cartController), so the UI total = the server total. */
+/** Total pages used for addon page-range matching + per-page multipliers.
+ *
+ *  Always returns the RAW upload volume (`pageCount × copies`), not the
+ *  half-page-reduced sheet count. Reasoning: addons are configured by
+ *  the admin against the document size the customer uploads. A 50-page
+ *  PDF × 10 copies = 500 pages of work to laminate / bind / page-number,
+ *  even when the print job itself is duplexed onto 250 sheets. The
+ *  half-page reduction stays a base-price concern (sheets actually
+ *  printed) and isn't applied here. */
 export const getEffectivePages = (metadata: CartItem["metadata"]): number | null => {
-    const meta = metadata as { effectivePageCount?: number | null; pageCount?: number | null; copies?: number | null } | null | undefined;
-    const reduced = meta?.effectivePageCount ? Number(meta.effectivePageCount) : 0;
-    const raw = meta?.pageCount ? Number(meta.pageCount) : 0;
-    const pages = reduced > 0 ? reduced : raw;
+    const meta = metadata as { pageCount?: number | null; copies?: number | null } | null | undefined;
+    const pages = meta?.pageCount ? Number(meta.pageCount) : 0;
     if (!pages || pages <= 0) return null;
     const copies = meta?.copies ? Number(meta.copies) : 1;
     return pages * (copies > 0 ? copies : 1);

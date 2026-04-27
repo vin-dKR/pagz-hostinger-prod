@@ -83,8 +83,11 @@ if (!fs.existsSync(FTP_TEMP_DIR)) {
  *     most filesystems and the Hostinger FTP layer enforce. Reserve
  *     room for our own prefix instead of erroring out at upload time.
  */
+// Most filesystems (ext4 / Hostinger / NTFS short-name) cap individual
+// filenames at 255 bytes. Leave a 5-byte safety margin for any URL
+// percent-encoding the FTP server itself might add when responding.
 const FTP_NAME_PREFIX_RESERVE = 13 + 1 + 8 + 1; // <ts>-<uuid8>-
-const FTP_FILENAME_MAX = 200; // server limit is 255; leave headroom for the prefix
+const FTP_FILENAME_MAX = 250;
 
 const FORBIDDEN_FILENAME_CHARS = new Set(["<", ">", ":", "\"", "/", "\\", "|", "?", "*", "&", "#", ";", "`", "'", "\r", "\n", "\t"]);
 

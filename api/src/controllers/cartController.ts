@@ -263,8 +263,10 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                     ? unitBasePrice * effectivePages
                     : unitBasePrice * item.quantity;
 
-            // Addon pricing — honour half-page adjustments by feeding the effective
-            // pages into the shared util (so cart UI matches server-side checkout).
+            // Addon pricing gates on RAW upload volume (pageCount × copies),
+            // independent of the half-page reduction applied to the base
+            // price. A 50-page PDF × 10 copies = 500 pages of binding work
+            // even when the print is duplexed onto 250 sheets.
             let addonUnitPrice = 0;
             let addonTotal = 0;
 
@@ -274,11 +276,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                     quantity: item.quantity,
                     addons: (item.addons as AddonPricingRule[]).map((a) => a.id),
                     metadata: {
-                        // Use half-page-adjusted page count when applicable so
-                        // the addon math mirrors the base price calculation.
-                        pageCount: pageCount && pageCount > 0
-                            ? (hasHalfPage ? effectivePageCount : pageCount)
-                            : null,
+                        pageCount: pageCount && pageCount > 0 ? pageCount : null,
                         copies,
                     },
                     fileCount: lineFileCount,
@@ -885,13 +883,13 @@ export const validateCartMinimums = async (req: Request, res: Response, next: Ne
 
             let addonTotal = 0;
             if (item.addons && item.addons.length > 0) {
+                // Addon math gates on raw pageCount × copies — half-page
+                // reduction stays a base-price concern.
                 const pricingLine = {
                     quantity: item.quantity,
                     addons: (item.addons as AddonPricingRule[]).map((a) => a.id),
                     metadata: {
-                        pageCount: pageCount && pageCount > 0
-                            ? (hasHalfPage ? effectivePageCount : pageCount)
-                            : null,
+                        pageCount: pageCount && pageCount > 0 ? pageCount : null,
                         copies,
                     },
                     fileCount: lineFileCount,

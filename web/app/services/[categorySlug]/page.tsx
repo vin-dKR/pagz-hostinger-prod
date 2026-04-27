@@ -394,14 +394,19 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
         const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 
-        // Effective pages = (effective ?? raw) × copies. When a half-page
-        // ("Both Sides") option is active the price-calc API returns
-        // effectivePageCount = ceil(pages / 2); addons must use that same
-        // number so a rule configured for the reduced range fires correctly.
-        const reducedPages =
-            effectivePageCount && effectivePageCount > 0 ? effectivePageCount : pageCount;
-        const effectivePages =
-            reducedPages > 0 ? reducedPages * (copies > 0 ? copies : 1) : null;
+        // Total pages = raw upload volume the addon's range is gated on.
+        //   pages × copies               when files are uploaded
+        //   quantity × copies            in bulk-quantity mode
+        // Half-page reduction is intentionally NOT applied — addons are
+        // configured against the document size the customer uploads
+        // (50 pages × 10 copies = 500 pages of binding / lamination work,
+        // even when the print itself is duplexed onto 250 sheets). The
+        // half-page reduction is a base-price concern only.
+        const safeCopies = copies > 0 ? copies : 1;
+        const totalPages = pageCount > 0
+            ? pageCount * safeCopies
+            : (isCopiesMode ? quantity * safeCopies : quantity);
+        const rangeBasis = totalPages > 0 ? totalPages : null;
 
         return availableAddons
             .filter((rule) => {
@@ -417,15 +422,15 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 // Page range check (if configured on the rule)
                 const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
                 if (hasPageRange) {
-                    if (effectivePages == null) return false;
-                    if (rule.minQuantity != null && effectivePages < rule.minQuantity) return false;
-                    if (rule.maxQuantity != null && effectivePages > rule.maxQuantity) return false;
+                    if (rangeBasis == null) return false;
+                    if (rule.minQuantity != null && rangeBasis < rule.minQuantity) return false;
+                    if (rule.maxQuantity != null && rangeBasis > rule.maxQuantity) return false;
                 }
 
                 return true;
             })
             .map((rule) => rule.id);
-    }, [availableAddons, selectedSpecifications, pageCount, copies, effectivePageCount]);
+    }, [availableAddons, selectedSpecifications, pageCount, copies, quantity, isCopiesMode]);
 
     // Check if a specification should be visible based on dependencies
     const isSpecificationVisible = (spec: CategorySpecification): boolean => {
@@ -1648,15 +1653,15 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                 // Determine if any addon rule matches this selection with current specs.
                                                 // String-normalise comparison to match the memo above.
                                                 const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
-                                                // Mirror the addon-id memo: prefer reduced pages so that
-                                                // a half-page ("Both Sides") selection routes to addons
-                                                // configured for the reduced range, not the original.
-                                                const reducedPages =
-                                                    effectivePageCount && effectivePageCount > 0
-                                                        ? effectivePageCount
-                                                        : pageCount;
-                                                const effectivePages =
-                                                    reducedPages > 0 ? reducedPages * (copies > 0 ? copies : 1) : null;
+                                                // Mirror the addon-id memo: total pages = raw upload
+                                                // volume (pageCount × copies, or quantity × copies in
+                                                // bulk mode). Half-page reduction NOT applied — addon
+                                                // ranges gate on the customer-uploaded volume.
+                                                const safeCopies = copies > 0 ? copies : 1;
+                                                const totalPages = pageCount > 0
+                                                    ? pageCount * safeCopies
+                                                    : (isCopiesMode ? quantity * safeCopies : quantity);
+                                                const rangeBasis = totalPages > 0 ? totalPages : null;
                                                 const matchingAddonRules = availableAddons.filter((rule) => {
                                                     const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
                                                     for (const [slug, val] of Object.entries(ruleSpecs)) {
@@ -1665,9 +1670,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
                                                     const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
                                                     if (hasPageRange) {
-                                                        if (effectivePages == null) return false;
-                                                        if (rule.minQuantity != null && effectivePages < rule.minQuantity) return false;
-                                                        if (rule.maxQuantity != null && effectivePages > rule.maxQuantity) return false;
+                                                        if (rangeBasis == null) return false;
+                                                        if (rule.minQuantity != null && rangeBasis < rule.minQuantity) return false;
+                                                        if (rule.maxQuantity != null && rangeBasis > rule.maxQuantity) return false;
                                                     }
                                                     return true;
                                                 });
@@ -1675,14 +1680,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                 if (matchingAddonRules.length === 0) {
                                                     const optionLabel =
                                                         availableOptions.find((opt) => opt.value === value)?.label || value;
-                                                    // When half-page is on, surface the reduced count so
-                                                    // the admin can configure a matching range easily.
-                                                    const pagesNote =
-                                                        effectivePages != null && hasHalfPageAdjustment
-                                                            ? ` (effective pages: ${effectivePages} after Both Sides reduction)`
-                                                            : effectivePages != null
-                                                                ? ` (current pages: ${effectivePages})`
-                                                                : "";
+                                                    const pagesNote = rangeBasis != null
+                                                        ? ` (current pages: ${rangeBasis} = ${pageCount > 0 ? pageCount : quantity} × ${safeCopies})`
+                                                        : "";
                                                     setSpecWarning(
                                                         spec.slug,
                                                         `Pricing for “${optionLabel}” is not configured yet${pagesNote}. Please choose another option or contact support.`
