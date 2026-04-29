@@ -138,11 +138,12 @@ async function countPDFPages(file: File): Promise<number> {
                         console.warn('Worker setup failed, using main thread:', workerError);
                     }
                     
-                    // Load PDF
+                    // Load PDF. `isEvalSupported` was removed from
+                    // DocumentInitParameters in pdfjs-dist v5; default
+                    // already disables eval-based font code.
                     const pdf = await pdfjsLib.getDocument({
                         data: arrayBuffer,
                         useWorkerFetch: false,
-                        isEvalSupported: false,
                         verbosity: 0,
                     }).promise;
                     

@@ -107,11 +107,14 @@ export default function ProductDocumentUpload({
                             console.warn('Worker setup failed, using main thread:', workerError);
                         }
 
-                        // Load PDF - will use main thread if worker fails
+                        // Load PDF — will use main thread if worker fails.
+                        // `isEvalSupported` was removed from
+                        // DocumentInitParameters in pdfjs-dist v5; the
+                        // default already disables eval-based font code,
+                        // so dropping the flag matches v5 behaviour.
                         const pdf = await pdfjsLib.getDocument({
                             data: arrayBuffer,
                             useWorkerFetch: false,
-                            isEvalSupported: false,
                             verbosity: 0,
                         }).promise;
 
