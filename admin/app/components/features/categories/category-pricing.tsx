@@ -75,6 +75,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         priceModifier: string;
         quantityMultiplier: boolean;
         fileMultiplier: boolean;
+        copyMultiplier: boolean;
         minQuantity: string;
         maxQuantity: string;
         isActive: boolean;
@@ -85,6 +86,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         priceModifier: '',
         quantityMultiplier: true,
         fileMultiplier: false,
+        copyMultiplier: false,
         minQuantity: '',
         maxQuantity: '',
         isActive: true,
@@ -155,6 +157,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             priceModifier: '',
             quantityMultiplier: true,
             fileMultiplier: false,
+            copyMultiplier: false,
             minQuantity: '',
             maxQuantity: '',
             isActive: true,
@@ -219,6 +222,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                 priceModifier: form.priceModifier ? Number(form.priceModifier) : null,
                 quantityMultiplier: form.quantityMultiplier,
                 fileMultiplier: form.fileMultiplier,
+                copyMultiplier: form.copyMultiplier,
                 minQuantity: form.minQuantity ? Number(form.minQuantity) : null,
                 maxQuantity: form.maxQuantity ? Number(form.maxQuantity) : null,
                 isActive: form.isActive,
@@ -290,6 +294,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                     : '',
             quantityMultiplier: rule.quantityMultiplier,
             fileMultiplier: (rule as any).fileMultiplier ?? false,
+            copyMultiplier: (rule as any).copyMultiplier ?? false,
             minQuantity:
                 (rule.ruleType === 'ADDON' || rule.ruleType === 'QUANTITY_TIER') && rule.minQuantity != null
                     ? String(rule.minQuantity)
@@ -302,7 +307,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             priority: String(rule.priority ?? 0),
         });
         setSpecFilters(nextFilters);
-        
+
         // Load addons - prioritize map (unsaved changes) over product (saved state)
         // This ensures that if user made changes and cancelled, they're preserved
         const storedAddons = ruleAddonsMap[rule.id];
@@ -383,6 +388,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                 : rule.priceModifier != null ? String(rule.priceModifier) : '',
             quantityMultiplier: rule.quantityMultiplier,
             fileMultiplier: (rule as any).fileMultiplier ?? false,
+            copyMultiplier: (rule as any).copyMultiplier ?? false,
             minQuantity:
                 (rule.ruleType === 'ADDON' || rule.ruleType === 'QUANTITY_TIER') && rule.minQuantity != null
                     ? String(rule.minQuantity)
@@ -1217,6 +1223,28 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                 />
                                                 <Label htmlFor="file-multiplier">Multiply by files</Label>
                                             </div>
+                                            {form.ruleType === 'ADDON' && (
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        id="copy-multiplier"
+                                                        type="checkbox"
+                                                        checked={form.copyMultiplier}
+                                                        onChange={(e) =>
+                                                            setForm((prev) => ({
+                                                                ...prev,
+                                                                copyMultiplier: e.target.checked,
+                                                            }))
+                                                        }
+                                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    />
+                                                    <Label
+                                                        htmlFor="copy-multiplier"
+                                                        title="Charges once per physical copy (e.g. binding). Page range checks per-copy pages."
+                                                    >
+                                                        One per physical copy
+                                                    </Label>
+                                                </div>
+                                            )}
                                             <div className="flex items-center gap-2">
                                                 <input
                                                     id="is-active"

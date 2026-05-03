@@ -89,22 +89,61 @@ if (!fs.existsSync(FTP_TEMP_DIR)) {
 const FTP_NAME_PREFIX_RESERVE = 13 + 1 + 8 + 1; // <ts>-<uuid8>-
 const FTP_FILENAME_MAX = 250;
 
-const FORBIDDEN_FILENAME_CHARS = new Set(["<", ">", ":", "\"", "/", "\\", "|", "?", "*", "&", "#", ";", "`", "'", "\r", "\n", "\t"]);
-
+// Reduce the source name to a strict URL-safe ASCII subset before it ever
+// reaches FTP. Anything outside `[A-Za-z0-9._-]` gets collapsed so the
+// resulting public URL needs no percent-encoding — that was the failure
+// mode where `MarketixMind%20DM…pdf` got double-encoded round-tripping
+// through `new URL().pathname` and 404'd in the admin viewer.
 function sanitizeBaseName(baseName: string, extLen: number): string {
-    let scrubbed = "";
-    for (const ch of baseName) {
-        const code = ch.charCodeAt(0);
-        if (code < 0x20 || code === 0x7F || FORBIDDEN_FILENAME_CHARS.has(ch)) {
-            scrubbed += "_";
-        } else {
-            scrubbed += ch;
-        }
-    }
+    // 1. Decode any pre-encoded sequences (browsers sometimes send
+    //    `%20` in multipart filenames). Tolerate malformed input.
+    let decoded = baseName;
+    try { decoded = decodeURIComponent(baseName); } catch { /* keep raw */ }
+    // 2. Replace anything outside the safe set with `_`.
+    const scrubbed = decoded.replace(/[^A-Za-z0-9._-]+/g, "_");
+    // 3. Collapse `_` runs and trim leading/trailing punctuation.
     const cleaned = scrubbed.replace(/_{2,}/g, "_").replace(/^[._-]+|[._-]+$/g, "").trim();
     const safe = cleaned.length > 0 ? cleaned : "file";
     const maxBase = Math.max(8, FTP_FILENAME_MAX - FTP_NAME_PREFIX_RESERVE - extLen);
     return safe.length > maxBase ? safe.slice(0, maxBase) : safe;
+}
+
+// Custom file names supplied by clients (e.g. `customFileName` body field)
+// must run through the same scrub before being concatenated into the
+// remote name — otherwise a caller could pass spaces / `%XX` and bypass
+// the sanitizer.
+function sanitizeCustomFileName(name: string, extLen: number): string {
+    return sanitizeBaseName(name, extLen);
+}
+
+// Extensions are short and almost always alphanumeric, but a malformed
+// upload could still ship with `.pd f` or similar. Strip the leading `.`,
+// scrub, then re-prepend.
+function sanitizeExt(ext: string): string {
+    if (!ext) return "";
+    const trimmed = ext.startsWith(".") ? ext.slice(1) : ext;
+    const safe = trimmed.replace(/[^A-Za-z0-9]+/g, "").toLowerCase();
+    return safe ? `.${safe}` : "";
+}
+
+/**
+ * Final safety cap on the constructed remote name. Filesystems / FTP
+ * servers typically reject names > 255 bytes — sanitizeBaseName already
+ * trims the source segment, but call sites concatenate prefixes (`<ts>-`,
+ * `<ts>-<uuid8>-`) that can push the total over the cap on
+ * pathological inputs (300+ char originalname, custom filename, etc.).
+ * This belt-and-braces step trims the *base* portion of the final name
+ * so the suffix (`.<ext>`) is preserved — chopping the extension would
+ * confuse Content-Type sniffing on the served file.
+ */
+function capRemoteFileName(name: string): string {
+    if (name.length <= FTP_FILENAME_MAX) return name;
+    const dot = name.lastIndexOf(".");
+    const base = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : "";
+    const room = FTP_FILENAME_MAX - ext.length;
+    const trimmedBase = base.slice(0, Math.max(1, room));
+    return `${trimmedBase}${ext}`;
 }
 
 export const uploadFileToFTP = async (req: Request, res: Response, next: NextFunction) => {
@@ -120,15 +159,18 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
 
         // Generate unique filename if not provided
         const originalName = req.file.originalname;
-        const fileExt = path.extname(originalName);
-        const rawBaseName = path.basename(originalName, fileExt);
-        const safeBaseName = sanitizeBaseName(rawBaseName, fileExt.length);
-        const remoteFileName = customFileName
-            ? `${customFileName}${fileExt}`
-            : `${Date.now()}-${safeBaseName}${fileExt}`;
+        const rawExt = path.extname(originalName);
+        const safeExt = sanitizeExt(rawExt);
+        const rawBaseName = path.basename(originalName, rawExt);
+        const safeBaseName = sanitizeBaseName(rawBaseName, safeExt.length);
+        const remoteFileName = capRemoteFileName(
+            customFileName
+                ? `${sanitizeCustomFileName(String(customFileName), safeExt.length)}${safeExt}`
+                : `${Date.now()}-${safeBaseName}${safeExt}`
+        );
 
         // Save file temporarily to disk
-        const tempFileName = `${randomUUID()}${fileExt}`;
+        const tempFileName = `${randomUUID()}${safeExt}`;
         tempFilePath = path.join(FTP_TEMP_DIR, tempFileName);
         
         fs.writeFileSync(tempFilePath, req.file.buffer);
@@ -199,13 +241,16 @@ export const uploadMultipleFilesToFTP = async (req: Request, res: Response, next
 
         const uploadResults = await Promise.all(
             files.map(async (file) => {
-                const fileExt = path.extname(file.originalname);
-                const rawBaseName = path.basename(file.originalname, fileExt);
-                const safeBaseName = sanitizeBaseName(rawBaseName, fileExt.length);
-                const remoteFileName = `${Date.now()}-${randomUUID().substring(0, 8)}-${safeBaseName}${fileExt}`;
+                const rawExt = path.extname(file.originalname);
+                const safeExt = sanitizeExt(rawExt);
+                const rawBaseName = path.basename(file.originalname, rawExt);
+                const safeBaseName = sanitizeBaseName(rawBaseName, safeExt.length);
+                const remoteFileName = capRemoteFileName(
+                    `${Date.now()}-${randomUUID().substring(0, 8)}-${safeBaseName}${safeExt}`
+                );
 
                 // Save file temporarily
-                const tempFileName = `${randomUUID()}${fileExt}`;
+                const tempFileName = `${randomUUID()}${safeExt}`;
                 const tempFilePath = path.join(FTP_TEMP_DIR, tempFileName);
                 tempFilePaths.push(tempFilePath);
                 

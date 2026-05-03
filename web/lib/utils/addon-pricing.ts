@@ -29,21 +29,47 @@ export const getAddonUnitPrice = (addon: AddonRule): number => {
     return 0;
 };
 
-/** Total pages used for addon page-range matching + per-page multipliers.
+/** Total sheets used for addon page-range matching + per-page multipliers.
  *
- *  Always returns the RAW upload volume (`pageCount × copies`), not the
- *  half-page-reduced sheet count. Reasoning: addons are configured by
- *  the admin against the document size the customer uploads. A 50-page
- *  PDF × 10 copies = 500 pages of work to laminate / bind / page-number,
- *  even when the print job itself is duplexed onto 250 sheets. The
- *  half-page reduction stays a base-price concern (sheets actually
- *  printed) and isn't applied here. */
+ *  Returns `(effectivePageCount ?? pageCount) × copies`. Half-page
+ *  reduction flows in — duplexing a 100-page PDF onto 50 sheets means
+ *  binding/lamination/page-numbering addons gate on 50 (the sheets
+ *  actually printed), not 100. Mirrors the api util so cart preview,
+ *  server cart math, and order totals agree. */
 export const getEffectivePages = (metadata: CartItem["metadata"]): number | null => {
-    const meta = metadata as { pageCount?: number | null; copies?: number | null } | null | undefined;
-    const pages = meta?.pageCount ? Number(meta.pageCount) : 0;
+    const meta = metadata as
+        | { pageCount?: number | null; copies?: number | null; effectivePageCount?: number | null }
+        | null
+        | undefined;
+    const reduced = meta?.effectivePageCount ? Number(meta.effectivePageCount) : 0;
+    const pages = reduced > 0
+        ? reduced
+        : meta?.pageCount ? Number(meta.pageCount) : 0;
     if (!pages || pages <= 0) return null;
     const copies = meta?.copies ? Number(meta.copies) : 1;
     return pages * (copies > 0 ? copies : 1);
+};
+
+/** Per-copy pages used for `copyMultiplier` addons.
+ *  Mirrors the api util: post half-page reduction when "Both Sides" is
+ *  selected (binding-style addons bind sheets in one book, not raw
+ *  document pages). Falls back to raw `pageCount`. */
+export const getPerCopyPages = (metadata: CartItem["metadata"]): number | null => {
+    const meta = metadata as
+        | { pageCount?: number | null; effectivePageCount?: number | null }
+        | null
+        | undefined;
+    const reduced = meta?.effectivePageCount ? Number(meta.effectivePageCount) : 0;
+    if (reduced > 0) return reduced;
+    const raw = meta?.pageCount ? Number(meta.pageCount) : 0;
+    return raw > 0 ? raw : null;
+};
+
+/** Number of physical copies on a line. Falls back to 1. */
+export const getCopiesCount = (metadata: CartItem["metadata"]): number => {
+    const meta = metadata as { copies?: number | null } | null | undefined;
+    const copies = meta?.copies ? Number(meta.copies) : 1;
+    return copies > 0 ? copies : 1;
 };
 
 /** Whether an addon's configured page range is satisfied. */
@@ -59,21 +85,41 @@ export const isAddonInPageRange = (
     return true;
 };
 
-/** Price contribution of a single addon applied to a line item. */
+/** Price contribution of a single addon applied to a line item.
+ *
+ *  Multiplier matrix (resolved in this order):
+ *    - fileMultiplier              -> unit × files (most specific, wins).
+ *    - copyMultiplier              -> range checked vs per-copy pages.
+ *                                     unit × (perCopyPages if also
+ *                                     quantityMultiplier else 1) × copies.
+ *    - quantityMultiplier          -> unit × (pageCount × copies).
+ *    - none                        -> flat unit price.
+ */
 export const computeAddonLineTotal = (
     addon: AddonRule,
     line: { quantity: number; metadata: CartItem["metadata"]; fileCount?: number }
 ): number => {
-    const effectivePages = getEffectivePages(line.metadata);
-    if (!isAddonInPageRange(addon, effectivePages)) return 0;
     const unit = getAddonUnitPrice(addon);
-    // fileMultiplier wins when both flags are on — more specific signal.
+
     if (addon.fileMultiplier) {
+        const totalPages = getEffectivePages(line.metadata);
+        if (!isAddonInPageRange(addon, totalPages)) return 0;
         const files = Math.max(1, line.fileCount ?? 0);
         return unit * files;
     }
+
+    if (addon.copyMultiplier) {
+        const perCopy = getPerCopyPages(line.metadata);
+        if (!isAddonInPageRange(addon, perCopy ?? line.quantity)) return 0;
+        const copies = getCopiesCount(line.metadata);
+        const perBookMult = addon.quantityMultiplier ? (perCopy ?? 1) : 1;
+        return unit * perBookMult * copies;
+    }
+
+    const totalPages = getEffectivePages(line.metadata);
+    if (!isAddonInPageRange(addon, totalPages)) return 0;
     if (!addon.quantityMultiplier) return unit;
-    const multiplier = effectivePages ?? line.quantity;
+    const multiplier = totalPages ?? line.quantity;
     return unit * multiplier;
 };
 

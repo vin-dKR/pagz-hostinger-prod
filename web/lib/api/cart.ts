@@ -19,6 +19,8 @@ export interface AddonRule {
     priceModifier?: number | null;
     quantityMultiplier: boolean;
     fileMultiplier?: boolean;
+    /** One charge per physical copy (e.g. binding). */
+    copyMultiplier?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
 }

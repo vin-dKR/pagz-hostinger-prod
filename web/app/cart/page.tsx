@@ -163,7 +163,7 @@ function CartPageContent() {
     const itemHasImages = (item: typeof items[0]): boolean => {
         // Check for uploaded design files
         if (item.customDesignUrl) {
-        if (Array.isArray(item.customDesignUrl)) {
+            if (Array.isArray(item.customDesignUrl)) {
                 if (item.customDesignUrl.length > 0 &&
                     item.customDesignUrl.some(url => url && url.trim() !== '')) {
                     return true;
@@ -173,7 +173,7 @@ function CartPageContent() {
                 return true;
             }
         }
-        
+
         // Check for template with form data (template form data means files not required)
         if (item.metadata?.templateId) {
             // If template has form data, consider it as having "files" (form data replaces file requirement)
@@ -189,7 +189,7 @@ function CartPageContent() {
                 return true;
             }
         }
-        
+
         return false;
     };
 
@@ -378,7 +378,7 @@ function CartPageContent() {
                         <div className="lg:col-span-2 order-2 lg:order-1">
                             {/* Select All / Unselect All */}
                             {items.length > 0 && (
-                                <div className="mb-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white rounded-xl sm:rounded-2xl border border-gray-100 p-3 sm:p-4">
+                                <div className="mb-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white rounded-xl sm:rounded-2xl border border-gray-200 p-3 sm:p-4">
                                     <div className="flex items-center gap-2 sm:gap-3">
                                         <button
                                             onClick={handleSelectAll}

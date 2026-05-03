@@ -310,20 +310,34 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                             // Fallback: calculate from items' addons
                                             return order.items.reduce((sum, item) => {
                                                 const addons = Array.isArray((item as any).addons) ? (item as any).addons : [];
-                                                const pageCount = (item as any).metadata?.pageCount || 1;
-                                                const copies = (item as any).metadata?.copies || 1;
-                                                const effectivePages = pageCount > 1 ? pageCount * copies : null;
+                                                const meta = (item as any).metadata || {};
+                                                const pageCount = Number(meta.pageCount) || 0;
+                                                const copies = Number(meta.copies) > 0 ? Number(meta.copies) : 1;
+                                                const perCopyPages =
+                                                    Number(meta.effectivePageCount) > 0
+                                                        ? Number(meta.effectivePageCount)
+                                                        : pageCount > 0
+                                                            ? pageCount
+                                                            : null;
+                                                // Half-page-aware total — sheets actually printed
+                                                // across all copies. Mirrors the api util gate.
+                                                const totalPages = perCopyPages != null
+                                                    ? perCopyPages * copies
+                                                    : null;
 
                                                 const itemAddonsTotal = addons.reduce((addonSum: number, addon: any) => {
-                                                    // Check page range if addon has minQuantity/maxQuantity
                                                     const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
-                                                    if (hasPageRange && effectivePages != null) {
+                                                    // Range gating page set differs by flag — copyMultiplier
+                                                    // gates per-copy pages (binding-style: per book), the
+                                                    // others gate against total document volume.
+                                                    const gatePages = addon.copyMultiplier
+                                                        ? perCopyPages
+                                                        : totalPages;
+                                                    if (hasPageRange && gatePages != null) {
                                                         const inRange =
-                                                            (addon.minQuantity == null || effectivePages >= addon.minQuantity) &&
-                                                            (addon.maxQuantity == null || effectivePages <= addon.maxQuantity);
-                                                        if (!inRange) {
-                                                            return addonSum; // Skip this addon if not in range
-                                                        }
+                                                            (addon.minQuantity == null || gatePages >= addon.minQuantity) &&
+                                                            (addon.maxQuantity == null || gatePages <= addon.maxQuantity);
+                                                        if (!inRange) return addonSum;
                                                     }
 
                                                     const rawPrice =
@@ -333,14 +347,14 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                                 ? Number(addon.basePrice)
                                                                 : 0;
 
-                                                    // Calculate multiplier based on quantity multiplier and page count
                                                     let multiplier = 1;
-                                                    if (addon.quantityMultiplier) {
-                                                        if (effectivePages != null) {
-                                                            multiplier = effectivePages;
-                                                        } else {
-                                                            multiplier = item.quantity;
-                                                        }
+                                                    if (addon.copyMultiplier) {
+                                                        const perBookMult = addon.quantityMultiplier
+                                                            ? (perCopyPages ?? 1)
+                                                            : 1;
+                                                        multiplier = perBookMult * copies;
+                                                    } else if (addon.quantityMultiplier) {
+                                                        multiplier = totalPages ?? item.quantity;
                                                     }
 
                                                     return addonSum + rawPrice * multiplier;
@@ -736,15 +750,30 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                                         : addon.basePrice != null
                                                                             ? Number(addon.basePrice)
                                                                             : 0;
-                                                                const reducedPages = hasHalfPage && effectivePages
+                                                                const safeCopies = Number(copies || 1) > 0 ? Number(copies || 1) : 1;
+                                                                const perCopyPages = hasHalfPage && effectivePages
                                                                     ? Number(effectivePages)
-                                                                    : Number(pageCount || 0);
-                                                                const reducedEffective = reducedPages > 0
-                                                                    ? reducedPages * Number(copies || 1)
+                                                                    : Number(pageCount || 0) > 0
+                                                                        ? Number(pageCount)
+                                                                        : 0;
+                                                                // Half-page-aware total sheets, matches api util.
+                                                                const totalPagesAdmin = perCopyPages > 0
+                                                                    ? perCopyPages * safeCopies
                                                                     : null;
-                                                                const multiplier = addon.quantityMultiplier
-                                                                    ? (reducedEffective ?? item.quantity)
-                                                                    : 1;
+                                                                // Mirror computeAddonLineTotal's matrix.
+                                                                let multiplier = 1;
+                                                                const mathParts: string[] = [];
+                                                                if ((addon as any).copyMultiplier) {
+                                                                    const perBookMult = addon.quantityMultiplier && perCopyPages > 0
+                                                                        ? perCopyPages
+                                                                        : 1;
+                                                                    multiplier = perBookMult * safeCopies;
+                                                                    if (perBookMult > 1) mathParts.push(`${perBookMult} ${perBookMult === 1 ? 'page' : 'pages'}`);
+                                                                    mathParts.push(`${safeCopies} ${safeCopies === 1 ? 'copy' : 'copies'}`);
+                                                                } else if (addon.quantityMultiplier) {
+                                                                    multiplier = totalPagesAdmin ?? item.quantity;
+                                                                    if (multiplier > 1) mathParts.push(`${multiplier}`);
+                                                                }
                                                                 const total = rawPrice * multiplier;
                                                                 const specValues = (addon.specificationValues || {}) as Record<string, any>;
                                                                 const specDetails = Object.entries(specValues)
@@ -757,9 +786,9 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                                     >
                                                                         <div className="min-w-0">
                                                                             <p className="text-sm font-medium text-purple-900">{specDetails}</p>
-                                                                            {multiplier > 1 && (
+                                                                            {mathParts.length > 0 && (
                                                                                 <p className="text-xs text-purple-500 mt-0.5">
-                                                                                    {formatCurrency(rawPrice)} × {multiplier}
+                                                                                    {formatCurrency(rawPrice)} × {mathParts.join(' × ')}
                                                                                 </p>
                                                                             )}
                                                                         </div>

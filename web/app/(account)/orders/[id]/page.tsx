@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { imageLoader } from "@/lib/utils/image-loader";
-import { getPublicS3Url, isImageFile } from "@/lib/utils/s3";
+import { getPublicS3Url, isImageFile, getFilenameFromS3Key } from "@/lib/utils/s3";
 import { use, useState, useEffect } from "react";
 import {
     Package,
@@ -23,6 +23,7 @@ import { TemplateDataDisplay } from "@/app/components/orders/TemplateDataDisplay
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
 import { Button } from "@/app/components/ui/button";
 import OrderItemReviewButton from "@/app/components/reviews/OrderItemReviewButton";
+import { UploadedFileTile } from "@/app/components/UploadedFileTile";
 
 interface OrderItem {
     id: string;
@@ -43,6 +44,7 @@ interface OrderItem {
         priceModifier?: number | null;
         basePrice?: number | null;
         quantityMultiplier: boolean;
+        copyMultiplier?: boolean;
     }>;
     templateId?: string;
     templateName?: string;
@@ -173,42 +175,50 @@ function transformOrder(order: Order): OrderDetails {
             if (order.addonsSubtotal !== undefined && order.addonsSubtotal !== null && order.addonsSubtotal > 0) {
                 return Number(order.addonsSubtotal);
             }
-            // Fallback: calculate from items' addons
+            // Fallback: derive from items' addons. Mirrors
+            // `computeAddonLineTotal` so cart, server, and this fallback agree.
             return order.items.reduce((sum: number, item: any) => {
                 const addons = Array.isArray(item.addons) ? item.addons : [];
-                const pageCount = item.metadata?.pageCount || 1;
-                const copies = item.metadata?.copies || 1;
-                const effectivePages = pageCount > 1 ? pageCount * copies : null;
-                
+                const meta = item.metadata || {};
+                const pageCount = Number(meta.pageCount) || 0;
+                const copies = Number(meta.copies) > 0 ? Number(meta.copies) : 1;
+                // Per-copy effective sheets — half-page reduced when present.
+                const perCopyPages =
+                    Number(meta.effectivePageCount) > 0
+                        ? Number(meta.effectivePageCount)
+                        : pageCount > 0
+                            ? pageCount
+                            : null;
+                // Total effective sheets (× copies) — same gate the api util uses.
+                const totalPages = perCopyPages != null ? perCopyPages * copies : null;
+
                 const addonsTotal = addons.reduce((addonSum: number, addon: any) => {
-                    // Check page range if addon has minQuantity/maxQuantity
                     const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
-                    if (hasPageRange && effectivePages != null) {
-                        const inRange = 
-                            (addon.minQuantity == null || effectivePages >= addon.minQuantity) &&
-                            (addon.maxQuantity == null || effectivePages <= addon.maxQuantity);
-                        if (!inRange) {
-                            return addonSum; // Skip this addon if not in range
-                        }
+                    const gatePages = addon.copyMultiplier ? perCopyPages : totalPages;
+                    if (hasPageRange && gatePages != null) {
+                        const inRange =
+                            (addon.minQuantity == null || gatePages >= addon.minQuantity) &&
+                            (addon.maxQuantity == null || gatePages <= addon.maxQuantity);
+                        if (!inRange) return addonSum;
                     }
-                    
+
                     const rawPrice =
                         addon.priceModifier !== null && addon.priceModifier !== undefined
                             ? Number(addon.priceModifier)
                             : addon.basePrice !== null && addon.basePrice !== undefined
                                 ? Number(addon.basePrice)
                                 : 0;
-                    
-                    // Calculate multiplier based on quantity multiplier and page count
+
                     let multiplier = 1;
-                    if (addon.quantityMultiplier) {
-                        if (effectivePages != null) {
-                            multiplier = effectivePages;
-                        } else {
-                            multiplier = item.quantity;
-                        }
+                    if (addon.copyMultiplier) {
+                        const perBookMult = addon.quantityMultiplier
+                            ? (perCopyPages ?? 1)
+                            : 1;
+                        multiplier = perBookMult * copies;
+                    } else if (addon.quantityMultiplier) {
+                        multiplier = totalPages ?? item.quantity;
                     }
-                    
+
                     return addonSum + rawPrice * multiplier;
                 }, 0);
                 return sum + addonsTotal;
@@ -219,6 +229,16 @@ function transformOrder(order: Order): OrderDetails {
         discount: Number(order.discountAmount || 0),
         items: order.items.map((item: any) => {
             const addons = Array.isArray(item.addons) ? item.addons : [];
+            const meta = item.metadata || {};
+            const pageCount = Number(meta.pageCount) || 0;
+            const copies = Number(meta.copies) > 0 ? Number(meta.copies) : 1;
+            const perCopyPages =
+                Number(meta.effectivePageCount) > 0
+                    ? Number(meta.effectivePageCount)
+                    : pageCount > 0
+                        ? pageCount
+                        : null;
+            const totalPages = perCopyPages != null ? perCopyPages * copies : null;
             const addonsTotal = addons.reduce((sum: number, addon: any) => {
                 const rawPrice =
                     addon.priceModifier !== null && addon.priceModifier !== undefined
@@ -226,7 +246,13 @@ function transformOrder(order: Order): OrderDetails {
                         : addon.basePrice !== null && addon.basePrice !== undefined
                             ? Number(addon.basePrice)
                             : 0;
-                const multiplier = addon.quantityMultiplier ? item.quantity : 1;
+                let multiplier = 1;
+                if (addon.copyMultiplier) {
+                    const perBookMult = addon.quantityMultiplier ? (perCopyPages ?? 1) : 1;
+                    multiplier = perBookMult * copies;
+                } else if (addon.quantityMultiplier) {
+                    multiplier = totalPages ?? item.quantity;
+                }
                 return sum + rawPrice * multiplier;
             }, 0);
 
@@ -273,6 +299,7 @@ function transformOrder(order: Order): OrderDetails {
                     priceModifier: addon.priceModifier,
                     basePrice: addon.basePrice,
                     quantityMultiplier: addon.quantityMultiplier,
+                    copyMultiplier: !!addon.copyMultiplier,
                 })) : undefined,
                 templateId: metadata.templateId,
                 templateName: metadata.templateName,
@@ -525,93 +552,35 @@ function OrderDetailsPageContent({
                                         {/* Product Details */}
                                         <div className="flex-1 min-w-0">
                                             {(() => {
-                                                // Display the printed-sheet count rather than raw
-                                                // PDF pages when a half-page option reduced the
-                                                // job. Item total is derived from the persisted
-                                                // priceBreakdown (sum of priced rows) instead of
-                                                // `price × quantity`, because the latter
-                                                // skipped the ceil() rounding the rule does
-                                                // and under-priced odd-page half-page jobs.
-                                                const displayQuantity = item.hasHalfPageAdjustment && item.effectivePageCount
-                                                    ? Number(item.effectivePageCount) * Number(item.copies || 1)
-                                                    : item.quantity;
-                                                const breakdown = item.priceBreakdown;
-                                                // Customer-side Item total = base only (per-page ×
-                                                // effective pages × copies). Addons are listed
-                                                // in the breakdown panel below but excluded from
-                                                // the headline number per UX request — the
-                                                // checkout summary already shows the addon
-                                                // subtotal separately so the customer sees both
-                                                // sides of the math.
-                                                const baseRowTop = breakdown?.find((pb) =>
-                                                    typeof pb.label === 'string' && pb.label.toLowerCase().startsWith('base')
-                                                );
-                                                const breakdownItemTotal = baseRowTop
-                                                    ? Number(baseRowTop.value)
-                                                    : item.price * item.quantity;
-                                                // Pull the rule's true per-page rate from the
-                                                // Base row (`baseValue / pages × copies`) so
-                                                // the header sub-line shows ₹1.10 not the
-                                                // stored half-rate ₹0.55.
-                                                const parseMultiplier = (label: string) => {
-                                                    const pages = Number(label.match(/(\d+(?:\.\d+)?)\s*pages?\b/i)?.[1] ?? 0);
-                                                    const copies = Number(label.match(/(\d+(?:\.\d+)?)\s*cop(?:y|ies)\b/i)?.[1] ?? 0);
-                                                    const files = Number(label.match(/(\d+(?:\.\d+)?)\s*files?\b/i)?.[1] ?? 0);
-                                                    let m = 1;
-                                                    if (pages > 0) m *= pages;
-                                                    if (copies > 0) m *= copies;
-                                                    if (m === 1 && files > 0) m = files;
-                                                    return m;
-                                                };
-                                                const baseRow = breakdown?.find((pb) =>
-                                                    typeof pb.label === 'string' && pb.label.toLowerCase().startsWith('base')
-                                                );
-                                                const baseMult = baseRow ? parseMultiplier(String(baseRow.label)) : 1;
-                                                const displayUnitPrice = baseRow && baseMult > 1
-                                                    ? Number(baseRow.value) / baseMult
-                                                    : item.price;
                                                 const hasReduction = item.hasHalfPageAdjustment
                                                     && item.effectivePageCount
                                                     && item.pageCount
                                                     && item.effectivePageCount !== item.pageCount;
                                                 return (
-                                                    <>
-                                                        <div className="flex items-start justify-between gap-3 mb-2">
-                                                            <div className="min-w-0 flex-1">
-                                                                <h3 className="text-sm sm:text-base font-medium text-gray-900 truncate">
-                                                                    {item.name}
-                                                                </h3>
-                                                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
-                                                                    {item.variant && <span>Variant: {item.variant}</span>}
-                                                                    {item.pageCount && (
-                                                                        <span>
-                                                                            {item.pageCount} {item.pageCount === 1 ? 'page' : 'pages'}
-                                                                            {hasReduction && (
-                                                                                <span className="text-blue-600">
-                                                                                    {' '}→ {item.effectivePageCount} (Both Sides)
-                                                                                </span>
-                                                                            )}
+                                                    <div className="mb-2">
+                                                        <h3 className="text-sm sm:text-base font-medium text-gray-900 truncate">
+                                                            {item.name}
+                                                        </h3>
+                                                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                                                            {item.variant && <span>Variant: {item.variant}</span>}
+                                                            {item.pageCount && (
+                                                                <span>
+                                                                    {item.pageCount} {item.pageCount === 1 ? 'page' : 'pages'}
+                                                                    {hasReduction && (
+                                                                        <span className="text-blue-600">
+                                                                            {' '}→ {item.effectivePageCount} (Both Sides)
                                                                         </span>
                                                                     )}
-                                                                    {item.copies && (
-                                                                        <span>{item.copies} {item.copies === 1 ? 'copy' : 'copies'}</span>
-                                                                    )}
-                                                                    {item.customDesignUrl && (
-                                                                        <span className="text-blue-700">Custom design</span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <div className="text-right shrink-0">
-                                                                <div className="text-[10px] uppercase tracking-wide text-gray-400">Item total</div>
-                                                                <div className="text-base sm:text-lg font-bold text-blue-600 leading-none">
-                                                                    ₹{breakdownItemTotal.toFixed(2)}
-                                                                </div>
-                                                                <div className="mt-0.5 text-[10px] text-gray-400">
-                                                                    {displayQuantity} × ₹{displayUnitPrice.toFixed(2)}
-                                                                </div>
-                                                            </div>
+                                                                </span>
+                                                            )}
+                                                            {item.copies && (
+                                                                <span>{item.copies} {item.copies === 1 ? 'copy' : 'copies'}</span>
+                                                            )}
+                                                            {item.customDesignUrl && (
+                                                                <span className="text-blue-700">Custom design</span>
+                                                            )}
                                                         </div>
-                                                    </>
+                                                    </div>
                                                 );
                                             })()}
                                             <div className="flex flex-col gap-1">
@@ -638,12 +607,16 @@ function OrderDetailsPageContent({
                                                         const unit = value / m;
                                                         return `${parts.join(' × ')} × ₹${unit.toFixed(2)} = ₹${value.toFixed(2)}`;
                                                     };
-                                                    // Item total in the breakdown footer also = base only,
-                                                    // matching the headline number above the panel.
-                                                    const baseRowFooter = bd.find((pb) =>
-                                                        typeof pb.label === 'string' && pb.label.toLowerCase().startsWith('base')
+                                                    // Item total = net (sum of every priced row,
+                                                    // base + addons). Matches the admin order
+                                                    // detail and the order summary on the right
+                                                    // sidebar so the customer sees one consistent
+                                                    // number for what this line item actually
+                                                    // costs end-to-end.
+                                                    const itemTotalSum = bd.reduce(
+                                                        (sum, pb) => sum + (Number(pb.value) > 0 ? Number(pb.value) : 0),
+                                                        0,
                                                     );
-                                                    const itemTotalSum = baseRowFooter ? Number(baseRowFooter.value) : 0;
                                                     return (
                                                         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
                                                             <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-100">
@@ -708,12 +681,28 @@ function OrderDetailsPageContent({
                                                                             : addon.basePrice !== null && addon.basePrice !== undefined
                                                                                 ? Number(addon.basePrice)
                                                                                 : 0;
-                                                                    const multiplier = addon.quantityMultiplier ? item.quantity : 1;
+                                                                    const safeCopies = Number(item.copies || 0) > 0 ? Number(item.copies) : 1;
+                                                                    const perCopy = item.effectivePageCount && item.effectivePageCount > 0
+                                                                        ? Number(item.effectivePageCount)
+                                                                        : item.pageCount && item.pageCount > 0
+                                                                            ? Number(item.pageCount)
+                                                                            : null;
+                                                                    let multiplier = 1;
+                                                                    const parts: string[] = [];
+                                                                    if (addon.copyMultiplier) {
+                                                                        const perBookMult = addon.quantityMultiplier && perCopy ? perCopy : 1;
+                                                                        multiplier = perBookMult * safeCopies;
+                                                                        if (perBookMult > 1) parts.push(`${perBookMult} ${perBookMult === 1 ? 'page' : 'pages'}`);
+                                                                        parts.push(`${safeCopies} ${safeCopies === 1 ? 'copy' : 'copies'}`);
+                                                                    } else if (addon.quantityMultiplier) {
+                                                                        multiplier = item.quantity;
+                                                                        if (multiplier > 1) parts.push(`${multiplier}`);
+                                                                    }
                                                                     const total = rawPrice * multiplier;
                                                                     return (
                                                                         <div key={idx} className="text-xs text-purple-700 mb-1 last:mb-0">
                                                                             {specDetails || `Addon #${idx + 1}`}: ₹{rawPrice.toFixed(2)}
-                                                                            {multiplier > 1 && ` × ${multiplier} = ₹${total.toFixed(2)}`}
+                                                                            {parts.length > 0 && ` × ${parts.join(' × ')} = ₹${total.toFixed(2)}`}
                                                                         </div>
                                                                     );
                                                                 })}
@@ -721,42 +710,33 @@ function OrderDetailsPageContent({
                                                         )}
                                                     </div>
                                                 )}
-                                                {/* Custom Design Files */}
+                                                {/* Uploaded design files — same row layout as the
+                                                    cart's UploadedFileTile (thumbnail + filename),
+                                                    wrapped in a link so the customer can open the
+                                                    file in a new tab. PDFs render their first
+                                                    page; images render via next/image; other
+                                                    types fall back to a generic icon. */}
                                                 {item.customDesignUrl && item.customDesignUrl.length > 0 && (
                                                     <div className="mt-3 pt-3 border-t border-gray-200">
-                                                        <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
-                                                            Custom Design Files ({item.customDesignUrl.length})
+                                                        <p className="text-[11px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                                                            Uploaded files ({item.customDesignUrl.length})
                                                         </p>
-                                                        <div className="flex flex-wrap gap-2">
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                                             {item.customDesignUrl.map((fileUrl, idx) => {
                                                                 const publicUrl = getPublicS3Url(fileUrl);
-                                                                const isImage = isImageFile(fileUrl);
-                                                                
                                                                 return (
-                                                                    <div key={idx} className="relative w-16 h-16 rounded border border-gray-200 overflow-hidden bg-white">
-                                                                        {isImage ? (
-                                                                            <Image
-                                                                                src={publicUrl}
-                                                                                alt={`Design file ${idx + 1}`}
-                                                                                fill
-                                                                                className="object-cover"
-                                                                                sizes="64px"
-                                                                            />
-                                                                        ) : (
-                                                                            <div className="w-full h-full flex items-center justify-center bg-gray-50">
-                                                                                <Package className="h-5 w-5 text-gray-500" />
-                                                                            </div>
-                                                                        )}
-                                                                        <a
-                                                                            href={publicUrl}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/20 transition-colors"
-                                                                            title="View full size"
-                                                                        >
-                                                                            <Download className="h-4 w-4 text-white opacity-0 hover:opacity-100 transition-opacity" />
-                                                                        </a>
-                                                                    </div>
+                                                                    <a
+                                                                        key={idx}
+                                                                        href={publicUrl}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="block min-w-0"
+                                                                    >
+                                                                        <UploadedFileTile
+                                                                            name={getFilenameFromS3Key(fileUrl)}
+                                                                            url={publicUrl}
+                                                                        />
+                                                                    </a>
                                                                 );
                                                             })}
                                                         </div>

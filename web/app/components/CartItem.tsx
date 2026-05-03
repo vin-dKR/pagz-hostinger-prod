@@ -4,6 +4,7 @@ import { useState, useRef, useMemo } from "react";
 import PriceDisplay from "./PriceDisplay";
 import { CartItem as CartItemType, AddonRule } from "@/lib/api/cart";
 import Image from "next/image";
+import { Trash2 } from "lucide-react";
 import { getPublicS3Url, isImageFile, getFilenameFromS3Key } from "@/lib/utils/s3";
 import { derivePriceBreakdown, getAddonLabel, computeAddonLineTotal } from "@/lib/utils/addon-pricing";
 import { UploadedFileTile } from "./UploadedFileTile";
@@ -64,11 +65,11 @@ export default function CartItem({
             // If template has form data, consider it as having "files" (form data replaces file requirement)
             const hasFormData = item.metadata?.templateFormData && Object.keys(item.metadata.templateFormData).length > 0;
             if (hasFormData) {
-            return true;
-        }
+                return true;
+            }
             // Also check for template form images
-        if (item.metadata?.templateFormImages && item.metadata.templateFormImages.length > 0) {
-            return true;
+            if (item.metadata?.templateFormImages && item.metadata.templateFormImages.length > 0) {
+                return true;
             }
             // If template preview image exists, also consider it valid
             if (item.metadata?.templatePreviewImage) {
@@ -77,13 +78,13 @@ export default function CartItem({
         }
         return false;
     }, [item.customDesignUrl, item.metadata]);
-    
+
     // Check if template form data exists (for display purposes)
     const hasTemplateFormData = useMemo(() => {
-        
-        const hasData = !!(item.metadata?.templateId && 
-                  item.metadata?.templateFormData && 
-                  Object.keys(item.metadata.templateFormData).length > 0);
+
+        const hasData = !!(item.metadata?.templateId &&
+            item.metadata?.templateFormData &&
+            Object.keys(item.metadata.templateFormData).length > 0);
         return hasData;
     }, [item.metadata, item.id]);
 
@@ -91,7 +92,7 @@ export default function CartItem({
     const templateId = item.metadata?.templateId;
     const templateFormImages = item.metadata?.templateFormImages || [];
     const hasTemplate = !!templateId;
-    
+
     // Get product image with category fallback
     const productImage = useMemo(() => {
         const pickUrl = (): string => {
@@ -125,7 +126,7 @@ export default function CartItem({
         // full http(s) URLs pass through unchanged.
         return raw.startsWith('/') ? raw : getPublicS3Url(raw);
     }, [product]);
-    
+
     // Determine display image: template form images > uploaded files > product image
     const displayImage = useMemo(() => {
         if (hasTemplate && templateFormImages.length > 0 && templateFormImages[0]) {
@@ -219,7 +220,7 @@ export default function CartItem({
     return (
         <div
             id={`cart-item-${item.id}`}
-            className={`relative bg-white rounded-lg border border-gray-200 p-3 sm:p-4 ${!hasImages ? "border-l-4 border-l-yellow-400" : ""}`}
+            className={`relative bg-white rounded-xl sm:rounded-2xl border border-gray-200 p-3 sm:p-4 ${!hasImages ? "border-l-4 border-l-yellow-400" : ""}`}
         >
             <div className="flex gap-3 sm:gap-4">
                 {/* Selection checkbox */}
@@ -230,9 +231,8 @@ export default function CartItem({
                             checked={isSelected}
                             onChange={(e) => onSelectChange(item.id, e.target.checked)}
                             disabled={isCheckboxDisabled}
-                            className={`w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 ${
-                                isCheckboxDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
-                            }`}
+                            className={`w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 ${isCheckboxDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                                }`}
                             aria-label={`Select ${productName}`}
                         />
                     </div>
@@ -282,12 +282,10 @@ export default function CartItem({
                         <button
                             onClick={() => onRemove(item.id)}
                             className="shrink-0 text-gray-400 hover:text-red-600 transition-colors p-1 -m-1 rounded"
-                            aria-label="Remove item"
+                            aria-label="Remove from cart"
                             type="button"
                         >
-                            <svg width="16" height="16" viewBox="0 0 18 20" fill="none">
-                                <path d="M17.25 3H13.5V2.25C13.5 1.65326 13.2629 1.08097 12.841 0.65901C12.419 0.237053 11.8467 0 11.25 0H6.75C6.15326 0 5.58097 0.237053 5.15901 0.65901C4.73705 1.08097 4.5 1.65326 4.5 2.25V3H0.75C0.551088 3 0.360322 3.07902 0.21967 3.21967C0.0790178 3.36032 0 3.55109 0 3.75C0 3.94891 0.0790178 4.13968 0.21967 4.28033C0.360322 4.42098 0.551088 4.5 0.75 4.5H1.5V18C1.5 18.3978 1.65804 18.7794 1.93934 19.0607C2.22064 19.342 2.60218 19.5 3 19.5H15C15.3978 19.5 15.7794 19.342 16.0607 19.0607C16.342 18.7794 16.5 18.3978 16.5 18V4.5H17.25C17.4489 4.5 17.6397 4.42098 17.7803 4.28033C17.921 4.13968 18 3.94891 18 3.75C18 3.55109 17.921 3.36032 17.7803 3.21967C17.6397 3.07902 17.4489 3 17.25 3Z" fill="currentColor" />
-                            </svg>
+                            <Trash2 size={16} />
                         </button>
                     </div>
 
@@ -372,11 +370,10 @@ export default function CartItem({
                                 </p>
                                 <label
                                     htmlFor={`file-input-${item.id}`}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors cursor-pointer ${
-                                        isUploadingImages
-                                            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                            : "bg-yellow-500 text-white hover:bg-yellow-600"
-                                    }`}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors cursor-pointer ${isUploadingImages
+                                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                        : "bg-yellow-500 text-white hover:bg-yellow-600"
+                                        }`}
                                 >
                                     {isUploadingImages ? (
                                         <>
@@ -429,17 +426,63 @@ export default function CartItem({
                         </div>
                     </div>
 
-                    {/* Per-addon list — single tight row when addons exist */}
+                    {/* Per-addon list. Each row shows the math
+                        (`₹unit × N pages × M copies = ₹total`) for
+                        copyMultiplier / quantityMultiplier addons so the
+                        customer sees the same breakdown as the admin
+                        order detail and the order detail screen. */}
                     {item.addons && item.addons.length > 0 && (
-                        <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                            {(item.addons as AddonRule[]).map((addon, idx) => (
-                                <li key={addon.id} className="text-[11px] text-gray-500">
-                                    <span className="text-gray-600">{getAddonLabel(addon, idx)}</span>{" "}
-                                    <span className="font-medium text-gray-700">
-                                        ₹{computeAddonLineTotal(addon, { quantity: item.quantity, metadata: item.metadata, fileCount: uploadedFileUrls.length }).toFixed(2)}
-                                    </span>
-                                </li>
-                            ))}
+                        <ul className="mt-1.5 space-y-0.5">
+                            {(item.addons as AddonRule[]).map((addon, idx) => {
+                                const total = computeAddonLineTotal(addon, {
+                                    quantity: item.quantity,
+                                    metadata: item.metadata,
+                                    fileCount: uploadedFileUrls.length,
+                                });
+                                const unit =
+                                    addon.priceModifier != null
+                                        ? Number(addon.priceModifier)
+                                        : addon.basePrice != null
+                                            ? Number(addon.basePrice)
+                                            : 0;
+                                const meta = (item.metadata || {}) as {
+                                    pageCount?: number;
+                                    copies?: number;
+                                    effectivePageCount?: number;
+                                };
+                                const safeCopies = meta.copies && meta.copies > 0 ? meta.copies : 1;
+                                const perCopySheets = meta.effectivePageCount && meta.effectivePageCount > 0
+                                    ? meta.effectivePageCount
+                                    : meta.pageCount && meta.pageCount > 0
+                                        ? meta.pageCount
+                                        : 0;
+                                const totalSheets = perCopySheets > 0 ? perCopySheets * safeCopies : 0;
+                                const parts: string[] = [];
+                                if (addon.copyMultiplier) {
+                                    if (addon.quantityMultiplier && perCopySheets > 1) {
+                                        parts.push(`${perCopySheets} ${perCopySheets === 1 ? "page" : "pages"}`);
+                                    }
+                                    parts.push(`${safeCopies} ${safeCopies === 1 ? "copy" : "copies"}`);
+                                } else if (addon.fileMultiplier && uploadedFileUrls.length > 1) {
+                                    parts.push(`${uploadedFileUrls.length} files`);
+                                } else if (addon.quantityMultiplier && totalSheets > 1) {
+                                    parts.push(`${totalSheets} ${totalSheets === 1 ? "page" : "pages"}`);
+                                }
+                                const mathStr = parts.length > 0
+                                    ? `₹${unit.toFixed(2)} × ${parts.join(" × ")} = ₹${total.toFixed(2)}`
+                                    : null;
+                                return (
+                                    <li key={addon.id} className="text-[11px] text-gray-500">
+                                        <span className="text-gray-600">{getAddonLabel(addon, idx)}</span>{" "}
+                                        <span className="font-medium text-gray-700">₹{total.toFixed(2)}</span>
+                                        {mathStr && (
+                                            <span className="block ml-0 mt-0.5 text-[10px] font-mono text-gray-400">
+                                                {mathStr}
+                                            </span>
+                                        )}
+                                    </li>
+                                );
+                            })}
                         </ul>
                     )}
                 </div>
