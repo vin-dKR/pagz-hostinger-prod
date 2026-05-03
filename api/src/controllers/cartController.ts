@@ -10,8 +10,10 @@ import {
     computeAddonLineTotal,
     computeLineAddonsTotal,
     fetchAddonRuleMap,
+    fetchAddonSpecMap,
     getAddonUnitPrice,
     normalizeAddonIds,
+    resolveActiveAddons,
     type AddonPricingRule,
 } from "../utils/addon-pricing.js";
 import { computeCategoryCartShortfalls } from "../utils/category-min-cart-value.js";
@@ -30,6 +32,7 @@ const CART_ADDON_SELECT = {
     priceModifier: true,
     quantityMultiplier: true,
     fileMultiplier: true,
+    copyMultiplier: true,
     minQuantity: true,
     maxQuantity: true,
 } as const;
@@ -272,18 +275,34 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
 
             if (item.addons && item.addons.length > 0) {
                 const lineFileCount = normalizeDesignUrls(item.customDesignUrl).length;
+                const itemAddons = item.addons as Array<AddonPricingRule & {
+                    specificationValues?: Record<string, unknown> | null;
+                }>;
                 const pricingLine = {
                     quantity: item.quantity,
-                    addons: (item.addons as AddonPricingRule[]).map((a) => a.id),
+                    addons: itemAddons.map((a) => a.id),
                     metadata: {
                         pageCount: pageCount && pageCount > 0 ? pageCount : null,
                         copies,
+                        // Pass-through for copyMultiplier addons — binding-style
+                        // rules charge per book and check range against the
+                        // post-half-page sheet count, not raw document pages.
+                        effectivePageCount: hasHalfPage ? effectivePageCount : null,
                     },
                     fileCount: lineFileCount,
                 };
 
-                for (const addon of item.addons as AddonPricingRule[]) {
+                // Spec-group dominance — same-spec rules where one is
+                // copyMultiplier=true suppress the others. Resolved here so
+                // the cart preview total agrees with the order/invoice
+                // path that runs the same util.
+                const surviving = resolveActiveAddons(
+                    itemAddons.map((rule) => ({ rule, specs: rule.specificationValues ?? null }))
+                );
+                const survivingIds = new Set(surviving.map((r) => r.id));
+                for (const addon of itemAddons) {
                     addonUnitPrice += getAddonUnitPrice(addon);
+                    if (!survivingIds.has(addon.id)) continue;
                     addonTotal += computeAddonLineTotal(addon, pricingLine);
                 }
             }
@@ -499,6 +518,12 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                     const addonMap = new Map(
                         ci.addons.map((a) => [a.id, a as AddonPricingRule]),
                     );
+                    const addonSpecMap = new Map(
+                        ci.addons.map((a) => [
+                            a.id,
+                            ((a as { specificationValues?: Record<string, unknown> | null }).specificationValues) ?? null,
+                        ]),
+                    );
                     const addonTotal = computeLineAddonsTotal(
                         {
                             quantity: ci.quantity,
@@ -507,6 +532,7 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                             fileCount,
                         },
                         addonMap,
+                        addonSpecMap,
                     );
 
                     prospective += baseLine + addonTotal;
@@ -526,7 +552,10 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                 const effectiveAddonIds = addonsProvided ? normalizedAddonIds : existingAddonIds;
 
                 const newQty = existingItem ? existingItem.quantity + quantity : quantity;
-                const newAddonMap = await fetchAddonRuleMap(effectiveAddonIds);
+                const [newAddonMap, newAddonSpecMap] = await Promise.all([
+                    fetchAddonRuleMap(effectiveAddonIds),
+                    fetchAddonSpecMap(effectiveAddonIds),
+                ]);
                 const newFileCount = (() => {
                     const incoming = Array.isArray(customDesignUrl)
                         ? customDesignUrl.length
@@ -546,6 +575,7 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
                         fileCount: newFileCount,
                     },
                     newAddonMap,
+                    newAddonSpecMap,
                 );
 
                 prospective += (baseUnit + variantModifier) * newQty + newAddonTotal;

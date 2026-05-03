@@ -29,6 +29,12 @@ export interface AddonPricingRule {
     priceModifier: unknown;
     quantityMultiplier: boolean;
     fileMultiplier?: boolean;
+    /** Charge once per physical copy (e.g. binding — one binding per
+     *  printed book). When true the addon's range and per-page math are
+     *  evaluated against the *per-copy* page count (post-half-page
+     *  reduction when applicable) and the final price is multiplied by
+     *  the copies count. */
+    copyMultiplier?: boolean;
     minQuantity: number | null;
     maxQuantity: number | null;
     isActive?: boolean;
@@ -73,29 +79,62 @@ export const getAddonUnitPrice = (addon: AddonPricingRule): number => {
 };
 
 /**
- * Total pages used for addon page-range matching + per-page multipliers.
+ * Total sheets used for addon page-range matching + per-page multipliers.
  *
- * Always returns the RAW upload volume (`pageCount × copies`), not the
- * half-page-reduced sheet count. Addons are configured against the
- * document size the customer uploads — a 50-page PDF × 10 copies is
- * 500 pages worth of binding / lamination / page-numbering, even when
- * the print job is duplexed onto 250 sheets. Half-page reduction
- * stays a base-price concern and is not applied here. The web copy of
- * this util (`web/lib/utils/addon-pricing.ts`) mirrors the same
- * logic so cart preview, server cart math, and order totals agree.
+ * Returns the effective sheet count `(effectivePageCount ?? pageCount) ×
+ * copies`. Half-page reduction flows in: when "Both Sides" duplexes a
+ * 100-page PDF onto 50 sheets, addons gate on 50 (not 100) — binding,
+ * lamination and page-numbering all relate to the *physical* sheet
+ * count, not the original document length. Falls back to raw
+ * `pageCount × copies` when no effective count is persisted.
+ * The web mirror (`web/lib/utils/addon-pricing.ts`) keeps the same
+ * formula so cart preview, server cart math, and order totals agree.
  */
 export const getEffectivePages = (
     metadata: AddonLineItemInput["metadata"]
 ): number | null => {
     const meta = metadata as
-        | { pageCount?: number | null; copies?: number | null }
+        | { pageCount?: number | null; copies?: number | null; effectivePageCount?: number | null }
         | null
         | undefined;
-    const pages = meta?.pageCount ? Number(meta.pageCount) : 0;
+    const reduced = meta?.effectivePageCount ? Number(meta.effectivePageCount) : 0;
+    const pages = reduced > 0
+        ? reduced
+        : meta?.pageCount ? Number(meta.pageCount) : 0;
     if (!pages || pages <= 0) return null;
     const copies = meta?.copies ? Number(meta.copies) : 1;
     const safeCopies = copies > 0 ? copies : 1;
     return pages * safeCopies;
+};
+
+/** Per-copy pages used for `copyMultiplier` addons.
+ *
+ *  Returns the document size of a single physical book — post half-page
+ *  reduction when "Both Sides" cut the sheet count. Binding-style addons
+ *  bind the sheets in one book, not the total across copies, so the
+ *  range and per-page math here use the reduced per-copy count. Falls
+ *  back to raw `pageCount` when no half-page metadata is present, and to
+ *  `null` when the line item isn't a paginated print job. */
+export const getPerCopyPages = (
+    metadata: AddonLineItemInput["metadata"]
+): number | null => {
+    const meta = metadata as
+        | { pageCount?: number | null; effectivePageCount?: number | null }
+        | null
+        | undefined;
+    const reduced = meta?.effectivePageCount ? Number(meta.effectivePageCount) : 0;
+    if (reduced > 0) return reduced;
+    const raw = meta?.pageCount ? Number(meta.pageCount) : 0;
+    return raw > 0 ? raw : null;
+};
+
+/** Number of physical copies on a line. Falls back to 1. */
+export const getCopiesCount = (
+    metadata: AddonLineItemInput["metadata"]
+): number => {
+    const meta = metadata as { copies?: number | null } | null | undefined;
+    const copies = meta?.copies ? Number(meta.copies) : 1;
+    return copies > 0 ? copies : 1;
 };
 
 /**
@@ -116,41 +155,125 @@ export const isAddonInPageRange = (
 /**
  * Compute the total price contribution of a single addon applied to a line
  * item (returns 0 when the addon is out-of-range).
+ *
+ * Multiplier matrix (resolved in this order):
+ *   - fileMultiplier              -> unit × files (more specific signal, wins).
+ *   - copyMultiplier              -> range checked against per-copy pages.
+ *                                    unit × (perCopyPages if also
+ *                                    quantityMultiplier else 1) × copies.
+ *   - quantityMultiplier          -> unit × (pageCount × copies). Existing
+ *                                    behavior: addon scales with total
+ *                                    document volume (e.g. page-numbering).
+ *   - none                        -> flat unit price.
  */
 export const computeAddonLineTotal = (
     addon: AddonPricingRule,
     line: AddonLineItemInput
 ): number => {
-    const effectivePages = getEffectivePages(line.metadata);
-    if (!isAddonInPageRange(addon, effectivePages)) return 0;
-
     const unit = getAddonUnitPrice(addon);
 
     // fileMultiplier wins when both flags are on — it's a more specific signal.
     if (addon.fileMultiplier) {
+        const totalPages = getEffectivePages(line.metadata);
+        if (!isAddonInPageRange(addon, totalPages)) return 0;
         const files = Math.max(1, line.fileCount ?? 0);
         return unit * files;
     }
 
+    if (addon.copyMultiplier) {
+        const perCopy = getPerCopyPages(line.metadata);
+        // Range check against per-copy pages — a 250-page book × 4 copies
+        // matches a "201-300 pages" binding even though total volume is
+        // 1000 pages. Falls through to total-page check when the line
+        // has no pagination (non-print SKU).
+        if (!isAddonInPageRange(addon, perCopy ?? line.quantity)) return 0;
+        const copies = getCopiesCount(line.metadata);
+        const perBookMult = addon.quantityMultiplier ? (perCopy ?? 1) : 1;
+        return unit * perBookMult * copies;
+    }
+
+    const totalPages = getEffectivePages(line.metadata);
+    if (!isAddonInPageRange(addon, totalPages)) return 0;
+
     if (!addon.quantityMultiplier) return unit;
 
-    const multiplier = effectivePages ?? line.quantity;
+    const multiplier = totalPages ?? line.quantity;
     return unit * multiplier;
+};
+
+/** Stable key for grouping addon rules by their spec dimensions.
+ *  Two rules that differ only in `minQuantity`/`maxQuantity` (i.e. tiers
+ *  for the same binding/lamination/etc.) collapse to the same key. The
+ *  rule's own spec values aren't on `AddonPricingRule` so we accept it
+ *  via a parallel map keyed by id. */
+const stableSpecKey = (specs: Record<string, unknown> | null | undefined): string => {
+    if (!specs || typeof specs !== "object") return "__none__";
+    const keys = Object.keys(specs).sort();
+    return keys.map((k) => `${k}=${String(specs[k])}`).join("|") || "__empty__";
+};
+
+/**
+ * Filter addon rules through the spec-group dominance rule:
+ *   - Group rules by spec values (binding=Spiral, paper=A4, ...).
+ *   - If ANY rule in a group has copyMultiplier=true, every other rule
+ *     in the same group is suppressed. Same-spec total-page tiers
+ *     (e.g. "Spiral 51-100 pages" alongside "Spiral 1-50 pages × copies")
+ *     thus never both fire — the per-copy semantics win and the total-
+ *     page tier drops out cleanly. fileMultiplier rules are exempt
+ *     since they gate on file count, not pages.
+ *   - Each surviving rule's own range/multiplier logic still runs in
+ *     `computeAddonLineTotal`.
+ */
+export const resolveActiveAddons = <T extends AddonPricingRule>(
+    rules: Array<{ rule: T; specs?: Record<string, unknown> | null }>
+): T[] => {
+    if (rules.length === 0) return [];
+    const groups = new Map<string, Array<{ rule: T; specs?: Record<string, unknown> | null }>>();
+    for (const entry of rules) {
+        const key = stableSpecKey(entry.specs ?? null);
+        const list = groups.get(key);
+        if (list) list.push(entry);
+        else groups.set(key, [entry]);
+    }
+
+    const surviving: T[] = [];
+    for (const group of groups.values()) {
+        const hasCopyDominant = group.some((g) => g.rule.copyMultiplier);
+        for (const { rule } of group) {
+            if (hasCopyDominant && !rule.copyMultiplier && !rule.fileMultiplier) {
+                // Suppressed: same-spec, non-copy-multiplier tier built
+                // for total-page ranges — would double-charge alongside
+                // the per-copy variant.
+                continue;
+            }
+            surviving.push(rule);
+        }
+    }
+    return surviving;
 };
 
 /**
  * Compute the total addon cost for a single line item given a lookup map
- * of addon rules keyed by id.
+ * of addon rules keyed by id. Applies spec-group dominance (see
+ * `resolveActiveAddons`) so two same-spec tiered rules can't both fire
+ * when one of them is `copyMultiplier`-flagged.
  */
 export const computeLineAddonsTotal = (
     line: AddonLineItemInput,
-    addonMap: Map<string, AddonPricingRule>
+    addonMap: Map<string, AddonPricingRule>,
+    specsLookup?: Map<string, Record<string, unknown> | null | undefined>
 ): number => {
     if (!line.addons || line.addons.length === 0) return 0;
+    const candidates = line.addons
+        .map((id) => {
+            const rule = addonMap.get(id);
+            if (!rule) return null;
+            return { rule, specs: specsLookup?.get(id) ?? null };
+        })
+        .filter((x): x is { rule: AddonPricingRule; specs: Record<string, unknown> | null } => x !== null);
+    const active = resolveActiveAddons(candidates);
     let total = 0;
-    for (const addonId of line.addons) {
-        const rule = addonMap.get(addonId);
-        if (!rule) continue;
+    for (const rule of active) {
         total += computeAddonLineTotal(rule, line);
     }
     return total;
@@ -161,11 +284,12 @@ export const computeLineAddonsTotal = (
  */
 export const computeAddonsSubtotal = (
     lines: AddonLineItemInput[],
-    addonMap: Map<string, AddonPricingRule>
+    addonMap: Map<string, AddonPricingRule>,
+    specsLookup?: Map<string, Record<string, unknown> | null | undefined>
 ): number => {
     let total = 0;
     for (const line of lines) {
-        total += computeLineAddonsTotal(line, addonMap);
+        total += computeLineAddonsTotal(line, addonMap, specsLookup);
     }
     return total;
 };
@@ -208,10 +332,36 @@ export const fetchAddonRuleMap = async (
                 priceModifier: rule.priceModifier,
                 quantityMultiplier: rule.quantityMultiplier,
                 fileMultiplier: (rule as { fileMultiplier?: boolean }).fileMultiplier ?? false,
+                copyMultiplier: (rule as { copyMultiplier?: boolean }).copyMultiplier ?? false,
                 minQuantity: rule.minQuantity,
                 maxQuantity: rule.maxQuantity,
                 isActive: rule.isActive,
             } satisfies AddonPricingRule,
+        ])
+    );
+};
+
+/**
+ * Companion to `fetchAddonRuleMap`: same query, exposes the spec values
+ * keyed by rule id so callers (cart, order, payment controllers) can
+ * feed them into `computeAddonsSubtotal` for spec-group dominance.
+ */
+export const fetchAddonSpecMap = async (
+    addonIds: string[]
+): Promise<Map<string, Record<string, unknown> | null>> => {
+    if (addonIds.length === 0) return new Map();
+    const rules = await prisma.categoryPricingRule.findMany({
+        where: {
+            id: { in: addonIds },
+            ruleType: "ADDON",
+            isActive: true,
+        },
+        select: { id: true, specificationValues: true },
+    });
+    return new Map(
+        rules.map((rule) => [
+            rule.id,
+            (rule.specificationValues as Record<string, unknown> | null) ?? null,
         ])
     );
 };

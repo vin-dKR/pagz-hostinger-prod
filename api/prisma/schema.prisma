@@ -169,6 +169,7 @@ model CategoryPricingRule {
   priceModifier       Decimal?        @db.Decimal(10, 2) // For addons like binding, lamination
   quantityMultiplier  Boolean         @default(false) // Price multiplies by effective quantity/pages
   fileMultiplier      Boolean         @default(false) // Price multiplies by uploaded-file count
+  copyMultiplier      Boolean         @default(false) // Price multiplies by copies count (one per physical copy, e.g. binding); range checked per-copy pages when true
   minQuantity         Int? // For quantity tiers
   maxQuantity         Int? // For quantity tiers
   isActive            Boolean         @default(true)

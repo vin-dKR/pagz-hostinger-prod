@@ -394,43 +394,69 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
         const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 
-        // Total pages = raw upload volume the addon's range is gated on.
-        //   pages × copies               when files are uploaded
-        //   quantity × copies            in bulk-quantity mode
-        // Half-page reduction is intentionally NOT applied — addons are
-        // configured against the document size the customer uploads
-        // (50 pages × 10 copies = 500 pages of binding / lamination work,
-        // even when the print itself is duplexed onto 250 sheets). The
-        // half-page reduction is a base-price concern only.
+        // Two range bases — copyMultiplier addons gate on per-copy
+        // *effective* sheets (binding-style: one binding per book, range
+        // vs sheets actually printed in a single book post half-page).
+        // All other addons gate on total effective sheets (sheets ×
+        // copies) so binding / lamination / page-numbering all gate on
+        // the physical sheet count, not the raw document length.
         const safeCopies = copies > 0 ? copies : 1;
-        const totalPages = pageCount > 0
-            ? pageCount * safeCopies
+        // Per-copy effective sheets — prefer half-page-reduced count.
+        const perCopySheets = effectivePageCount && effectivePageCount > 0
+            ? effectivePageCount
+            : pageCount > 0
+                ? pageCount
+                : null;
+        const totalEffectiveSheets = perCopySheets != null
+            ? perCopySheets * safeCopies
             : (isCopiesMode ? quantity * safeCopies : quantity);
-        const rangeBasis = totalPages > 0 ? totalPages : null;
+        const totalRange = totalEffectiveSheets > 0 ? totalEffectiveSheets : null;
+        const perCopyRange = perCopySheets;
 
-        return availableAddons
-            .filter((rule) => {
-                const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
+        const stableSpecKey = (specs: Record<string, any>) => {
+            const keys = Object.keys(specs).sort();
+            return keys.map((k) => `${k}=${normalize(specs[k])}`).join("|") || "__empty__";
+        };
 
-                // All rule spec values must match the current selections
-                for (const [slug, val] of Object.entries(ruleSpecs)) {
-                    if (normalize(selectedSpecifications[slug]) !== normalize(val)) {
-                        return false;
-                    }
+        // Step 1: spec-match + range-gate filter.
+        const specMatched = availableAddons.filter((rule) => {
+            const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
+            for (const [slug, val] of Object.entries(ruleSpecs)) {
+                if (normalize(selectedSpecifications[slug]) !== normalize(val)) {
+                    return false;
                 }
+            }
+            const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
+            if (!hasPageRange) return true;
+            const basis = rule.copyMultiplier ? perCopyRange : totalRange;
+            if (basis == null) return false;
+            if (rule.minQuantity != null && basis < rule.minQuantity) return false;
+            if (rule.maxQuantity != null && basis > rule.maxQuantity) return false;
+            return true;
+        });
 
-                // Page range check (if configured on the rule)
-                const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
-                if (hasPageRange) {
-                    if (rangeBasis == null) return false;
-                    if (rule.minQuantity != null && rangeBasis < rule.minQuantity) return false;
-                    if (rule.maxQuantity != null && rangeBasis > rule.maxQuantity) return false;
-                }
-
-                return true;
-            })
-            .map((rule) => rule.id);
-    }, [availableAddons, selectedSpecifications, pageCount, copies, quantity, isCopiesMode]);
+        // Step 2: spec-group dominance — when any rule in a spec group
+        // is copyMultiplier=true, drop the non-copyMultiplier siblings
+        // so a "51-100 pages" total-tier rule doesn't double-charge
+        // alongside a "1-50 pages × copies" per-book rule on the same
+        // binding spec.
+        const groups = new Map<string, typeof specMatched>();
+        for (const rule of specMatched) {
+            const key = stableSpecKey((rule.specificationValues || {}) as Record<string, any>);
+            const list = groups.get(key);
+            if (list) list.push(rule);
+            else groups.set(key, [rule]);
+        }
+        const surviving: string[] = [];
+        for (const group of groups.values()) {
+            const hasCopyDominant = group.some((r) => r.copyMultiplier);
+            for (const rule of group) {
+                if (hasCopyDominant && !rule.copyMultiplier && !rule.fileMultiplier) continue;
+                surviving.push(rule.id);
+            }
+        }
+        return surviving;
+    }, [availableAddons, selectedSpecifications, pageCount, effectivePageCount, copies, quantity, isCopiesMode]);
 
     // Check if a specification should be visible based on dependencies
     const isSpecificationVisible = (spec: CategorySpecification): boolean => {

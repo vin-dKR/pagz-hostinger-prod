@@ -12,6 +12,7 @@ import {
     computeAddonsSubtotal,
     computeLineAddonsTotal,
     fetchAddonRuleMap,
+    fetchAddonSpecMap,
     normalizeAddonIds,
     type AddonPricingRule,
 } from "../utils/addon-pricing.js";
@@ -286,8 +287,12 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
         // BEFORE discount calculation so percentage-based coupons apply to the
         // true line total (base × qty × fileMultiplier + addons) rather than
         // to the base subtotal alone.
-        const addonMap = await fetchAddonRuleMap(collectAddonIds(orderItems));
-        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMap);
+        const addonIds = collectAddonIds(orderItems);
+        const [addonMap, addonSpecMap] = await Promise.all([
+            fetchAddonRuleMap(addonIds),
+            fetchAddonSpecMap(addonIds),
+        ]);
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMap, addonSpecMap);
         const grossSubtotal = subtotal + addonsSubtotal;
 
         // Calculate discount from coupon if provided
@@ -351,18 +356,11 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
         // math does — the per-category subtotal we compare against the
         // minimum matches the amount the customer actually pays for that
         // category, which is what the cart UI preview also displays.
-        const shortfallLines: CategoryLineContribution[] = orderItems.map((oi, index) => {
-            let lineAddonTotal = 0;
-            for (const addonId of oi.addons) {
-                const rule = addonMap.get(addonId);
-                if (!rule) continue;
-                lineAddonTotal += computeAddonLineTotal(rule, oi);
-            }
-            return {
-                productId: oi.productId,
-                lineTotal: (lineBaseTotals[index] ?? 0) + lineAddonTotal,
-            };
-        });
+        const shortfallLines: CategoryLineContribution[] = orderItems.map((oi, index) => ({
+            productId: oi.productId,
+            lineTotal: (lineBaseTotals[index] ?? 0)
+                + computeLineAddonsTotal(oi, addonMap, addonSpecMap),
+        }));
         const categoryShortfalls = await computeCategoryCartShortfalls(shortfallLines);
         if (categoryShortfalls.length > 0) {
             throw new CartMinimumError(categoryShortfalls);
@@ -2393,11 +2391,14 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
         const addonsSubtotal = order.addonsSubtotal !== null && order.addonsSubtotal !== undefined
             ? Number(order.addonsSubtotal)
             : order.items.reduce((sum, item) => {
-                const addonRules: AddonPricingRule[] = Array.isArray((item as any).addons)
-                    ? (item as any).addons
-                    : [];
+                const addonRules: Array<AddonPricingRule & {
+                    specificationValues?: Record<string, unknown> | null;
+                }> = Array.isArray((item as any).addons) ? (item as any).addons : [];
                 const addonMap = new Map<string, AddonPricingRule>(
                     addonRules.map((r) => [r.id, r])
+                );
+                const addonSpecMap = new Map<string, Record<string, unknown> | null>(
+                    addonRules.map((r) => [r.id, r.specificationValues ?? null])
                 );
                 const itemFileCount = Array.isArray(item.customDesignUrl)
                     ? item.customDesignUrl.length
@@ -2410,6 +2411,7 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                         fileCount: itemFileCount,
                     },
                     addonMap,
+                    addonSpecMap,
                 );
             }, 0);
 

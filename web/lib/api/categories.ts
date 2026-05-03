@@ -130,6 +130,8 @@ export interface CategoryAddon {
     priceModifier: number | null;
     quantityMultiplier?: boolean;
     fileMultiplier?: boolean;
+    /** One charge per physical copy. Range checks per-copy pages. */
+    copyMultiplier?: boolean;
     minQuantity: number | null;
     maxQuantity: number | null;
     isActive: boolean;

@@ -137,6 +137,10 @@ export interface CategoryPricingRule {
     priceModifier?: number | null;
     quantityMultiplier: boolean;
     fileMultiplier?: boolean;
+    /** One charge per physical copy (e.g. binding). When true the addon's
+     *  page range and per-page math run against the *per-copy* page count
+     *  (post half-page reduction) and the price is multiplied by copies. */
+    copyMultiplier?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
     isActive: boolean;
@@ -434,6 +438,8 @@ export interface CreatePricingRuleData {
     priceModifier?: number | null;
     quantityMultiplier?: boolean;
     fileMultiplier?: boolean;
+    /** Per-physical-copy charge (binding / hardcase / etc.). */
+    copyMultiplier?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
     isActive?: boolean;

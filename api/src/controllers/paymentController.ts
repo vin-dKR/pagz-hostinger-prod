@@ -9,6 +9,7 @@ import {
     collectAddonIds,
     computeAddonsSubtotal,
     fetchAddonRuleMap,
+    fetchAddonSpecMap,
     normalizeAddonIds,
 } from "../utils/addon-pricing.js";
 
@@ -361,8 +362,12 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
         // Compute addonsSubtotal before discount so % coupons apply against
         // the true line total (base × qty × fileMultiplier + addons), not the
         // base subtotal alone.
-        const addonMapRzp = await fetchAddonRuleMap(collectAddonIds(orderItems));
-        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapRzp);
+        const addonIdsRzp = collectAddonIds(orderItems);
+        const [addonMapRzp, addonSpecMapRzp] = await Promise.all([
+            fetchAddonRuleMap(addonIdsRzp),
+            fetchAddonSpecMap(addonIdsRzp),
+        ]);
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapRzp, addonSpecMapRzp);
         const grossSubtotal = subtotal + addonsSubtotal;
 
         let discountAmount = 0;
@@ -673,8 +678,12 @@ export const verifyPhonePePayment = async (req: Request, res: Response, next: Ne
         // creation, and invoice printing all produce the same number. Must
         // happen BEFORE discount calculation so % coupons apply to the full
         // line total, not just the base subtotal.
-        const addonMapPpe = await fetchAddonRuleMap(collectAddonIds(orderItems));
-        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapPpe);
+        const addonIdsPpe = collectAddonIds(orderItems);
+        const [addonMapPpe, addonSpecMapPpe] = await Promise.all([
+            fetchAddonRuleMap(addonIdsPpe),
+            fetchAddonSpecMap(addonIdsPpe),
+        ]);
+        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapPpe, addonSpecMapPpe);
         const grossSubtotal = subtotal + addonsSubtotal;
 
         // Calculate discount from coupon if provided

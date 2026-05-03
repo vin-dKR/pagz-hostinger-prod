@@ -14,6 +14,49 @@ import {
     type HalfPageCalculationResult,
 } from "../utils/half-page-calculation.js";
 import { syncAllProductsForCategory, syncProductByPricingRule } from "../utils/product-sync.js";
+import { computeAddonLineTotal, resolveActiveAddons } from "../utils/addon-pricing.js";
+
+/** Apply the addon spec-group dominance rule to a category's pricing
+ *  rules + the customer-supplied specifications. Returns the set of
+ *  ADDON rule ids that should fire after suppression. */
+const computeSurvivingAddonIds = (
+    pricingRules: Array<{
+        id: string;
+        ruleType: string;
+        specificationValues: unknown;
+        basePrice: unknown;
+        priceModifier: unknown;
+        quantityMultiplier: boolean;
+        minQuantity: number | null;
+        maxQuantity: number | null;
+        isActive: boolean;
+    }>,
+    specifications: Record<string, unknown>
+): Set<string> => {
+    const matchingAddons = pricingRules
+        .filter((r) => r.ruleType === "ADDON")
+        .filter((r) => {
+            const specs = (r.specificationValues || {}) as Record<string, unknown>;
+            return Object.entries(specs).every(([k, v]) => specifications[k] === v);
+        });
+    const surviving = resolveActiveAddons(
+        matchingAddons.map((r) => ({
+            rule: {
+                id: r.id,
+                basePrice: r.basePrice,
+                priceModifier: r.priceModifier,
+                quantityMultiplier: r.quantityMultiplier,
+                fileMultiplier: Boolean((r as { fileMultiplier?: boolean }).fileMultiplier),
+                copyMultiplier: Boolean((r as { copyMultiplier?: boolean }).copyMultiplier),
+                minQuantity: r.minQuantity,
+                maxQuantity: r.maxQuantity,
+                isActive: r.isActive,
+            },
+            specs: r.specificationValues as Record<string, unknown> | null,
+        }))
+    );
+    return new Set(surviving.map((r) => r.id));
+};
 
 // ==================== Category Specifications ====================
 
@@ -686,6 +729,7 @@ export const createCategoryPricingRule = async (
             priceModifier,
             quantityMultiplier,
             fileMultiplier,
+            copyMultiplier,
             minQuantity,
             maxQuantity,
             isActive,
@@ -713,6 +757,7 @@ export const createCategoryPricingRule = async (
                 priceModifier: priceModifier ? new Prisma.Decimal(priceModifier) : null,
                 quantityMultiplier: quantityMultiplier ?? false,
                 fileMultiplier: fileMultiplier ?? false,
+                copyMultiplier: copyMultiplier ?? false,
                 minQuantity,
                 maxQuantity,
                 isActive: isActive ?? true,
@@ -744,6 +789,7 @@ export const updateCategoryPricingRule = async (
             priceModifier,
             quantityMultiplier,
             fileMultiplier,
+            copyMultiplier,
             minQuantity,
             maxQuantity,
             isActive,
@@ -770,6 +816,7 @@ export const updateCategoryPricingRule = async (
                 ...(priceModifier !== undefined && { priceModifier: priceModifier ? new Prisma.Decimal(priceModifier) : null }),
                 ...(quantityMultiplier !== undefined && { quantityMultiplier }),
                 ...(fileMultiplier !== undefined && { fileMultiplier }),
+                ...(copyMultiplier !== undefined && { copyMultiplier }),
                 ...(minQuantity !== undefined && { minQuantity }),
                 ...(maxQuantity !== undefined && { maxQuantity }),
                 ...(isActive !== undefined && { isActive }),
@@ -932,6 +979,13 @@ export const calculateCategoryPrice = async (
             }
         }
 
+        // Spec-group dominance pre-pass for ADDON rules. When a per-copy
+        // binding rule (copyMultiplier=true) shares spec values with a
+        // legacy total-page tier rule, the per-copy rule wins and the
+        // tier rule is suppressed — otherwise both can fire (they gate
+        // different page sets) and double-charge the customer.
+        const survivingAddonIds = computeSurvivingAddonIds(category.pricingRules, specifications);
+
         // Match pricing rules based on specification values
         for (const rule of category.pricingRules) {
             const ruleSpecs = rule.specificationValues as Record<string, any>;
@@ -946,6 +1000,9 @@ export const calculateCategoryPrice = async (
             }
 
             if (!matches) continue;
+
+            // Skip ADDON rules dropped by the dominance pre-pass.
+            if (rule.ruleType === "ADDON" && !survivingAddonIds.has(rule.id)) continue;
 
             if (rule.ruleType === "BASE_PRICE" || rule.ruleType === "SPECIFICATION_COMBINATION") {
                 if (baseApplied) {
@@ -974,60 +1031,71 @@ export const calculateCategoryPrice = async (
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "ADDON") {
-                const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
-
-                // Shared across the range check and the quantityMultiplier math
-                // so the admin preview agrees with the server-side cart /
-                // checkout / invoice path (which runs `computeAddonLineTotal`).
-                // Addon range gates on RAW upload volume (pageCount × copies),
-                // not the half-page-reduced sheet count. Half-page reduction
-                // is a base-price concern only — addons gate on the document
-                // size the customer uploaded.
-                const effectivePages =
-                    pageCount != null ? pageCount * (copies != null ? copies : 1) : null;
-
-                if (hasPageRange) {
-                    if (effectivePages == null) {
-                        continue;
-                    }
-                    const inRange =
-                        (rule.minQuantity == null || effectivePages >= rule.minQuantity) &&
-                        (rule.maxQuantity == null || effectivePages <= rule.maxQuantity);
-                    if (!inRange) {
-                        continue;
-                    }
-                }
-
-                const modifier = rule.priceModifier ? Number(rule.priceModifier) : 0;
-                // Match the shared util (`computeAddonLineTotal`):
-                //   fileMultiplier=true      -> multiply by fileCount (min 1)
-                //   quantityMultiplier=false -> flat per-order amount
-                //   quantityMultiplier=true  -> multiply by effective pages
-                //                               (falls back to quantity when
-                //                               the line item isn't a print
-                //                               job with pageCount/copies).
-                const fileMultiplierOn = Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier);
+                // Delegate to the shared util so the preview price tracks
+                // exactly what the cart / order / invoice will charge. The
+                // `addonRule` shape mirrors `AddonPricingRule`. Half-page
+                // reduction flows through via `effectivePageCount` for
+                // copyMultiplier addons (binding-style: per book, post
+                // duplex), while raw `pageCount × copies` continues to
+                // gate quantityMultiplier-only addons.
+                const addonRule = {
+                    id: rule.id,
+                    basePrice: rule.basePrice,
+                    priceModifier: rule.priceModifier,
+                    quantityMultiplier: rule.quantityMultiplier,
+                    fileMultiplier: Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier),
+                    copyMultiplier: Boolean((rule as { copyMultiplier?: boolean }).copyMultiplier),
+                    minQuantity: rule.minQuantity,
+                    maxQuantity: rule.maxQuantity,
+                    isActive: rule.isActive,
+                };
+                const lineMeta = {
+                    pageCount: pageCount ?? null,
+                    copies: copies ?? null,
+                    effectivePageCount: effectivePageCount ?? null,
+                };
                 const safeFileCount = fileCount != null && fileCount > 0 ? Number(fileCount) : 1;
-                const multiplier = fileMultiplierOn
-                    ? safeFileCount
-                    : rule.quantityMultiplier
-                        ? (effectivePages ?? quantity)
-                        : 1;
-                const finalPrice = modifier * multiplier;
+                const finalPrice = computeAddonLineTotal(addonRule, {
+                    quantity: effectiveQuantity,
+                    addons: [rule.id],
+                    metadata: lineMeta,
+                    fileCount: safeFileCount,
+                });
+                if (finalPrice <= 0) continue;
                 totalPrice += finalPrice;
 
-                const rangeLabel =
-                    hasPageRange
-                        ? ` (${rule.minQuantity ?? 0}-${rule.maxQuantity ?? "∞"} pages`
-                        : "";
-                const multiplierLabel =
-                    fileMultiplierOn && multiplier > 1
-                        ? (rangeLabel ? `) × ${multiplier} files` : ` × ${multiplier} files`)
-                        : rule.quantityMultiplier && multiplier > 1
-                            ? (rangeLabel ? `) × ${multiplier}` : ` × ${multiplier}`)
-                            : rangeLabel
-                                ? ")"
-                                : "";
+                const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
+                const rangeLabel = hasPageRange
+                    ? ` (${rule.minQuantity ?? 0}-${rule.maxQuantity ?? "∞"} pages`
+                    : "";
+                const fileMultiplierOn = addonRule.fileMultiplier;
+                const copyMultiplierOn = addonRule.copyMultiplier;
+                const safeCopies = copies && copies > 0 ? copies : 1;
+                const perCopyPages = effectivePageCount && effectivePageCount > 0
+                    ? effectivePageCount
+                    : pageCount && pageCount > 0
+                        ? pageCount
+                        : null;
+                // Total effective sheets — matches the api util gate
+                // (sheets actually printed × copies, half-page-reduced).
+                const totalEffPages = perCopyPages != null ? perCopyPages * safeCopies : null;
+
+                let multiplierLabel = "";
+                if (fileMultiplierOn && safeFileCount > 1) {
+                    multiplierLabel = ` × ${safeFileCount} files`;
+                } else if (copyMultiplierOn) {
+                    const parts: string[] = [];
+                    if (rule.quantityMultiplier && perCopyPages && perCopyPages > 1) {
+                        parts.push(`${perCopyPages} ${perCopyPages === 1 ? "page" : "pages"}`);
+                    }
+                    parts.push(`${safeCopies} ${safeCopies === 1 ? "copy" : "copies"}`);
+                    multiplierLabel = parts.length > 0 ? ` × ${parts.join(" × ")}` : "";
+                } else if (rule.quantityMultiplier && totalEffPages && totalEffPages > 1) {
+                    multiplierLabel = ` × ${totalEffPages}`;
+                }
+                const labelSuffix = hasPageRange
+                    ? `${rangeLabel})${multiplierLabel}`
+                    : multiplierLabel;
 
                 const addonSpecLabel = Object.keys(ruleSpecs).length
                     ? `: ${Object.entries(ruleSpecs)
@@ -1036,7 +1104,7 @@ export const calculateCategoryPrice = async (
                     : "";
 
                 breakdown.push({
-                    label: `Addon${addonSpecLabel}${rangeLabel}${multiplierLabel}`,
+                    label: `Addon${addonSpecLabel}${labelSuffix}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "QUANTITY_TIER") {
@@ -1525,6 +1593,13 @@ export const calculateCategoryPricePublic = async (
             }
         }
 
+        // Spec-group dominance pre-pass for ADDON rules. When a per-copy
+        // binding rule (copyMultiplier=true) shares spec values with a
+        // legacy total-page tier rule, the per-copy rule wins and the
+        // tier rule is suppressed — otherwise both can fire (they gate
+        // different page sets) and double-charge the customer.
+        const survivingAddonIds = computeSurvivingAddonIds(category.pricingRules, specifications);
+
         // Match pricing rules based on specification values
         for (const rule of category.pricingRules) {
             const ruleSpecs = rule.specificationValues as Record<string, any>;
@@ -1539,6 +1614,9 @@ export const calculateCategoryPricePublic = async (
             }
 
             if (!matches) continue;
+
+            // Skip ADDON rules dropped by the dominance pre-pass.
+            if (rule.ruleType === "ADDON" && !survivingAddonIds.has(rule.id)) continue;
 
             if (rule.ruleType === "BASE_PRICE" || rule.ruleType === "SPECIFICATION_COMBINATION") {
                 if (baseApplied) {
@@ -1567,59 +1645,64 @@ export const calculateCategoryPricePublic = async (
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "ADDON") {
-                const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
-
-                // effectivePages = RAW pageCount × copies (not the
-                // half-page-reduced sheet count). Addon ranges gate on
-                // upload volume; mirrors `computeAddonLineTotal` so cart,
-                // checkout, and invoice all agree on the gating number.
-                const effectivePages =
-                    pageCount != null && pageCount > 0
-                        ? pageCount * (copies != null ? copies : 1)
-                        : null;
-
-                if (hasPageRange) {
-                    if (effectivePages == null) {
-                        continue;
-                    }
-                    const inRange =
-                        (rule.minQuantity == null || effectivePages >= rule.minQuantity) &&
-                        (rule.maxQuantity == null || effectivePages <= rule.maxQuantity);
-                    if (!inRange) {
-                        continue;
-                    }
-                }
-
-                const modifier = rule.priceModifier ? Number(rule.priceModifier) : 0;
-                // Match the shared util (`computeAddonLineTotal`):
-                //   fileMultiplier=true      -> multiply by fileCount (min 1)
-                //   quantityMultiplier=false -> flat per-order amount
-                //   quantityMultiplier=true  -> multiply by effective pages
-                //                               (falls back to quantity when
-                //                               the line item isn't a print
-                //                               job with pageCount/copies).
-                const fileMultiplierOn = Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier);
+                const addonRule = {
+                    id: rule.id,
+                    basePrice: rule.basePrice,
+                    priceModifier: rule.priceModifier,
+                    quantityMultiplier: rule.quantityMultiplier,
+                    fileMultiplier: Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier),
+                    copyMultiplier: Boolean((rule as { copyMultiplier?: boolean }).copyMultiplier),
+                    minQuantity: rule.minQuantity,
+                    maxQuantity: rule.maxQuantity,
+                    isActive: rule.isActive,
+                };
+                const lineMeta = {
+                    pageCount: pageCount ?? null,
+                    copies: copies ?? null,
+                    effectivePageCount: effectivePageCount ?? null,
+                };
                 const safeFileCount = fileCount != null && fileCount > 0 ? Number(fileCount) : 1;
-                const multiplier = fileMultiplierOn
-                    ? safeFileCount
-                    : rule.quantityMultiplier
-                        ? (effectivePages ?? effectiveQuantity)
-                        : 1;
-                const finalPrice = modifier * multiplier;
+                const finalPrice = computeAddonLineTotal(addonRule, {
+                    quantity: effectiveQuantity,
+                    addons: [rule.id],
+                    metadata: lineMeta,
+                    fileCount: safeFileCount,
+                });
+                if (finalPrice <= 0) continue;
                 totalPrice += finalPrice;
 
-                const rangeLabel =
-                    hasPageRange
-                        ? ` (${rule.minQuantity ?? 0}-${rule.maxQuantity ?? "∞"} pages`
-                        : "";
-                const multiplierLabel =
-                    fileMultiplierOn && multiplier > 1
-                        ? (rangeLabel ? `) × ${multiplier} files` : ` × ${multiplier} files`)
-                        : rule.quantityMultiplier && multiplier > 1
-                            ? (rangeLabel ? `) × ${multiplier}` : ` × ${multiplier}`)
-                            : rangeLabel
-                                ? ")"
-                                : "";
+                const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
+                const rangeLabel = hasPageRange
+                    ? ` (${rule.minQuantity ?? 0}-${rule.maxQuantity ?? "∞"} pages`
+                    : "";
+                const fileMultiplierOn = addonRule.fileMultiplier;
+                const copyMultiplierOn = addonRule.copyMultiplier;
+                const safeCopies = copies && copies > 0 ? copies : 1;
+                const perCopyPages = effectivePageCount && effectivePageCount > 0
+                    ? effectivePageCount
+                    : pageCount && pageCount > 0
+                        ? pageCount
+                        : null;
+                // Total effective sheets — matches the api util gate
+                // (sheets actually printed × copies, half-page-reduced).
+                const totalEffPages = perCopyPages != null ? perCopyPages * safeCopies : null;
+
+                let multiplierLabel = "";
+                if (fileMultiplierOn && safeFileCount > 1) {
+                    multiplierLabel = ` × ${safeFileCount} files`;
+                } else if (copyMultiplierOn) {
+                    const parts: string[] = [];
+                    if (rule.quantityMultiplier && perCopyPages && perCopyPages > 1) {
+                        parts.push(`${perCopyPages} ${perCopyPages === 1 ? "page" : "pages"}`);
+                    }
+                    parts.push(`${safeCopies} ${safeCopies === 1 ? "copy" : "copies"}`);
+                    multiplierLabel = parts.length > 0 ? ` × ${parts.join(" × ")}` : "";
+                } else if (rule.quantityMultiplier && totalEffPages && totalEffPages > 1) {
+                    multiplierLabel = ` × ${totalEffPages}`;
+                }
+                const labelSuffix = hasPageRange
+                    ? `${rangeLabel})${multiplierLabel}`
+                    : multiplierLabel;
 
                 const addonSpecLabel = Object.keys(ruleSpecs).length
                     ? `: ${Object.entries(ruleSpecs)
@@ -1628,7 +1711,7 @@ export const calculateCategoryPricePublic = async (
                     : "";
 
                 breakdown.push({
-                    label: `Addon${addonSpecLabel}${rangeLabel}${multiplierLabel}`,
+                    label: `Addon${addonSpecLabel}${labelSuffix}`,
                     value: finalPrice,
                 });
             } else if (rule.ruleType === "QUANTITY_TIER") {

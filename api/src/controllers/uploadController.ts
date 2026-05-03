@@ -10,14 +10,17 @@ import {
 import { prisma } from "../services/prisma.js";
 import { randomUUID } from "crypto";
 
-/** Generate a filename with timestamp + random suffix */
+/** Generate a filename with timestamp + random suffix.
+ *  Extension is scrubbed to a strict alphanumeric subset so that names
+ *  like `report (final).PDF` or `data%20.docx` do not produce URLs that
+ *  need percent-encoding (which round-trips badly through `new URL()`). */
 function generateFilename(originalName: string, prefix?: string): string {
-    const ext = originalName.split(".").pop() || "";
+    const rawExt = (originalName.split(".").pop() || "").trim();
+    const ext = rawExt.replace(/[^A-Za-z0-9]+/g, "").toLowerCase();
     const timestamp = Date.now();
     const random = Math.round(Math.random() * 1e9);
-    return prefix
-        ? `${prefix}-${timestamp}-${random}.${ext}`
-        : `${timestamp}-${random}.${ext}`;
+    const stem = prefix ? `${prefix}-${timestamp}-${random}` : `${timestamp}-${random}`;
+    return ext ? `${stem}.${ext}` : stem;
 }
 
 // Upload design/order file (customer)

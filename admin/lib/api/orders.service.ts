@@ -31,6 +31,9 @@ export interface OrderItem {
         basePrice?: number | null;
         priceModifier?: number | null;
         quantityMultiplier: boolean;
+        fileMultiplier?: boolean;
+        copyMultiplier?: boolean;
+        specificationValues?: Record<string, unknown> | null;
         minQuantity?: number | null;
         maxQuantity?: number | null;
     }> | null;
