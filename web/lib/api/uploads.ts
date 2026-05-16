@@ -5,8 +5,18 @@
  * Files are organised into purpose-specific folders on the server.
  */
 
-import { uploadMultipleFiles, uploadSingleFile, FTP_FOLDERS } from './ftp';
+import {
+    uploadMultipleFiles,
+    uploadOneFile as ftpUploadOneFile,
+    FTP_FOLDERS,
+    type UploadProgressCallback,
+    type UploadProgressEvent,
+} from './ftp';
 import type { ApiResponse } from '../api-client';
+
+// Re-export progress types so callers can import them from the canonical
+// uploads module without reaching into ./ftp.
+export type { UploadProgressCallback, UploadProgressEvent };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -57,6 +67,39 @@ export async function uploadOrderFilesToS3(
             error:   error?.message || 'Failed to upload order files',
         };
     }
+}
+
+/**
+ * Upload a single order/design file with real-time progress + cancel support.
+ *
+ * Thin wrapper around the low-level XHR uploader in `./ftp` that maps the
+ * raw `FTPUploadResult` to the `UploadFileResult` shape the rest of the web
+ * app already consumes (`key`, `url`, `filename`, `size`, `mimetype`).
+ *
+ * Use this for serial multi-file flows where each file gets its own progress
+ * bar and retry button. For one-shot batch uploads where progress isn't
+ * needed, prefer {@link uploadOrderFilesToS3}.
+ *
+ * @param file        The file to upload (must be non-empty).
+ * @param onProgress  Per-file progress callback (`{ loaded, total, percent }`).
+ * @param opts        AbortSignal for cancellation.
+ */
+export async function uploadOneFile(
+    file: File,
+    onProgress?: UploadProgressCallback,
+    opts?: { signal?: AbortSignal },
+): Promise<UploadFileResult> {
+    const result = await ftpUploadOneFile(file, onProgress, {
+        folder: FTP_FOLDERS.ORDERS,
+        signal: opts?.signal,
+    });
+    return {
+        key:      result.path,
+        url:      result.publicUrl,
+        filename: result.filename,
+        size:     result.size,
+        mimetype: result.mimetype,
+    };
 }
 
 // ─── Review images ────────────────────────────────────────────────────────────

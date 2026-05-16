@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info } from "lucide-react";
-import { uploadOrderFilesToS3, deleteOrderFile } from "@/lib/api/uploads";
+import { Upload, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info, RotateCw, Ban } from "lucide-react";
+import { uploadOneFile, deleteOrderFile } from "@/lib/api/uploads";
+import { isAbortError } from "@/lib/api/ftp";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
-import { isValidFileType, validateFiles, getFileType } from "@/lib/utils/file-validation";
+import { validateFiles, getFileType } from "@/lib/utils/file-validation";
 
 export interface FileDetail {
     file: File;
@@ -13,7 +14,23 @@ export interface FileDetail {
     id: string;
     /** Relative FTP path stored in DB (e.g. "orders/12345-design.pdf"). Previously called s3Key. */
     s3Key?: string;
+    /**
+     * Lifecycle states:
+     *  - `'pending'`  — selected but not yet picked up by the serial loop
+     *                   (the loop also uses this for queued rows so existing
+     *                   consumer code that checks `=== 'pending'` keeps working)
+     *  - `'uploading'`— XHR in flight
+     *  - `'uploaded'` — done, `s3Key` set
+     *  - `'error'`    — failed OR cancelled (check `uploadError === 'cancelled'`
+     *                   for the latter). Reusing `'error'` keeps the existing
+     *                   downstream `filter(f => f.uploadStatus === 'error')`
+     *                   guard in service pages catching cancellations too.
+     */
     uploadStatus?: 'pending' | 'uploading' | 'uploaded' | 'error';
+    /** 0–100; only meaningful while `uploadStatus === 'uploading'`. */
+    uploadProgress?: number;
+    /** Last failure / cancel message for the row. `'cancelled'` is special. */
+    uploadError?: string;
     uploadAbortController?: AbortController;
 }
 
@@ -58,6 +75,7 @@ export default function ProductDocumentUpload({
     const [removingFileId, setRemovingFileId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const uploadAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
+    const batchAbortControllerRef = useRef<AbortController | null>(null);
     const pendingCallbackRef = useRef<{ files: File[]; quantity: number; details: FileDetail[] } | null>(null);
 
     // Sync state changes to parent component using useEffect (only for upload status changes)
@@ -270,10 +288,9 @@ export default function ProductDocumentUpload({
                 onQuantityChange(finalPageCount);
             }
 
-            // Upload all newly-selected files in one batch POST.
-            // Single batched POST matches the multer `.array("files", 10)`
-            // route on the server.
-            uploadFilesBatch(newFileDetails);
+            // Upload newly-selected files one-by-one with per-file progress,
+            // status, and cancel/retry support. Issue #58.
+            uploadFilesSerially(newFileDetails);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to process files';
             setError(errorMessage);
@@ -287,159 +304,146 @@ export default function ProductDocumentUpload({
     };
 
     /**
-     * Upload N newly-selected files in a single batch POST. Marks all of
-     * them `uploading` up-front, then on response writes each one's
-     * `s3Key` into local state by matching the response array order to
-     * the input `fileDetails` order. Mirrors how `uploadFileToS3` did
-     * its single-file work, so the upload-status / pending-callback
-     * plumbing keeps working without changes.
+     * Helper — patch one file in `uploadedFilesS3` by id and schedule the
+     * parent callback off the updated state. Keeps all in-place updates
+     * consistent so the parent always sees the same shape.
      */
-    const uploadFilesBatch = async (fileDetails: FileDetail[]) => {
-        if (fileDetails.length === 0) return;
-
-        const ids = new Set(fileDetails.map((fd) => fd.id));
-
-        // Mark all as uploading.
+    const patchFile = (id: string, patch: Partial<FileDetail>) => {
         setUploadedFilesS3((prev) => {
-            const updated = prev.map((fd) =>
-                ids.has(fd.id) ? { ...fd, uploadStatus: 'uploading' as const } : fd
-            );
+            const updated = prev.map((fd) => (fd.id === id ? { ...fd, ...patch } : fd));
             const files = updated.map((fd) => fd.file);
-            const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
-            pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
+            const quantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+            pendingCallbackRef.current = { files, quantity, details: updated };
             return updated;
+        });
+    };
+
+    /**
+     * Upload a single file with progress + cancel. Used both for the initial
+     * serial loop and for per-row "Retry" clicks.
+     *
+     * Returns `true` on success, `false` on error/cancel — callers decide
+     * whether to continue the surrounding loop (we always do; see issue #58:
+     * "On error per file: mark error, continue with rest").
+     */
+    const uploadSingleFileWithProgress = async (fd: FileDetail): Promise<boolean> => {
+        const controller = new AbortController();
+        uploadAbortControllersRef.current.set(fd.id, controller);
+
+        patchFile(fd.id, {
+            uploadStatus: 'uploading',
+            uploadProgress: 0,
+            uploadError: undefined,
+            uploadAbortController: controller,
         });
 
         try {
-            const response = await uploadOrderFilesToS3(fileDetails.map((fd) => fd.file));
-
-            if (!response.success || !response.data || response.data.files.length === 0) {
-                throw new Error(response.error || 'Upload failed');
-            }
-
-            const uploaded = response.data.files;
-            // Pair each input file with its response by position. The
-            // server preserves order in `uploadMultipleFiles`.
-            const keyById = new Map<string, string>();
-            fileDetails.forEach((fd, idx) => {
-                const key = uploaded[idx]?.key;
-                if (key) keyById.set(fd.id, key);
+            const result = await uploadOneFile(
+                fd.file,
+                (e) => patchFile(fd.id, { uploadProgress: e.percent }),
+                { signal: controller.signal },
+            );
+            patchFile(fd.id, {
+                uploadStatus: 'uploaded',
+                uploadProgress: 100,
+                s3Key: result.key,
+                uploadAbortController: undefined,
             });
-
-            setUploadedFilesS3((prev) => {
-                const updated = prev.map((fd) => {
-                    const key = keyById.get(fd.id);
-                    if (key) return { ...fd, uploadStatus: 'uploaded' as const, s3Key: key };
-                    if (ids.has(fd.id)) return { ...fd, uploadStatus: 'error' as const };
-                    return fd;
-                });
-                const files = updated.map((fd) => fd.file);
-                const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
-                pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
-                return updated;
-            });
-
-            const failed = fileDetails.filter((fd) => !keyById.has(fd.id));
-            if (failed.length > 0) {
-                toastError(`Failed to upload ${failed.map((f) => f.file.name).join(', ')}`);
-            }
+            return true;
         } catch (err) {
-            setUploadedFilesS3((prev) => {
-                const updated = prev.map((fd) =>
-                    ids.has(fd.id) ? { ...fd, uploadStatus: 'error' as const } : fd
-                );
-                const files = updated.map((fd) => fd.file);
-                const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
-                pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
-                return updated;
+            if (isAbortError(err) || controller.signal.aborted) {
+                // Re-use the `error` slot for cancellation so existing
+                // downstream guards (`filter(f => f.uploadStatus === 'error')`)
+                // pick it up. UI distinguishes via `uploadError === 'cancelled'`.
+                patchFile(fd.id, {
+                    uploadStatus: 'error',
+                    uploadError: 'cancelled',
+                    uploadAbortController: undefined,
+                });
+                return false;
+            }
+            const message = err instanceof Error ? err.message : 'Upload failed';
+            patchFile(fd.id, {
+                uploadStatus: 'error',
+                uploadError: message,
+                uploadAbortController: undefined,
             });
-            const message = err instanceof Error ? err.message : 'Failed to upload files';
-            toastError(message);
+            toastError(`Failed to upload ${fd.file.name}: ${message}`);
+            return false;
+        } finally {
+            uploadAbortControllersRef.current.delete(fd.id);
         }
     };
 
-    // Upload a single file via FTP (orders/ folder)
-    const uploadFileToS3 = async (fileDetail: FileDetail) => {
-        // Create abort controller for this upload
-        const abortController = new AbortController();
-        uploadAbortControllersRef.current.set(fileDetail.id, abortController);
+    /**
+     * Serial multi-file upload (issue #58).
+     *
+     * - Queues every file up-front so the UI shows pending rows.
+     * - Uploads one at a time so a single bad file doesn't kill the rest.
+     * - If the batch is cancelled mid-way, remaining queued files are
+     *   marked `cancelled` and the loop exits early.
+     */
+    const uploadFilesSerially = async (fileDetails: FileDetail[]) => {
+        if (fileDetails.length === 0) return;
 
-        // Update status to uploading
+        // Mark every selected file as `pending` (= queued) so all rows
+        // render with a pending state up-front (user sees the full list
+        // immediately, before the first request fires).
         setUploadedFilesS3((prev) => {
+            const ids = new Set(fileDetails.map((f) => f.id));
             const updated = prev.map((fd) =>
-                fd.id === fileDetail.id
-                    ? { ...fd, uploadStatus: 'uploading' as const, uploadAbortController: abortController }
+                ids.has(fd.id)
+                    ? { ...fd, uploadStatus: 'pending' as const, uploadProgress: 0 }
                     : fd
             );
-            // Schedule callback after state update
             const files = updated.map((fd) => fd.file);
-            const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
-            pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
+            const quantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+            pendingCallbackRef.current = { files, quantity, details: updated };
             return updated;
         });
 
+        // Set up a batch-level abort controller so "Cancel" can stop the
+        // remaining queue. Per-file controllers handle the in-flight request.
+        const batchController = new AbortController();
+        batchAbortControllerRef.current = batchController;
+
         try {
-            const response = await uploadOrderFilesToS3([fileDetail.file]);
-
-            // Check if upload was aborted
-            if (abortController.signal.aborted) {
-                return; // Upload was cancelled, exit silently
-            }
-
-            if (response.success && response.data && response.data.files.length > 0) {
-                const uploadedFile = response.data.files[0];
-                if (uploadedFile?.key) {
-                    // Update status to uploaded and store S3 key
-                    setUploadedFilesS3((prev) => {
-                        const updated = prev.map((fd) =>
-                            fd.id === fileDetail.id
-                                ? { ...fd, uploadStatus: 'uploaded' as const, s3Key: uploadedFile.key }
-                                : fd
-                        );
-                        // Schedule callback after state update
-                        const files = updated.map((fd) => fd.file);
-                        const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
-                        pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
-                        return updated;
+            for (const fd of fileDetails) {
+                if (batchController.signal.aborted) {
+                    // Mark remaining queued files as cancelled (stored in
+                    // the `error` slot so existing checkout guards block on it).
+                    patchFile(fd.id, {
+                        uploadStatus: 'error',
+                        uploadError: 'cancelled',
                     });
-                } else {
-                    throw new Error('Upload failed - no key returned');
+                    continue;
                 }
-            } else {
-                throw new Error('Upload failed');
+                await uploadSingleFileWithProgress(fd);
             }
-        } catch (err) {
-            // Check if upload was aborted
-            if (abortController.signal.aborted) {
-                // Upload was cancelled, remove the file
-                setUploadedFilesS3((prev) => {
-                    const updated = prev.filter((fd) => fd.id !== fileDetail.id);
-                    const updatedQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
-                    setTotalQuantity(updatedQuantity);
-                    const files = updated.map((fd) => fd.file);
-                    // Schedule callback after state update
-                    pendingCallbackRef.current = { files, quantity: updatedQuantity, details: updated };
-                    return updated;
-                });
-                return;
-            }
-
-            // Upload failed
-            setUploadedFilesS3((prev) => {
-                const updated = prev.map((fd) =>
-                    fd.id === fileDetail.id ? { ...fd, uploadStatus: 'error' as const } : fd
-                );
-                // Schedule callback after state update
-                const files = updated.map((fd) => fd.file);
-                const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
-                pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
-                return updated;
-            });
-            toastError(`Failed to upload ${fileDetail.file.name}`);
         } finally {
-            // Clean up abort controller
-            uploadAbortControllersRef.current.delete(fileDetail.id);
+            if (batchAbortControllerRef.current === batchController) {
+                batchAbortControllerRef.current = null;
+            }
         }
+    };
+
+    /** Retry a single failed/cancelled row. Issue #58 — per-file retry. */
+    const handleRetry = (fileId: string) => {
+        const fd = uploadedFilesS3?.find((f) => f.id === fileId);
+        if (!fd) return;
+        if (fd.uploadStatus === 'uploading') return;
+        uploadSingleFileWithProgress(fd);
+    };
+
+    /** Cancel the in-flight serial batch and any remaining queued files. */
+    const handleCancelAll = () => {
+        batchAbortControllerRef.current?.abort();
+        // Abort whichever per-file request is in flight; the loop's catch
+        // path will mark it `cancelled`. Remaining queued files are flipped
+        // by the loop body's batch-abort check.
+        uploadAbortControllersRef.current.forEach((ctrl) => {
+            try { ctrl.abort(); } catch { /* no-op */ }
+        });
     };
 
     const handleRemove = async (fileId: string) => {
@@ -483,11 +487,25 @@ export default function ProductDocumentUpload({
         setRemovingFileId(null);
     };
 
-    // const imageCount = uploadedFilesS3.filter(f => f.type === 'image').length;
-    // const pdfCount = uploadedFilesS3.filter(f => f.type === 'pdf').length;
-    // const pdfPageCount = uploadedFilesS3
-    //     .filter(f => f.type === 'pdf')
-    //     .reduce((sum, f) => sum + f.pageCount, 0);
+    // ── Derived upload-progress stats (issue #58) ─────────────────────────────
+    // `overallPercent` = (completed files + current file's percent) / total
+    // across every file currently visible in the list. Already-uploaded
+    // rows from prior batches count as 100% so the bar reflects the full
+    // session, not just the most recent selection.
+    const files = uploadedFilesS3 ?? [];
+    const hasUploadsInFlight = files.some(
+        (fd) => fd.uploadStatus === 'pending' || fd.uploadStatus === 'uploading'
+    );
+    const overallPercent = (() => {
+        if (files.length === 0) return 0;
+        const sum = files.reduce((acc, fd) => {
+            if (fd.uploadStatus === 'uploaded') return acc + 100;
+            if (fd.uploadStatus === 'uploading') return acc + (fd.uploadProgress ?? 0);
+            // pending/error → 0 toward progress; the row still shows its own state.
+            return acc;
+        }, 0);
+        return Math.min(100, Math.round(sum / files.length));
+    })();
 
     return (
         <div className={className}>
@@ -510,13 +528,13 @@ export default function ProductDocumentUpload({
                     />
                     <label
                         htmlFor="document-upload"
-                        className={`inline-flex items-center gap-2 px-6 py-3 bg-[#CFCFCF] hover:bg-gray-400 text-gray-700 rounded-lg font-medium cursor-pointer transition-colors ${isProcessing || uploadedFilesS3?.some(f => f.uploadStatus === 'uploading') ? 'opacity-50 cursor-not-allowed' : ''
+                        className={`inline-flex items-center gap-2 px-6 py-3 bg-[#CFCFCF] hover:bg-gray-400 text-gray-700 rounded-lg font-medium cursor-pointer transition-colors ${isProcessing || hasUploadsInFlight ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
                     >
-                        {(isProcessing || uploadedFilesS3?.some(f => f.uploadStatus === 'uploading')) ? (
+                        {(isProcessing || hasUploadsInFlight) ? (
                             <>
                                 <Loader2 size={18} className="animate-spin" />
-                                {uploadedFilesS3?.some(f => f.uploadStatus === 'uploading') ? 'Uploading...' : 'Processing...'}
+                                {hasUploadsInFlight ? `Uploading ${overallPercent}%…` : 'Processing...'}
                             </>
                         ) : (
                             <>
@@ -565,58 +583,130 @@ export default function ProductDocumentUpload({
                 {/* File List */}
                 {uploadedFilesS3 && uploadedFilesS3.length > 0 && (
                     <div className="space-y-3">
-                        <div className="space-y-2">
-                            {uploadedFilesS3?.map((fileDetail) => (
-                                <div
-                                    key={fileDetail.id}
-                                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
+                        {/* Overall progress + cancel-all (issue #58) */}
+                        {hasUploadsInFlight && (
+                            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <Loader2 size={16} className="text-blue-600 shrink-0 animate-spin" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between text-xs text-blue-700 mb-1">
+                                        <span>Uploading files…</span>
+                                        <span className="font-semibold">{overallPercent}%</span>
+                                    </div>
+                                    <div className="w-full bg-blue-100 rounded-full h-1.5 overflow-hidden">
+                                        <div
+                                            className="bg-blue-600 h-1.5 rounded-full transition-all duration-200"
+                                            style={{ width: `${overallPercent}%` }}
+                                        />
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleCancelAll}
+                                    className="shrink-0 inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 bg-white border border-red-200 rounded hover:bg-red-50 cursor-pointer"
                                 >
-                                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                                        {fileDetail.type === 'image' ? (
-                                            <ImageIcon size={20} className="text-blue-600 shrink-0" />
-                                        ) : (
-                                            <FileText size={20} className="text-red-600 shrink-0" />
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-900 truncate">
-                                                {fileDetail.file.name}
-                                            </p>
-                                            <p className="text-xs text-gray-500">
-                                                {(fileDetail.file.size / 1024 / 1024).toFixed(2)} MB •{' '}
-                                                {fileDetail.type === 'pdf'
-                                                    ? `${fileDetail.pageCount} page${fileDetail.pageCount !== 1 ? 's' : ''}`
-                                                    : '1 page'}
-                                                {fileDetail.uploadStatus === 'uploading' && (
-                                                    <span className="ml-2 text-blue-600 flex items-center gap-1">
-                                                        <Loader2 size={12} className="animate-spin" />
-                                                        Uploading...
+                                    <Ban size={12} />
+                                    Cancel
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            {uploadedFilesS3?.map((fileDetail) => {
+                                const status = fileDetail.uploadStatus;
+                                const pct = fileDetail.uploadProgress ?? 0;
+                                const isCancelled = status === 'error' && fileDetail.uploadError === 'cancelled';
+                                const isFailed = status === 'error';
+                                return (
+                                    <div
+                                        key={fileDetail.id}
+                                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 gap-3"
+                                    >
+                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                            {fileDetail.type === 'image' ? (
+                                                <ImageIcon size={20} className="text-blue-600 shrink-0" />
+                                            ) : (
+                                                <FileText size={20} className="text-red-600 shrink-0" />
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate">
+                                                    {fileDetail.file.name}
+                                                </p>
+                                                <p className="text-xs text-gray-500 flex flex-wrap items-center gap-x-2">
+                                                    <span>
+                                                        {(fileDetail.file.size / 1024 / 1024).toFixed(2)} MB
                                                     </span>
+                                                    <span>•</span>
+                                                    <span>
+                                                        {fileDetail.type === 'pdf'
+                                                            ? `${fileDetail.pageCount} page${fileDetail.pageCount !== 1 ? 's' : ''}`
+                                                            : '1 page'}
+                                                    </span>
+                                                    {status === 'pending' && (
+                                                        <span className="text-gray-500">• Queued</span>
+                                                    )}
+                                                    {status === 'uploading' && (
+                                                        <span className="text-blue-600 flex items-center gap-1">
+                                                            <Loader2 size={12} className="animate-spin" />
+                                                            {pct}%
+                                                        </span>
+                                                    )}
+                                                    {status === 'uploaded' && (
+                                                        <span className="text-green-600">✓ Uploaded</span>
+                                                    )}
+                                                    {isCancelled && (
+                                                        <span className="text-red-600">✗ Cancelled</span>
+                                                    )}
+                                                    {isFailed && !isCancelled && (
+                                                        <span className="text-red-600">
+                                                            ✗ {fileDetail.uploadError || 'Upload failed'}
+                                                        </span>
+                                                    )}
+                                                </p>
+
+                                                {(status === 'pending' || status === 'uploading') && (
+                                                    <div className="mt-1.5 w-full bg-gray-200 rounded-full h-1 overflow-hidden">
+                                                        <div
+                                                            className="bg-blue-600 h-1 rounded-full transition-all duration-200"
+                                                            style={{
+                                                                width: status === 'uploading' ? `${pct}%` : '0%',
+                                                            }}
+                                                        />
+                                                    </div>
                                                 )}
-                                                {fileDetail.uploadStatus === 'uploaded' && (
-                                                    <span className="ml-2 text-green-600">✓ Uploaded</span>
-                                                )}
-                                                {fileDetail.uploadStatus === 'error' && (
-                                                    <span className="ml-2 text-red-600">✗ Upload failed</span>
-                                                )}
-                                            </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            {isFailed && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRetry(fileDetail.id)}
+                                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors cursor-pointer"
+                                                    title="Retry upload"
+                                                    aria-label={`Retry uploading ${fileDetail.file.name}`}
+                                                >
+                                                    <RotateCw size={16} />
+                                                </button>
+                                            )}
+                                            {removingFileId === fileDetail.id ? (
+                                                <div className="p-1">
+                                                    <Loader2 size={18} className="animate-spin text-blue-600" />
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleRemove(fileDetail.id)}
+                                                    className="p-1 text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
+                                                    type="button"
+                                                    disabled={removingFileId !== null}
+                                                    aria-label={`Remove ${fileDetail.file.name}`}
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                    {removingFileId === fileDetail.id ? (
-                                        <div className="p-1 shrink-0">
-                                            <Loader2 size={18} className="animate-spin text-blue-600" />
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleRemove(fileDetail.id)}
-                                            className="p-1 text-gray-400 hover:text-red-600 transition-colors cursor-pointer shrink-0"
-                                            type="button"
-                                            disabled={removingFileId !== null}
-                                        >
-                                            <X size={18} />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                     </div>

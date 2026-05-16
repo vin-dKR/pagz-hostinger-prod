@@ -150,6 +150,185 @@ export async function uploadSingleFile(
     return mapResult(raw);
 }
 
+// ─── XHR-based single-file upload with progress + cancel ─────────────────────
+
+export interface UploadProgressEvent {
+    loaded: number;
+    total: number;
+    percent: number;
+}
+
+export type UploadProgressCallback = (event: UploadProgressEvent) => void;
+
+export interface UploadOneFileOptions {
+    /** Destination folder on the server. Defaults to `orders/`. */
+    folder?: FTPFolder;
+    /** Optional custom file name (without extension). */
+    fileName?: string;
+    /** Aborts the in-flight request when triggered. */
+    signal?: AbortSignal;
+}
+
+/**
+ * Upload a single file with real-time progress events and cancel support.
+ *
+ * Uses `XMLHttpRequest` so `xhr.upload.onprogress` fires real byte counts —
+ * `fetch` doesn't expose upload progress without streams support. Reuses the
+ * same `POST /ftp/upload` endpoint as {@link uploadSingleFile}.
+ *
+ * Rejects empty files (`size === 0`) before initiating the request — Hostinger
+ * FTP rejects 0-byte writes anyway, so failing fast saves a network round-trip.
+ *
+ * @param file        The file to upload (must be non-empty).
+ * @param onProgress  Called on every `xhr.upload.progress` event.
+ * @param opts        Folder / filename / abort options.
+ * @returns           Upload result with relative path + full public URL.
+ *
+ * @example
+ *   const ctrl = new AbortController();
+ *   const result = await uploadOneFile(file, (e) => setPct(e.percent), {
+ *     folder: FTP_FOLDERS.ORDERS,
+ *     signal: ctrl.signal,
+ *   });
+ */
+export function uploadOneFile(
+    file: File,
+    onProgress?: UploadProgressCallback,
+    opts: UploadOneFileOptions = {},
+): Promise<FTPUploadResult> {
+    return new Promise<FTPUploadResult>((resolve, reject) => {
+        // Empty-file guard — fail fast before opening a socket.
+        if (file.size === 0) {
+            reject(new Error(`File "${file.name}" is empty (0 bytes).`));
+            return;
+        }
+
+        const { folder = FTP_FOLDERS.ORDERS, fileName, signal } = opts;
+
+        if (signal?.aborted) {
+            reject(createAbortError());
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('subDir', folder);
+        if (fileName) formData.append('fileName', fileName);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${API_BASE_URL}/ftp/upload`, true);
+
+        // Mirror buildAuthHeaders() — must run after open(), before send().
+        const authHeaders = buildAuthHeaders();
+        for (const [name, value] of Object.entries(authHeaders)) {
+            xhr.setRequestHeader(name, value);
+        }
+        // Do NOT set Content-Type — the browser injects the multipart boundary.
+
+        // ── Progress ────────────────────────────────────────────────────────
+        if (onProgress) {
+            xhr.upload.onprogress = (e: ProgressEvent) => {
+                if (!e.lengthComputable) return;
+                const total = e.total || file.size;
+                const loaded = e.loaded;
+                const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+                onProgress({ loaded, total, percent });
+            };
+        }
+
+        // ── Abort wiring ────────────────────────────────────────────────────
+        const onAbort = () => {
+            try { xhr.abort(); } catch { /* no-op */ }
+        };
+        if (signal) {
+            signal.addEventListener('abort', onAbort, { once: true });
+        }
+        const cleanupSignal = () => {
+            if (signal) signal.removeEventListener('abort', onAbort);
+        };
+
+        // ── Result handlers ─────────────────────────────────────────────────
+        xhr.onload = () => {
+            cleanupSignal();
+            const contentType = xhr.getResponseHeader('content-type') ?? '';
+            const isJson = contentType.includes('application/json');
+            type UploadResponseBody = {
+                success?: boolean;
+                message?: string;
+                error?: string;
+                errors?: Record<string, string[]>;
+                data?: unknown;
+            };
+            let data: UploadResponseBody;
+            try {
+                data = isJson
+                    ? (JSON.parse(xhr.responseText) as UploadResponseBody)
+                    : { error: xhr.responseText };
+            } catch {
+                data = { error: xhr.responseText };
+            }
+
+            const ok = xhr.status >= 200 && xhr.status < 300;
+            if (!ok || data?.success === false) {
+                const msg =
+                    data?.message ||
+                    data?.error ||
+                    `Upload failed with status ${xhr.status}`;
+                const err = new Error(msg) as Error & {
+                    statusCode?: number;
+                    errors?: Record<string, string[]>;
+                };
+                err.statusCode = xhr.status;
+                err.errors = data?.errors;
+                reject(err);
+                return;
+            }
+
+            // Fire a final 100% so consumers always see "done" exactly once.
+            if (onProgress) {
+                onProgress({ loaded: file.size, total: file.size, percent: 100 });
+            }
+
+            resolve(mapResult(data.data));
+        };
+
+        xhr.onerror = () => {
+            cleanupSignal();
+            reject(new Error('Network error during upload.'));
+        };
+
+        xhr.onabort = () => {
+            cleanupSignal();
+            reject(createAbortError());
+        };
+
+        xhr.ontimeout = () => {
+            cleanupSignal();
+            reject(new Error('Upload timed out.'));
+        };
+
+        xhr.send(formData);
+    });
+}
+
+/** DOMException-shaped abort error so consumers can detect cancellation. */
+function createAbortError(): Error {
+    if (typeof DOMException !== 'undefined') {
+        return new DOMException('Upload aborted.', 'AbortError');
+    }
+    const err = new Error('Upload aborted.');
+    err.name = 'AbortError';
+    return err;
+}
+
+/** Convenience: detect whether an error came from a cancelled upload. */
+export function isAbortError(err: unknown): boolean {
+    if (!(err instanceof Error)) return false;
+    if (err.name === 'AbortError') return true;
+    const code = (err as { code?: number }).code;
+    return code === 20;
+}
+
 /**
  * Upload multiple files to the FTP server in the given folder.
  *

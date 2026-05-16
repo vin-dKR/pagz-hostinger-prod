@@ -10,11 +10,13 @@ import PendingMergeBanner from "../components/PendingMergeBanner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { BarsSpinner } from "@/app/components/shared/BarsSpinner";
-import { toastError, toastWarning, toastSuccess, toastPromise } from "@/lib/utils/toast";
+import toast from "react-hot-toast";
+import { toastError, toastWarning } from "@/lib/utils/toast";
 import { useConfirm } from "@/lib/hooks/use-confirm";
 import { ShoppingCart } from "lucide-react";
 import Link from "next/link";
-import { uploadOrderFilesToS3 } from "@/lib/api/uploads";
+import { uploadOneFile } from "@/lib/api/uploads";
+import { isAbortError } from "@/lib/api/ftp";
 import { updateCartItem } from "@/lib/api/cart";
 import { redirectGuestToLoginForCheckout } from "@/lib/utils/guest-cart";
 import {
@@ -263,72 +265,98 @@ function CartPageContent() {
         router.push(`/checkout?items=${selectedIds}`);
     };
 
-    // Image upload handler
+    // Image upload handler — serial, per-file progress (issue #58).
+    //
+    // Uploads files one-by-one via the XHR-based `uploadOneFile` util so the
+    // toast can report `[2/5] design.pdf — 45%` mid-flight. A single bad file
+    // no longer aborts the entire batch: it's logged, the loop continues, and
+    // we update the cart with whatever made it through. If nothing succeeded
+    // we surface a single error toast.
     const handleImageUpload = async (itemId: string, files: File[]) => {
         if (files.length === 0) return;
 
         setUploadingItemId(itemId);
+        const toastId = toast.loading(`Uploading 0 / ${files.length}…`, { position: 'top-right' });
+
+        const uploadedKeys: string[] = [];
+        const failed: { name: string; error: string }[] = [];
 
         try {
-            // Upload files to S3
-            const uploadResponse = await toastPromise(
-                uploadOrderFilesToS3(files),
-                {
-                    loading: 'Uploading images...',
-                    success: 'Images uploaded successfully!',
-                    error: 'Failed to upload images. Please try again.',
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (!file) continue;
+
+                const label = `[${i + 1}/${files.length}] ${file.name}`;
+                toast.loading(`${label} — 0%`, { id: toastId });
+
+                try {
+                    const result = await uploadOneFile(file, (e) => {
+                        toast.loading(`${label} — ${e.percent}%`, { id: toastId });
+                    });
+                    uploadedKeys.push(result.key);
+                } catch (err) {
+                    if (isAbortError(err)) {
+                        failed.push({ name: file.name, error: 'cancelled' });
+                    } else {
+                        const message = err instanceof Error ? err.message : 'Upload failed';
+                        failed.push({ name: file.name, error: message });
+                        console.error('[cart] file upload failed:', file.name, err);
+                    }
+                    // Per issue #58: continue with the remaining files.
                 }
-            );
+            }
 
-            if (!uploadResponse.success || !uploadResponse.data) {
-                toastError('Failed to upload images. Please try again.');
+            // Nothing made it through — surface the error and bail before
+            // touching the cart row.
+            if (uploadedKeys.length === 0) {
+                toast.error('Failed to upload images. Please try again.', { id: toastId });
                 return;
             }
 
-            // Get S3 keys from upload response
-            const s3Keys = uploadResponse.data.files.map(f => f.key);
+            // Update cart with whatever succeeded.
+            toast.loading('Updating cart item…', { id: toastId });
 
-            // Get existing customDesignUrl from cart item
-            const cartItem = items.find(item => item.id === itemId);
+            const cartItem = items.find((item) => item.id === itemId);
             if (!cartItem) {
-                toastError('Cart item not found.');
+                toast.error('Cart item not found.', { id: toastId });
                 return;
             }
 
-            // Merge with existing images (if any)
             const existingUrls = Array.isArray(cartItem.customDesignUrl)
                 ? cartItem.customDesignUrl
                 : cartItem.customDesignUrl
                     ? [cartItem.customDesignUrl]
                     : [];
+            const allUrls = [...existingUrls, ...uploadedKeys];
 
-            const allUrls = [...existingUrls, ...s3Keys];
+            const updateResponse = await updateCartItem(itemId, {
+                quantity: cartItem.quantity, // backend validation requires it
+                customDesignUrl: allUrls,
+            });
 
-            // Update cart item with new S3 keys
-            // Backend expects string, will convert to array internally
-            // Include quantity to satisfy backend validation
-            const updateResponse = await toastPromise(
-                updateCartItem(itemId, {
-                    quantity: cartItem.quantity, // Include quantity to satisfy backend validation
-                    customDesignUrl: allUrls,
-                }),
-                {
-                    loading: 'Updating cart item...',
-                    success: 'Images added successfully!',
-                    error: 'Failed to update cart item. Please try again.',
-                }
-            );
+            if (!updateResponse.success) {
+                toast.error('Failed to update cart item. Please try again.', { id: toastId });
+                return;
+            }
 
-            if (updateResponse.success) {
-                // Refresh cart to show updated images
-                await refetch();
-                toastSuccess('Design files added successfully!');
+            await refetch();
+
+            if (failed.length === 0) {
+                toast.success('Design files added successfully!', { id: toastId });
             } else {
-                toastError('Failed to update cart item. Please try again.');
+                // Partial success — main toast resolves, then a follow-up
+                // error toast lists the failures so the user can re-try.
+                toast.success(
+                    `Uploaded ${uploadedKeys.length} of ${files.length} files.`,
+                    { id: toastId },
+                );
+                toastError(
+                    `Failed: ${failed.map((f) => f.name).join(', ')}. Please re-upload.`,
+                );
             }
         } catch (error) {
             console.error('Image upload error:', error);
-            toastError('Failed to upload images. Please try again.');
+            toast.error('Failed to upload images. Please try again.', { id: toastId });
         } finally {
             setUploadingItemId(null);
         }
