@@ -93,7 +93,17 @@ export default function FTPUploadPage() {
                 const response = await uploadMultipleFilesToFTP(selectedFiles, subDir);
                 if (response.success && response.data) {
                     results = response.data.files;
-                    toast.success(`${response.data.count} file(s) uploaded successfully!`);
+                    const failures = response.data.failures ?? [];
+                    if (failures.length > 0) {
+                        // Per-file failure surfaces in the toast so the user
+                        // can re-pick only the broken files. Issue #56.
+                        toast.error(
+                            `${response.data.count} of ${selectedFiles.length} uploaded; failed: ${failures.map((f) => f.originalName).join(", ")}`,
+                            { duration: 7000 },
+                        );
+                    } else {
+                        toast.success(`${response.data.count} file(s) uploaded successfully!`);
+                    }
                 }
             }
 
