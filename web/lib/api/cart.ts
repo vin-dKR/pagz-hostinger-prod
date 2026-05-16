@@ -203,3 +203,51 @@ export async function validateCartMinimums(
     });
 }
 
+// ─── File verification (issue #56 retroactive sweep) ─────────────────────────
+
+/**
+ * Why files can be invalid:
+ *  - `missing`    — the FTP server reports the file does not exist.
+ *  - `empty`      — the file exists but has size 0 (the original #56 bug).
+ *  - `unreadable` — the FTP server returned an error we can't classify.
+ */
+export type VerifyFileReason = 'missing' | 'empty' | 'unreadable';
+
+export interface VerifyFileInvalidEntry {
+    /** The same string the caller passed in (relative path or full URL). */
+    path: string;
+    reason: VerifyFileReason;
+}
+
+export interface VerifyCartFilesResponse {
+    valid: string[];
+    invalid: VerifyFileInvalidEntry[];
+}
+
+/**
+ * Verify that every uploaded design file referenced by the cart still
+ * exists on the FTP server with size > 0. Used by both the cart page
+ * (on-mount sweep) and the checkout page (pre-payment guard).
+ *
+ * Centralised here so the two pages call one helper — keep all
+ * client-side `customDesignUrl` verification logic out of components.
+ *
+ * Accepts mixed full-URL and relative-path inputs (`extractFtpPathFromUrl`
+ * runs server-side). Returns `{ valid, invalid }` with the original input
+ * strings preserved so callers can match `invalid.path` back to the cart
+ * row that owns it.
+ */
+export async function verifyCartFiles(
+    paths: string[],
+): Promise<ApiResponse<VerifyCartFilesResponse>> {
+    // Skip the round-trip when there's nothing to check.
+    const clean = paths
+        .filter((p): p is string => typeof p === 'string')
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+    if (clean.length === 0) {
+        return { success: true, data: { valid: [], invalid: [] } };
+    }
+    return post<VerifyCartFilesResponse>('/cart/verify-files', { paths: clean });
+}
+

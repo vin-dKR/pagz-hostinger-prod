@@ -24,6 +24,10 @@ import {
     computeCategoryShortfalls,
     formatInr,
 } from "@/lib/utils/category-min-cart-value";
+import {
+    sweepCartFiles,
+    formatInvalidFilesMessage,
+} from "@/lib/utils/cart-file-sweep";
 
 function CheckoutPageContent() {
     const searchParams = useSearchParams();
@@ -326,6 +330,37 @@ function CheckoutPageContent() {
         try {
             setIsPaying(true);
 
+            // #56 retroactive 0KB / missing-file guard. We re-check every
+            // uploaded `customDesignUrl` against the FTP server BEFORE the
+            // Razorpay window opens so the user gets immediate UX feedback
+            // instead of a 4xx after the gateway is half-loaded. The
+            // server-side `assertOrderFilesValid` is the authoritative
+            // check; this is belt-and-suspenders. We do NOT apply
+            // updateCartItem here — the user has to go back to the cart
+            // page to re-upload, where the cart sweep effect will refresh
+            // the row.
+            const sweepable = cartItems.filter((item) => item.id !== 'buy-now-temp');
+            if (sweepable.length > 0) {
+                try {
+                    const sweep = await sweepCartFiles(sweepable, false);
+                    if (sweep.hadInvalid) {
+                        toastError(formatInvalidFilesMessage(sweep.invalidEntries.length));
+                        const badIds = Array.from(sweep.invalidByItem.keys());
+                        const query = badIds.length > 0
+                            ? `?items=${badIds.join(',')}&invalidFiles=1`
+                            : '?invalidFiles=1';
+                        router.push(`/cart${query}`);
+                        setIsPaying(false);
+                        return;
+                    }
+                } catch (sweepErr) {
+                    // FTP transient — log and proceed; the server-side
+                    // guard in `createRazorpayOrderFromCart` will still
+                    // reject a corrupt-file order.
+                    console.warn('[checkout] file sweep failed; relying on server guard:', sweepErr);
+                }
+            }
+
             // Store selected cart item IDs in sessionStorage for removal after payment
             const cartItemIds = cartItems
                 .filter(item => item.id !== 'buy-now-temp')
@@ -495,9 +530,27 @@ function CheckoutPageContent() {
             razorpay.open();
         } catch (err) {
             console.error("Payment error", err);
+            const details = (err as {
+                details?: {
+                    shortfalls?: Array<{ categoryName: string; required: number; current: number }>;
+                    invalid?: Array<{ path: string; reason: string }>;
+                };
+            } | undefined)?.details;
+
+            // Server-side #56 guard: payment-controller rejected because one
+            // or more uploaded files are empty / missing. Send the user
+            // back to /cart so the on-mount sweep can strip the bad paths
+            // and prompt for re-upload.
+            const invalid = details?.invalid;
+            if (Array.isArray(invalid) && invalid.length > 0) {
+                toastError(formatInvalidFilesMessage(invalid.length));
+                router.push('/cart?invalidFiles=1');
+                setIsPaying(false);
+                return;
+            }
+
             // Surface per-category shortfall details (server rejected the order
             // because one or more categories are below their minimum).
-            const details = (err as { details?: { shortfalls?: Array<{ categoryName: string; required: number; current: number }> } } | undefined)?.details;
             const shortfalls = details?.shortfalls;
             const firstShortfall = Array.isArray(shortfalls) ? shortfalls[0] : undefined;
             if (firstShortfall) {
