@@ -54,8 +54,8 @@ Route tree mounted in `src/index.js`:
 - `/api/v1/admin` — everything admin-gated via `adminAuth` middleware (`routes/admin.ts` is the large mega-router for CRUD over products, categories, orders, coupons, reviews, uploads, carousels, templates, page controller, user management)
 - `/api/v1` — public routes (`routes/public.ts`)
 - `/api/v1/{cart,wishlist,reviews,coupons,customer,upload,ftp}` — customer-authenticated
-- `/api/v1/payment` — PhonePe init/verify (customer auth)
-- `/api/webhooks` — PhonePe webhook (public, signature-verified)
+- `/api/v1/payment` — Razorpay create-order/verify (customer auth)
+- `/api/webhooks` — Razorpay webhook (public, HMAC-signature-verified, raw body)
 - `/api/docs` (Redoc) + `/api/playground` (Swagger UI), both served from `openapi.yaml` at repo root of `api/`
 
 Controllers live in `src/controllers/*.ts` and are large (several are 1.5k–2.5k lines). Two dominant ones:
@@ -66,7 +66,7 @@ Controllers live in `src/controllers/*.ts` and are large (several are 1.5k–2.5
 Services in `src/services/`:
 - `prisma.ts` — `PrismaClient` with **MariaDB adapter** (schema declares `provider = "mysql"`, but runtime uses `@prisma/adapter-mariadb` with separate `DATABASE_HOST/USER/PASSWORD/NAME` env vars, NOT `DATABASE_URL`). Generated client emitted to `api/generated/prisma/` (not `node_modules`).
 - `supabase.ts` — Supabase admin client; optional (auth falls back to JWT if not configured).
-- `phonepe.ts` — payment gateway (README still says Razorpay; **code and schema use PhonePe**, fields like `phonePeOrderId`, `phonePeTransactionId`).
+- Payment gateway: **Razorpay** (live). Logic lives in `controllers/paymentController.ts` + `utils/payment-persistence.ts`; webhook signature verified with `RAZORPAY_WEBHOOK_SECRET`. The legacy PhonePe service was removed. DB columns retain their original names (`phonePeOrderId`, `phonePeTransactionId`) for zero-migration compatibility but Prisma fields are mapped to `gatewayOrderId` / `gatewayTransactionId` via `@map`.
 - `ftp.ts` — primary file storage. Uploads to Hostinger via `basic-ftp` into `public_html`. Files served back via `https://pagz.in/...`. Temp staging in `api/uploads/ftp-temp/`.
 - `s3.ts` — legacy AWS S3 support (old records still have S3 URLs; `next.config.js` of both web and admin keep `*.amazonaws.com` remote patterns for that reason).
 - `email.ts`, `otp.ts`, `pdfGenerator.ts`.
@@ -111,7 +111,7 @@ Web & admin both read `NEXT_PUBLIC_API_URL`, default `http://localhost:3002/api/
 
 ## Cross-cutting conventions
 
-- **Don't trust the api README** — it's stale in two places: says "PostgreSQL" (actually MariaDB) and "Razorpay" (actually PhonePe). Schema + services are the source of truth.
+- **Don't trust the api README** — it says "PostgreSQL" (actually MariaDB). The schema + services are the source of truth. Payment gateway is Razorpay.
 - Controllers return via `utils/response.ts` (`sendSuccess`/`sendError`) and throw from `utils/errors.ts` (`UnauthorizedError`, `ForbiddenError`, etc.) — `middleware/errorHandler.ts` catches at the end of the chain.
 - Add new admin endpoints to `routes/admin.ts` (already mounted under `adminAuth`); don't re-add auth middleware per-route.
 - Add new customer endpoints under an existing resource router (`cart.ts`, `wishlist.ts`, etc.) so `customerAuth` coverage stays consistent.

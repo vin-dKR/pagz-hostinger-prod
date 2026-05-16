@@ -353,18 +353,18 @@ export function PaymentDetail({ paymentId, initialPayment }: { paymentId: string
                             <CardTitle>Transaction Details</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {payment.phonePeOrderId || payment.phonePeTransactionId ? (
+                            {payment.gatewayOrderId || payment.gatewayTransactionId ? (
                                 <div className="space-y-4">
-                                    {payment.phonePeOrderId && (
+                                    {payment.gatewayOrderId && (
                                         <div>
-                                            <div className="text-sm text-gray-600">PhonePe Order ID</div>
-                                            <div className="font-mono text-sm">{payment.phonePeOrderId}</div>
+                                            <div className="text-sm text-gray-600">Gateway Order ID</div>
+                                            <div className="font-mono text-sm">{payment.gatewayOrderId}</div>
                                         </div>
                                     )}
-                                    {payment.phonePeTransactionId && (
+                                    {payment.gatewayTransactionId && (
                                         <div>
-                                            <div className="text-sm text-gray-600">PhonePe Transaction ID</div>
-                                            <div className="font-mono text-sm">{payment.phonePeTransactionId}</div>
+                                            <div className="text-sm text-gray-600">Gateway Transaction ID</div>
+                                            <div className="font-mono text-sm">{payment.gatewayTransactionId}</div>
                                         </div>
                                     )}
                                     {payment.paymentInstrument && (
@@ -397,7 +397,7 @@ export function PaymentDetail({ paymentId, initialPayment }: { paymentId: string
                                     )}
                                 </div>
                             ) : (
-                                <div className="text-gray-500">No PhonePe transaction details available</div>
+                                <div className="text-gray-500">No gateway transaction details available</div>
                             )}
                         </CardContent>
                     </Card>

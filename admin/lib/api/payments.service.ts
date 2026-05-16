@@ -14,8 +14,8 @@ export interface Payment {
   userId: string;
   amount: number;
   discountAmount?: number;
-  phonePeOrderId?: string;
-  phonePeTransactionId?: string;
+  gatewayOrderId?: string;
+  gatewayTransactionId?: string;
   status: PaymentStatus;
   method: PaymentMethod;
   paymentInstrument?: string;

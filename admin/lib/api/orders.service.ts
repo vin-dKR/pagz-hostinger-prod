@@ -89,7 +89,7 @@ export interface Order {
     cancellationReason?: string | null;
     /** Free-form note the customer left at checkout. */
     customerComment?: string | null;
-    phonePeOrderId?: string | null;
+    gatewayOrderId?: string | null;
     couponId?: string | null;
     address: Address;
     shippingAddress?: Address; // Alias for address for backward compatibility
@@ -145,8 +145,8 @@ export interface Payment {
     userId: string;
     amount: number;
     discountAmount?: number | null;
-    phonePeOrderId?: string | null;
-    phonePeTransactionId?: string | null;
+    gatewayOrderId?: string | null;
+    gatewayTransactionId?: string | null;
     status: PaymentStatus;
     method: PaymentMethod;
     paymentInstrument?: string | null;

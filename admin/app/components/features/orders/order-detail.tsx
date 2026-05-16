@@ -954,9 +954,9 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                         <p className="text-sm text-gray-500">
                                                             {formatDateTime(payment.createdAt)}
                                                         </p>
-                                                        {payment.phonePeTransactionId && (
+                                                        {payment.gatewayTransactionId && (
                                                             <p className="text-xs text-gray-400 font-mono mt-1">
-                                                                ID: {payment.phonePeTransactionId}
+                                                                ID: {payment.gatewayTransactionId}
                                                             </p>
                                                         )}
                                                         {payment.paymentInstrument && (

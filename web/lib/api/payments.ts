@@ -1,10 +1,14 @@
 /**
  * Payments API functions
+ *
+ * The storefront talks to Razorpay exclusively. The PhonePe API surface
+ * (createPhonePeOrder / verifyPhonePePayment) was removed when that
+ * integration was retired — only Razorpay endpoints remain.
  */
 
 import { post, type ApiResponse } from "../api-client";
 
-export interface CreatePhonePeOrderRequest {
+export interface CreateRazorpayOrderRequest {
     items: Array<{
         productId: string;
         variantId?: string;
@@ -33,28 +37,12 @@ export interface CreatePhonePeOrderRequest {
     customerComment?: string;
 }
 
-export interface CreatePhonePeOrderResponse {
-    redirectUrl: string;
-    merchantOrderId: string;
-}
-
 export interface CreateRazorpayOrderResponse {
     keyId: string;
     merchantOrderId: string;
     razorpayOrderId: string;
     amount: number;
     currency: string;
-}
-
-export interface VerifyPhonePePaymentRequest {
-    merchantOrderId: string;
-}
-
-export interface VerifyPhonePePaymentResponse {
-    verified: boolean;
-    orderId?: string;
-    state?: string;
-    message?: string;
 }
 
 export interface VerifyRazorpayPaymentRequest {
@@ -64,32 +52,21 @@ export interface VerifyRazorpayPaymentRequest {
     razorpaySignature: string;
 }
 
-/**
- * Create a PhonePe order from cart data (returns redirect URL)
- */
-export async function createPhonePeOrder(
-    data: CreatePhonePeOrderRequest
-): Promise<ApiResponse<CreatePhonePeOrderResponse>> {
-    return post<CreatePhonePeOrderResponse>("/payment/create-order-from-cart", data);
-}
-
-/**
- * Verify PhonePe payment after redirect back
- */
-export async function verifyPhonePePayment(
-    data: VerifyPhonePePaymentRequest
-): Promise<ApiResponse<VerifyPhonePePaymentResponse>> {
-    return post<VerifyPhonePePaymentResponse>("/payment/verify", data);
+export interface VerifyRazorpayPaymentResponse {
+    verified: boolean;
+    orderId?: string;
+    state?: string;
+    message?: string;
 }
 
 export async function createRazorpayOrder(
-    data: CreatePhonePeOrderRequest
+    data: CreateRazorpayOrderRequest,
 ): Promise<ApiResponse<CreateRazorpayOrderResponse>> {
     return post<CreateRazorpayOrderResponse>("/payment/razorpay/create-order-from-cart", data);
 }
 
 export async function verifyRazorpayPayment(
-    data: VerifyRazorpayPaymentRequest
-): Promise<ApiResponse<VerifyPhonePePaymentResponse>> {
-    return post<VerifyPhonePePaymentResponse>("/payment/razorpay/verify", data);
+    data: VerifyRazorpayPaymentRequest,
+): Promise<ApiResponse<VerifyRazorpayPaymentResponse>> {
+    return post<VerifyRazorpayPaymentResponse>("/payment/razorpay/verify", data);
 }
