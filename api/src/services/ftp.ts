@@ -280,6 +280,209 @@ export async function uploadBufferToFTP(
 }
 
 /**
+ * Result of verifying a single file on the FTP server.
+ *
+ * - `exists` is `false` when the FTP server reports the file missing (550 /
+ *   "no such file"). Callers should map this to `"missing"`.
+ * - `exists` is `true` with `size === 0` means the file is present but
+ *   empty (the failure mode that motivated issue #56). Callers map this
+ *   to `"empty"`.
+ * - `exists` is `true` with `size > 0` is the happy path.
+ * - When the server returns an unrelated error (transient network /
+ *   permission / unsupported SIZE) we surface `error` so the caller can
+ *   distinguish `"unreadable"` from `"missing"`.
+ */
+export interface FtpFileVerification {
+    exists: boolean;
+    size: number;
+    error?: string;
+}
+
+/**
+ * Result entry returned to clients by the cart verify-files endpoint.
+ * Kept in this module so the controller and the client util share one
+ * shape via the OpenAPI schema / response type.
+ */
+export type FtpVerifyReason = "missing" | "empty" | "unreadable";
+export interface FtpVerifyInvalidEntry {
+    path: string;
+    reason: FtpVerifyReason;
+}
+export interface FtpVerifyBatchResult {
+    valid: string[];
+    invalid: FtpVerifyInvalidEntry[];
+}
+
+function isNotFoundFtpError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    if (!message) return false;
+    const lower = message.toLowerCase();
+    // basic-ftp surfaces 550 codes verbatim; Hostinger uses both
+    // "No such file" and "File not found".
+    return lower.includes("no such file")
+        || lower.includes("file not found")
+        || lower.includes("could not get file size");
+}
+
+/**
+ * Probe a single remote path on an already-open FTP client. Falls back
+ * from `SIZE` to a directory listing when the server rejects `SIZE` (some
+ * Hostinger configs disable it in ASCII mode). Does NOT close the
+ * client — callers manage the connection lifecycle so a batch verify
+ * uses one connection for the whole list.
+ */
+async function probeFtpFile(
+    client: Client,
+    remotePath: string,
+): Promise<FtpFileVerification> {
+    const cleanPath = normalizeRemoteDeletePath(remotePath);
+    if (!cleanPath) {
+        return { exists: false, size: 0, error: "Empty path" };
+    }
+
+    // 1) SIZE — cheapest. If the server supports it we're done in one round-trip.
+    try {
+        const size = await client.size(cleanPath);
+        if (typeof size === "number" && Number.isFinite(size)) {
+            return { exists: true, size };
+        }
+    } catch (sizeError) {
+        if (isNotFoundFtpError(sizeError)) {
+            return { exists: false, size: 0 };
+        }
+        // Fall through to LIST — server may simply not implement SIZE.
+    }
+
+    // 2) LIST fallback — walks the parent directory once.
+    try {
+        const lastSlash = cleanPath.lastIndexOf("/");
+        const parentDir = lastSlash >= 0 ? cleanPath.slice(0, lastSlash) : "";
+        const fileName = lastSlash >= 0 ? cleanPath.slice(lastSlash + 1) : cleanPath;
+        const entries = await client.list(parentDir || ".");
+        const match = entries.find((e) => e.name === fileName);
+        if (!match) {
+            return { exists: false, size: 0 };
+        }
+        const size = typeof match.size === "number" && Number.isFinite(match.size)
+            ? match.size
+            : 0;
+        return { exists: true, size };
+    } catch (listError) {
+        if (isNotFoundFtpError(listError)) {
+            return { exists: false, size: 0 };
+        }
+        const message = listError instanceof Error ? listError.message : String(listError);
+        return { exists: false, size: 0, error: message };
+    }
+}
+
+/**
+ * Internal: connect to FTP, `cd` into the configured public root once,
+ * run `fn` with the open client, then close. All verify helpers use
+ * this so we never leak connections and `FTP_REMOTE_DIR` handling stays
+ * in one place.
+ */
+async function withFtpClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+    const client = new Client();
+    try {
+        if (process.env.FTP_VERBOSE === "true") {
+            client.ftp.verbose = true;
+        }
+        await client.access(FTP_CONFIG);
+
+        // Land in `public_html` so probe paths can be relative to the
+        // public root (matching how callers store `customDesignUrl`).
+        // Mirrors the cd logic in `listFTPFiles` / `deleteFromFTP`.
+        try {
+            await client.cd(FTP_REMOTE_DIR);
+        } catch {
+            try {
+                await client.ensureDir(FTP_REMOTE_DIR);
+                await client.cd(FTP_REMOTE_DIR);
+            } catch {
+                // If we still can't cd, fall through — relative paths may
+                // still resolve from the login directory. probeFtpFile()
+                // will report `missing` if they don't.
+            }
+        }
+
+        return await fn(client);
+    } finally {
+        try {
+            client.close();
+        } catch {
+            // ignore
+        }
+    }
+}
+
+/**
+ * Verify a single file path on the FTP server. Opens its own connection
+ * — for multiple paths use `verifyFTPFiles` to share one connection.
+ *
+ * @param remotePath - relative FTP path (e.g. "orders/abc.pdf") OR a full
+ *                     public URL (https://pagz.in/...). Both are accepted.
+ */
+export async function verifyFTPFile(remotePath: string): Promise<FtpFileVerification> {
+    if (!remotePath || typeof remotePath !== "string") {
+        return { exists: false, size: 0, error: "Empty path" };
+    }
+    return withFtpClient((client) => probeFtpFile(client, remotePath));
+}
+
+/**
+ * Batch-verify a list of file paths over a single FTP connection.
+ *
+ * Returns `{ valid, invalid }` where `valid` is the subset that exists
+ * with `size > 0`, and `invalid` carries a structured reason per failed
+ * entry so the client can render a precise toast / inline error.
+ *
+ * Paths are de-duplicated before probing but the response preserves
+ * one entry per unique input path. Mixed full-URL + relative-path
+ * arrays are accepted.
+ */
+export async function verifyFTPFiles(paths: string[]): Promise<FtpVerifyBatchResult> {
+    const cleanedInputs: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of paths) {
+        if (typeof raw !== "string") continue;
+        const trimmed = raw.trim();
+        if (!trimmed) continue;
+        if (seen.has(trimmed)) continue;
+        seen.add(trimmed);
+        cleanedInputs.push(trimmed);
+    }
+
+    if (cleanedInputs.length === 0) {
+        return { valid: [], invalid: [] };
+    }
+
+    return withFtpClient(async (client) => {
+        const valid: string[] = [];
+        const invalid: FtpVerifyInvalidEntry[] = [];
+
+        // Sequential probing keeps the single FTP control channel sane —
+        // basic-ftp issues commands serially per client anyway, so
+        // parallelising with Promise.all would just queue them.
+        for (const original of cleanedInputs) {
+            const result = await probeFtpFile(client, original);
+            if (result.exists && result.size > 0) {
+                valid.push(original);
+                continue;
+            }
+            const reason: FtpVerifyReason = !result.exists
+                ? "missing"
+                : result.size === 0
+                    ? "empty"
+                    : "unreadable";
+            invalid.push({ path: original, reason });
+        }
+
+        return { valid, invalid };
+    });
+}
+
+/**
  * Test FTP connection
  * @returns true if connection is successful
  */
