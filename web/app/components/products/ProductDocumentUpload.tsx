@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info } from "lucide-react";
+import { Upload, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info, RotateCw } from "lucide-react";
 import { uploadOrderFilesToS3, deleteOrderFile } from "@/lib/api/uploads";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 import { isValidFileType, validateFiles, getFileType } from "@/lib/utils/file-validation";
@@ -56,6 +56,17 @@ export default function ProductDocumentUpload({
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [removingFileId, setRemovingFileId] = useState<string | null>(null);
+    // Per-file failures from the last upload batch (issue #56). These are
+    // intentionally kept OUT of `uploadedFilesS3` so failed files never
+    // leak into the attached-files list / page-count math. Surfaced
+    // separately below with a retry button per row.
+    const [uploadFailures, setUploadFailures] = useState<Array<{
+        file: File;
+        type: 'image' | 'pdf';
+        pageCount: number;
+        error: string;
+        id: string;
+    }>>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const uploadAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
     const pendingCallbackRef = useRef<{ files: File[]; quantity: number; details: FileDetail[] } | null>(null);
@@ -288,11 +299,16 @@ export default function ProductDocumentUpload({
 
     /**
      * Upload N newly-selected files in a single batch POST. Marks all of
-     * them `uploading` up-front, then on response writes each one's
-     * `s3Key` into local state by matching the response array order to
-     * the input `fileDetails` order. Mirrors how `uploadFileToS3` did
-     * its single-file work, so the upload-status / pending-callback
-     * plumbing keeps working without changes.
+     * them `uploading` up-front, then on response keeps only the
+     * SUCCESSFUL entries in `uploadedFilesS3` (matched by input order
+     * to the backend's preserved-order response) and moves any
+     * failures into `uploadFailures` for a separate, retryable UI.
+     *
+     * Issue #56 — failures (incl. 0-byte rejects from the server) must
+     * never appear in the attached files list, because they'd
+     * contaminate the page-count math and let the user submit an
+     * order with phantom files. Keeping `uploadedFilesS3` clean is
+     * how we guarantee that.
      */
     const uploadFilesBatch = async (fileDetails: FileDetail[]) => {
         if (fileDetails.length === 0) return;
@@ -310,52 +326,131 @@ export default function ProductDocumentUpload({
             return updated;
         });
 
+        // Helper: drop the just-failed files from the attached-list
+        // state and push them into the failure tray. Used by both the
+        // "all-failed" catch path and the per-file partial path.
+        const moveToFailures = (
+            failed: Array<{ detail: FileDetail; error: string }>,
+        ) => {
+            if (failed.length === 0) return;
+            setUploadedFilesS3((prev) => {
+                const failedIds = new Set(failed.map((f) => f.detail.id));
+                const updated = prev.filter((fd) => !failedIds.has(fd.id));
+                const files = updated.map((fd) => fd.file);
+                const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+                pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
+                return updated;
+            });
+            setUploadFailures((prev) => [
+                ...prev,
+                ...failed.map(({ detail, error }) => ({
+                    file: detail.file,
+                    type: detail.type,
+                    pageCount: detail.pageCount,
+                    error,
+                    id: detail.id,
+                })),
+            ]);
+        };
+
         try {
             const response = await uploadOrderFilesToS3(fileDetails.map((fd) => fd.file));
 
-            if (!response.success || !response.data || response.data.files.length === 0) {
+            if (!response.success || !response.data) {
                 throw new Error(response.error || 'Upload failed');
             }
 
             const uploaded = response.data.files;
-            // Pair each input file with its response by position. The
-            // server preserves order in `uploadMultipleFiles`.
+            const apiFailures = response.data.failures ?? [];
+
+            // The backend preserves input order in the success list (see
+            // `runBatchUploads` in `uploadController.ts`). Walking
+            // through `fileDetails` and pairing by index *among the
+            // input files we sent* gives the same mapping the server
+            // used.
             const keyById = new Map<string, string>();
             fileDetails.forEach((fd, idx) => {
                 const key = uploaded[idx]?.key;
                 if (key) keyById.set(fd.id, key);
             });
 
+            // Promote uploaded files; remove anything not uploaded.
             setUploadedFilesS3((prev) => {
-                const updated = prev.map((fd) => {
-                    const key = keyById.get(fd.id);
-                    if (key) return { ...fd, uploadStatus: 'uploaded' as const, s3Key: key };
-                    if (ids.has(fd.id)) return { ...fd, uploadStatus: 'error' as const };
-                    return fd;
-                });
+                const updated = prev
+                    .map((fd) => {
+                        const key = keyById.get(fd.id);
+                        if (key) {
+                            return { ...fd, uploadStatus: 'uploaded' as const, s3Key: key };
+                        }
+                        return fd;
+                    })
+                    // Drop the failed ones entirely so the attached list
+                    // only ever contains successfully uploaded files.
+                    .filter((fd) => !(ids.has(fd.id) && !keyById.has(fd.id)));
                 const files = updated.map((fd) => fd.file);
                 const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
                 pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
                 return updated;
             });
 
-            const failed = fileDetails.filter((fd) => !keyById.has(fd.id));
-            if (failed.length > 0) {
-                toastError(`Failed to upload ${failed.map((f) => f.file.name).join(', ')}`);
+            const failedDetails = fileDetails.filter((fd) => !keyById.has(fd.id));
+            if (failedDetails.length > 0) {
+                // Prefer per-file error messages from the server when
+                // available (matched by originalName).
+                const errorByName = new Map(
+                    apiFailures.map((f) => [f.originalName, f.error]),
+                );
+                setUploadFailures((prev) => [
+                    ...prev,
+                    ...failedDetails.map((fd) => ({
+                        file: fd.file,
+                        type: fd.type,
+                        pageCount: fd.pageCount,
+                        error: errorByName.get(fd.file.name) ?? 'Upload failed',
+                        id: fd.id,
+                    })),
+                ]);
+                toastError(
+                    `Failed to upload ${failedDetails.map((f) => f.file.name).join(', ')}`,
+                );
             }
         } catch (err) {
-            setUploadedFilesS3((prev) => {
-                const updated = prev.map((fd) =>
-                    ids.has(fd.id) ? { ...fd, uploadStatus: 'error' as const } : fd
-                );
-                const files = updated.map((fd) => fd.file);
-                const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
-                pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
-                return updated;
-            });
             const message = err instanceof Error ? err.message : 'Failed to upload files';
+            moveToFailures(fileDetails.map((fd) => ({ detail: fd, error: message })));
             toastError(message);
         }
+    };
+
+    /** Retry a single failed file. Re-runs the batch path with just
+     *  that file so per-file retries match the server's batch flow. */
+    const handleRetryFailed = async (failedId: string) => {
+        const failure = uploadFailures.find((f) => f.id === failedId);
+        if (!failure) return;
+
+        // Move the file back into the attached list (status: pending)
+        // and drop it from the failure tray so the user sees the
+        // upload in progress.
+        const detail: FileDetail = {
+            file: failure.file,
+            type: failure.type,
+            pageCount: failure.pageCount,
+            id: failure.id,
+            uploadStatus: 'pending',
+        };
+        setUploadFailures((prev) => prev.filter((f) => f.id !== failedId));
+        setUploadedFilesS3((prev) => {
+            const updated = [...prev, detail];
+            const files = updated.map((fd) => fd.file);
+            const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+            pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
+            return updated;
+        });
+        await uploadFilesBatch([detail]);
+    };
+
+    /** Drop a failed file from the failure tray (user-confirmed dismiss). */
+    const handleDismissFailed = (failedId: string) => {
+        setUploadFailures((prev) => prev.filter((f) => f.id !== failedId));
     };
 
     // Upload a single file via FTP (orders/ folder)
@@ -424,17 +519,27 @@ export default function ProductDocumentUpload({
                 return;
             }
 
-            // Upload failed
+            // Upload failed — drop from attached list and surface in the
+            // failure tray so it can be retried separately (issue #56:
+            // failed files must never appear in the attached files list).
             setUploadedFilesS3((prev) => {
-                const updated = prev.map((fd) =>
-                    fd.id === fileDetail.id ? { ...fd, uploadStatus: 'error' as const } : fd
-                );
-                // Schedule callback after state update
+                const updated = prev.filter((fd) => fd.id !== fileDetail.id);
                 const files = updated.map((fd) => fd.file);
                 const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
                 pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
                 return updated;
             });
+            const errMessage = err instanceof Error ? err.message : 'Upload failed';
+            setUploadFailures((prev) => [
+                ...prev,
+                {
+                    file: fileDetail.file,
+                    type: fileDetail.type,
+                    pageCount: fileDetail.pageCount,
+                    error: errMessage,
+                    id: fileDetail.id,
+                },
+            ]);
             toastError(`Failed to upload ${fileDetail.file.name}`);
         } finally {
             // Clean up abort controller
@@ -595,6 +700,10 @@ export default function ProductDocumentUpload({
                                                 {fileDetail.uploadStatus === 'uploaded' && (
                                                     <span className="ml-2 text-green-600">✓ Uploaded</span>
                                                 )}
+                                                {/* `error` is no longer possible here — failures are
+                                                    hoisted out of `uploadedFilesS3` and into the
+                                                    failure tray below (issue #56). The branch is
+                                                    kept defensively for any future code path. */}
                                                 {fileDetail.uploadStatus === 'error' && (
                                                     <span className="ml-2 text-red-600">✗ Upload failed</span>
                                                 )}
@@ -619,6 +728,63 @@ export default function ProductDocumentUpload({
                             ))}
                         </div>
 
+                    </div>
+                )}
+
+                {/* Failed-upload tray (issue #56). Kept OUTSIDE the
+                    `uploadedFilesS3` list so the page-count math and the
+                    cart payload never see phantom files. Each row has
+                    Retry and Dismiss actions. */}
+                {uploadFailures.length > 0 && (
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                            <AlertTriangle size={16} className="text-red-600 shrink-0" />
+                            <p className="text-sm font-medium text-red-700">
+                                {uploadFailures.length === 1
+                                    ? '1 file failed to upload'
+                                    : `${uploadFailures.length} files failed to upload`}
+                            </p>
+                        </div>
+                        {uploadFailures.map((failure) => (
+                            <div
+                                key={failure.id}
+                                className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200"
+                            >
+                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    {failure.type === 'image' ? (
+                                        <ImageIcon size={20} className="text-red-600 shrink-0" />
+                                    ) : (
+                                        <FileText size={20} className="text-red-600 shrink-0" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-gray-900 truncate">
+                                            {failure.file.name}
+                                        </p>
+                                        <p className="text-xs text-red-700 truncate" title={failure.error}>
+                                            {failure.error}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRetryFailed(failure.id)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-700 bg-white border border-red-300 rounded-md hover:bg-red-100 transition-colors"
+                                    >
+                                        <RotateCw size={12} />
+                                        Retry
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDismissFailed(failure.id)}
+                                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                        aria-label="Dismiss"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
 

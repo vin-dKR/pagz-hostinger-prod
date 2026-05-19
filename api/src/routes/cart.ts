@@ -6,6 +6,7 @@ import {
     removeFromCart,
     clearCart,
     validateCartMinimums,
+    verifyCartFiles,
 } from "../controllers/cartController.js";
 import { customerAuth } from "../middleware/auth.js";
 
@@ -170,6 +171,43 @@ router.delete("/clear", clearCart);
  *         description: Unauthorized.
  */
 router.post("/validate-minimums", validateCartMinimums);
+
+/**
+ * @openapi
+ * /api/v1/cart/verify-files:
+ *   post:
+ *     summary: Verify FTP-stored design files still exist and are non-empty
+ *     description: |
+ *       Retroactive sweep used by the cart and checkout pages (and the
+ *       server-side payment guard) to detect 0-byte or missing files
+ *       attached to cart items. The client strips invalid paths from
+ *       the cart row and blocks checkout until the user re-uploads.
+ *     tags:
+ *       - Cart
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - paths
+ *             properties:
+ *               paths:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       '200':
+ *         description: |
+ *           `{ valid: string[], invalid: Array<{ path, reason }> }` where
+ *           reason ∈ "missing" | "empty" | "unreadable".
+ *       '401':
+ *         description: Unauthorized.
+ */
+router.post("/verify-files", verifyCartFiles);
 
 export default router;
 

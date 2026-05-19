@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
+import { verifyFTPFiles, extractFtpPathFromUrl, type FtpVerifyInvalidEntry } from "../services/ftp.js";
 import {
     persistOrderWithRaceGuard,
     recordPaymentEvent,
@@ -34,6 +35,79 @@ interface RazorpayPaymentEntity {
     upi?: { vpa?: string };
     card?: { network?: string; type?: string; last4?: string; issuer?: string };
     notes?: { merchantOrderId?: string };
+}
+
+/**
+ * Gather every `customDesignUrl` entry referenced by a list of order
+ * items (the request body shape used by `createRazorpayOrderFromCart`).
+ * De-duplicated and normalised to relative FTP paths so a single batch
+ * verify covers the whole order.
+ */
+function collectOrderFtpPaths(items: unknown): string[] {
+    if (!Array.isArray(items)) return [];
+    const seen = new Set<string>();
+    for (const item of items) {
+        const raw = (item as { customDesignUrl?: unknown } | null)?.customDesignUrl;
+        if (!raw) continue;
+        const candidates: string[] = Array.isArray(raw)
+            ? raw.filter((v): v is string => typeof v === "string")
+            : typeof raw === "string"
+                ? [raw]
+                : [];
+        for (const c of candidates) {
+            const trimmed = c.trim();
+            if (!trimmed) continue;
+            const path = extractFtpPathFromUrl(trimmed);
+            if (path) seen.add(path);
+        }
+    }
+    return Array.from(seen);
+}
+
+/**
+ * Belt-and-suspenders gate before creating a payment-gateway order:
+ * re-verify every uploaded design file still exists and has size > 0.
+ *
+ * If any file is missing / empty / unreadable we throw a `ValidationError`
+ * with the full per-file breakdown on `details.invalid`, so the client
+ * can drop those paths from the cart row and prompt the user to
+ * re-upload. The error is logged with the merchant order id so prod
+ * incidents stay traceable.
+ */
+async function assertOrderFilesValid(
+    items: unknown,
+    merchantOrderId: string,
+): Promise<void> {
+    const paths = collectOrderFtpPaths(items);
+    if (paths.length === 0) return;
+
+    let result: { valid: string[]; invalid: FtpVerifyInvalidEntry[] };
+    try {
+        result = await verifyFTPFiles(paths);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+            `[Payment ${merchantOrderId}] FTP verify-files failed transiently; allowing payment to proceed: ${message}`,
+        );
+        // FTP is the source of truth for fulfilment, not for billing. If
+        // we can't reach the FTP server at all, the post-upload integrity
+        // check that already ran at write time is our last line of
+        // defence — failing closed here would block legitimate orders
+        // every time Hostinger's FTP burps. We log loudly so ops can
+        // notice.
+        return;
+    }
+
+    if (result.invalid.length === 0) return;
+
+    console.warn(
+        `[Payment ${merchantOrderId}] blocked: invalid uploaded files`,
+        result.invalid,
+    );
+    throw new ValidationError(
+        "One or more uploaded files are empty or missing. Please re-upload and try again.",
+        { invalid: result.invalid },
+    );
 }
 
 interface RazorpayOrderEntity {
@@ -93,6 +167,15 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
 
         const merchantOrderId = uuidv4().replace(/-/g, "").slice(0, 32);
         const amountInPaise = Math.round(Number(amount) * 100);
+
+        // CRITICAL: re-verify every uploaded design file before opening
+        // Razorpay. Issue #56 — without this guard a user can pay for an
+        // order that references 0-byte / missing files and fulfilment
+        // fails after the money is captured. Throws ValidationError with
+        // per-file `invalid` details so the client strips bad paths and
+        // re-prompts. Done BEFORE the PendingPayment row is created so
+        // we don't leave orphan rows on rejection.
+        await assertOrderFilesValid(items, merchantOrderId);
 
         await prisma.pendingPayment.create({
             data: {

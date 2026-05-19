@@ -21,6 +21,10 @@ import {
     computeCategoryShortfalls,
     formatInr,
 } from "@/lib/utils/category-min-cart-value";
+import {
+    sweepCartFiles,
+    formatInvalidFilesMessage,
+} from "@/lib/utils/cart-file-sweep";
 
 function CartPageContent() {
     const { isAuthenticated, loading: authLoading } = useAuth();
@@ -46,6 +50,14 @@ function CartPageContent() {
     const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
     // Track if we've initialized selection (to prevent re-selecting after unselect all)
     const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
+    // #56 retroactive sweep: items that lost ALL their files because every
+    // attached file came back invalid from the FTP verify. We block
+    // checkout for these rows and surface an inline error per row.
+    const [itemsMissingFiles, setItemsMissingFiles] = useState<Set<string>>(new Set());
+    // Tracks the (latest) cart signature we have already swept so we don't
+    // re-run the FTP probe on every cart context update. Signature = sorted
+    // item id + file count to refresh after upload / remove.
+    const [lastSweepKey, setLastSweepKey] = useState<string | null>(null);
 
     // Select all items by default on initial mount only
     useEffect(() => {
@@ -54,6 +66,62 @@ function CartPageContent() {
             setHasInitializedSelection(true);
         }
     }, [items, hasInitializedSelection, selectedItems.size]);
+
+    // Retroactive 0KB sweep (issue #56). For every cart item with attached
+    // design files we ask the API to confirm each FTP path still exists
+    // with size > 0, then strip the bad paths from the cart row and toast
+    // the user. The signature gate keeps this from re-running on every
+    // cart-context refresh.
+    useEffect(() => {
+        if (authLoading || loading) return;
+        if (!isAuthenticated) return;
+        if (items.length === 0) return;
+
+        // Signature = "id:fileCount" per row, sorted, so we re-sweep only
+        // when the file composition changes (new upload, removed file).
+        const signature = items
+            .map((it) => {
+                const urls = Array.isArray(it.customDesignUrl)
+                    ? it.customDesignUrl
+                    : it.customDesignUrl
+                        ? [it.customDesignUrl]
+                        : [];
+                return `${it.id}:${urls.length}`;
+            })
+            .sort()
+            .join('|');
+
+        if (signature === lastSweepKey) return;
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const result = await sweepCartFiles(items, true);
+                if (cancelled) return;
+
+                setLastSweepKey(signature);
+                setItemsMissingFiles(new Set(result.itemsWithNoFilesLeft));
+
+                if (result.hadInvalid) {
+                    toastError(formatInvalidFilesMessage(result.invalidEntries.length));
+                    // Pull the cleaned-up cart back so the UI mirrors the
+                    // stripped customDesignUrl arrays.
+                    await refetch();
+                }
+            } catch (err) {
+                // FTP verify is best-effort UX — if it fails, the
+                // server-side payment guard still blocks bad orders.
+                console.warn('[cart] file sweep failed:', err);
+                if (!cancelled) {
+                    setLastSweepKey(signature);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [authLoading, loading, isAuthenticated, items, lastSweepKey, refetch]);
 
     // Filter selected items
     const selectedItemsList = useMemo(() => {
@@ -200,6 +268,14 @@ function CartPageContent() {
         return selectedItemsList.every(item => itemHasImages(item));
     }, [selectedItemsList]);
 
+    // Any selected item whose files were all stripped by the #56 sweep
+    // blocks checkout — the user must re-upload before continuing.
+    const selectedItemsMissingFilesAfterSweep = useMemo(
+        () => selectedItemsList.filter((item) => itemsMissingFiles.has(item.id)),
+        [selectedItemsList, itemsMissingFiles],
+    );
+    const hasSweepBlockedItem = selectedItemsMissingFilesAfterSweep.length > 0;
+
     // Per-category minimum cart value check: blocks checkout when the total
     // for any category (across the *selected* items) falls below the
     // configured minimum. The API's /cart/validate-minimums endpoint (and
@@ -247,6 +323,24 @@ function CartPageContent() {
             return;
         }
 
+        // #56 retroactive sweep: even if the file *count* looks fine, the
+        // sweep may have stripped every file because they were 0-byte /
+        // missing on FTP. Block until the user re-uploads.
+        if (hasSweepBlockedItem) {
+            const names = selectedItemsMissingFilesAfterSweep
+                .map((item) => item.product?.name || 'Unknown Product')
+                .join(', ');
+            toastError(
+                `Please re-upload design files for: ${names}. The previously attached files were empty or missing.`,
+            );
+            const firstId = selectedItemsMissingFilesAfterSweep[0]?.id;
+            if (firstId) {
+                const el = document.getElementById(`cart-item-${firstId}`);
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            return;
+        }
+
         // Per-category minimum cart value: surface the most-constrained
         // categories up-front so the user knows exactly how much more to add.
         const firstShortfall = categoryShortfalls[0];
@@ -285,8 +379,25 @@ function CartPageContent() {
                 return;
             }
 
-            // Get S3 keys from upload response
+            // Get S3 keys from upload response. NOTE: only successful
+            // uploads are in `files`; the server isolates failures
+            // (incl. 0-byte rejects from issue #56) into a separate
+            // `failures` array so they never end up persisted on the
+            // cart row. Surface partial-batch state to the user.
             const s3Keys = uploadResponse.data.files.map(f => f.key);
+            const failures = uploadResponse.data.failures ?? [];
+            if (failures.length > 0) {
+                toastError(
+                    `${failures.length} file(s) failed to upload: ${failures
+                        .map((f) => f.originalName)
+                        .join(', ')}. Please retry those files.`,
+                );
+            }
+            if (s3Keys.length === 0) {
+                // Nothing to add — the failure toast above already told
+                // the user what happened.
+                return;
+            }
 
             // Get existing customDesignUrl from cart item
             const cartItem = items.find(item => item.id === itemId);
@@ -425,6 +536,29 @@ function CartPageContent() {
                                 </div>
                             ) : (
                                 <div className="space-y-2.5 sm:space-y-3">
+                                    {/* #56 retroactive sweep banner: list items whose previously
+                                        attached files were stripped because they were 0-byte
+                                        or missing on the FTP server. */}
+                                    {hasSweepBlockedItem && (
+                                        <div
+                                            role="alert"
+                                            className="rounded-xl sm:rounded-2xl border border-red-300 bg-red-50 p-3 sm:p-4 text-red-800"
+                                        >
+                                            <p className="text-sm font-semibold mb-1">
+                                                Some uploaded files are missing or empty
+                                            </p>
+                                            <p className="text-xs sm:text-sm mb-2">
+                                                Please re-upload design files for:
+                                            </p>
+                                            <ul className="space-y-1 text-xs sm:text-sm list-disc list-inside">
+                                                {selectedItemsMissingFilesAfterSweep.map((it) => (
+                                                    <li key={it.id}>
+                                                        {it.product?.name || 'Unknown Product'}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
                                     {items.map((item) => (
                                         <CartItem
                                             key={item.id}
@@ -488,8 +622,13 @@ function CartPageContent() {
                                     />
                                     <button
                                         onClick={handleGoToCheckout}
-                                        disabled={selectedItems.size === 0 || !allSelectedItemsHaveImages || hasCategoryShortfall}
-                                        className={`w-full mt-3 sm:mt-4 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base text-white transition-colors font-medium ${selectedItems.size > 0 && allSelectedItemsHaveImages && !hasCategoryShortfall
+                                        disabled={
+                                            selectedItems.size === 0
+                                            || !allSelectedItemsHaveImages
+                                            || hasCategoryShortfall
+                                            || hasSweepBlockedItem
+                                        }
+                                        className={`w-full mt-3 sm:mt-4 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base text-white transition-colors font-medium ${selectedItems.size > 0 && allSelectedItemsHaveImages && !hasCategoryShortfall && !hasSweepBlockedItem
                                             ? "bg-[#1EADD8] hover:bg-blue-700"
                                             : "bg-gray-400 cursor-not-allowed"
                                             }`}
@@ -500,7 +639,9 @@ function CartPageContent() {
                                                 ? 'Add images to all items'
                                                 : hasCategoryShortfall
                                                     ? 'Minimum not met for some categories'
-                                                    : `Go to Checkout (${selectedItemsList.length} ${selectedItemsList.length === 1 ? 'item' : 'items'})`
+                                                    : hasSweepBlockedItem
+                                                        ? 'Re-upload missing/empty files'
+                                                        : `Go to Checkout (${selectedItemsList.length} ${selectedItemsList.length === 1 ? 'item' : 'items'})`
                                         }
                                     </button>
                                 </div>

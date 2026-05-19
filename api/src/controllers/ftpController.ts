@@ -239,7 +239,13 @@ export const uploadMultipleFilesToFTP = async (req: Request, res: Response, next
             throw new ValidationError("No files uploaded");
         }
 
-        const uploadResults = await Promise.all(
+        // Use `allSettled` so one failed file doesn't abort the rest of
+        // the batch — the previous `Promise.all` rejected on the first
+        // error and left successful siblings as orphans on the FTP
+        // server. Successes and failures are returned separately so the
+        // client can show per-file status and re-try only the failed
+        // entries.
+        const settled = await Promise.allSettled(
             files.map(async (file) => {
                 const rawExt = path.extname(file.originalname);
                 const safeExt = sanitizeExt(rawExt);
@@ -253,37 +259,80 @@ export const uploadMultipleFilesToFTP = async (req: Request, res: Response, next
                 const tempFileName = `${randomUUID()}${safeExt}`;
                 const tempFilePath = path.join(FTP_TEMP_DIR, tempFileName);
                 tempFilePaths.push(tempFilePath);
-                
+
                 fs.writeFileSync(tempFilePath, file.buffer);
 
-                // Upload to FTP
-                const remotePath = await uploadToFTP(tempFilePath, remoteFileName, remoteSubDir);
+                try {
+                    // Upload to FTP (post-upload size check happens inside)
+                    const remotePath = await uploadToFTP(tempFilePath, remoteFileName, remoteSubDir);
 
-                // Clean up temp file
-                if (fs.existsSync(tempFilePath)) {
-                    fs.unlinkSync(tempFilePath);
+                    const publicUrl = `${FTP_PUBLIC_URL_BASE}/${remotePath}`;
+
+                    return {
+                        remotePath,
+                        remoteFileName,
+                        publicUrl,
+                        size: file.size,
+                        mimetype: file.mimetype,
+                        originalName: file.originalname,
+                    };
+                } finally {
+                    // Always clean up the local temp file, even on failure,
+                    // so a partial batch failure doesn't leak disk.
+                    if (fs.existsSync(tempFilePath)) {
+                        try { fs.unlinkSync(tempFilePath); } catch { /* ignore */ }
+                    }
                 }
-
-                const publicUrl = `${FTP_PUBLIC_URL_BASE}/${remotePath}`;
-
-                return {
-                    remotePath,
-                    remoteFileName,
-                    publicUrl,
-                    size: file.size,
-                    mimetype: file.mimetype,
-                    originalName: file.originalname,
-                };
             })
         );
 
+        type UploadedFile = {
+            remotePath: string;
+            remoteFileName: string;
+            publicUrl: string;
+            size: number;
+            mimetype: string;
+            originalName: string;
+        };
+
+        const uploadResults: UploadedFile[] = settled
+            .filter((r): r is PromiseFulfilledResult<UploadedFile> => r.status === "fulfilled")
+            .map((r) => r.value);
+
+        const failures = settled
+            .map((r, idx) => ({ r, idx }))
+            .filter(({ r }) => r.status === "rejected")
+            .map(({ r, idx }) => {
+                const reason = (r as PromiseRejectedResult).reason;
+                const message = reason instanceof Error ? reason.message : String(reason);
+                const originalName = files[idx]?.originalname ?? "<unknown>";
+                console.error(`[FTP] upload failed for "${originalName}":`, message);
+                return { originalName, error: message };
+            });
+
+        if (uploadResults.length === 0) {
+            // Whole batch failed — surface a single error to the client.
+            const message =
+                failures.length === 1 && failures[0]
+                    ? `Upload failed for "${failures[0].originalName}": ${failures[0].error}`
+                    : `All ${files.length} file(s) failed to upload.`;
+            throw new AppError(message, 400);
+        }
+
+        // Match `sendSuccess` convention (no 207). Mixed-result batches
+        // return 201 with `failures` populated; clients should always
+        // check `failures.length`.
         return sendSuccess(
             res,
             {
                 files: uploadResults,
                 count: uploadResults.length,
+                failures,
+                partial: failures.length > 0,
             },
-            `${uploadResults.length} file(s) uploaded to FTP successfully`,
+            failures.length > 0
+                ? `${uploadResults.length} of ${files.length} file(s) uploaded; ${failures.length} failed.`
+                : `${uploadResults.length} file(s) uploaded to FTP successfully`,
             201
         );
     } catch (error) {

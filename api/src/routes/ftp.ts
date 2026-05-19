@@ -6,7 +6,7 @@ import {
     listFTP,
     deleteFTPFile,
 } from "../controllers/ftpController.js";
-import { uploadFTPFile } from "../middleware/upload-ftp.js";
+import { uploadFTPFile, rejectEmptyFiles } from "../middleware/upload-ftp.js";
 
 const router: IRouter = Router();
 
@@ -17,10 +17,15 @@ router.get("/test", testFTP);
 router.get("/list", listFTP);
 
 // Upload single file to FTP
-router.post("/upload", uploadFTPFile.single("file"), uploadFileToFTP);
+router.post("/upload", uploadFTPFile.single("file"), rejectEmptyFiles, uploadFileToFTP);
 
 // Upload multiple files to FTP
-router.post("/upload-multiple", uploadFTPFile.array("files", 10), uploadMultipleFilesToFTP);
+router.post(
+    "/upload-multiple",
+    uploadFTPFile.array("files", 10),
+    rejectEmptyFiles,
+    uploadMultipleFilesToFTP,
+);
 
 // Delete file from FTP
 router.delete("/delete/:filePath", deleteFTPFile);

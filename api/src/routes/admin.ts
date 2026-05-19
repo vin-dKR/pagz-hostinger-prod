@@ -124,6 +124,7 @@ import {
     uploadCarouselImage,
 } from "../controllers/uploadController.js";
 import { uploadImage } from "../middleware/upload-s3.js";
+import { rejectEmptyFiles } from "../middleware/upload-ftp.js";
 // Carousel Management (admin only)
 import {
     getAdminCarousels,
@@ -336,17 +337,17 @@ router.post("/categories/:categoryId/pricing-rules/:ruleId/sync-product", syncPr
 
 
 // Product Image Upload Routes
-router.post("/upload/product-image", uploadImage.single("file"), uploadProductImage);
-router.post("/upload/product-images", uploadImage.array("files", 10), uploadProductImages);
+router.post("/upload/product-image", uploadImage.single("file"), rejectEmptyFiles, uploadProductImage);
+router.post("/upload/product-images", uploadImage.array("files", 10), rejectEmptyFiles, uploadProductImages);
 router.delete("/upload/product-image/:imageId", deleteProductImage);
 
 // Category Image Upload Routes
-router.post("/upload/category-image", uploadImage.single("file"), uploadCategoryImage);
-router.post("/upload/category-image/:categoryId", uploadImage.single("file"), uploadCategoryImage);
+router.post("/upload/category-image", uploadImage.single("file"), rejectEmptyFiles, uploadCategoryImage);
+router.post("/upload/category-image/:categoryId", uploadImage.single("file"), rejectEmptyFiles, uploadCategoryImage);
 router.delete("/upload/category-image/:imageId", deleteCategoryImageUpload);
 
 // Carousel Image Upload Routes
-router.post("/upload/carousel-image", uploadImage.single("file"), uploadCarouselImage);
+router.post("/upload/carousel-image", uploadImage.single("file"), rejectEmptyFiles, uploadCarouselImage);
 
 // Carousel Management (admin only)
 router.get("/carousels", getAdminCarousels);

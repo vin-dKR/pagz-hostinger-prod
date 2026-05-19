@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductPageTemplate } from '@/app/components/services/ProductPageTemplate';
@@ -42,6 +42,13 @@ import {
     type PendingPurchaseData
 } from "@/lib/utils/pending-purchase";
 import { formatInr } from "@/lib/utils/category-min-cart-value";
+import {
+    saveDraftServiceConfig,
+    getDraftServiceConfig,
+    clearDraftServiceConfig,
+    type ServiceDraftFile,
+} from '@/lib/utils/service-draft';
+import { extractPathFromUrl } from '@/lib/utils/fileUrl';
 
 interface DynamicServicePageProps {
     params: Promise<{ categorySlug: string }>;
@@ -100,6 +107,13 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [templateFormData, setTemplateFormData] = useState<Record<string, any>>({});
     const [templateFormImages, setTemplateFormImages] = useState<string[]>([]);
 
+    // Draft persistence flags — used by the sessionStorage hydration / save
+    // effects to avoid clobbering an in-flight template-flow restoration
+    // and to skip the very first save (which would just echo the initial
+    // empty / defaults state).
+    const hasHydratedRef = useRef(false);
+    const draftRestoredFromTemplateFlowRef = useRef(false);
+
     // Check for uploaded file data from template page
     useEffect(() => {
         const uploadedFileData = sessionStorage.getItem('uploadedFileData');
@@ -107,6 +121,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             try {
                 const data = JSON.parse(uploadedFileData);
                 if (data.uploadedFiles && data.uploadedFiles.length > 0) {
+                    // Mark so the service-draft hydration effect below
+                    // doesn't clobber the files we're about to restore
+                    // from the template flow.
+                    draftRestoredFromTemplateFlowRef.current = true;
                     // Convert stored data back to FileDetail format
                     // Note: We need to reconstruct File objects, but since we only have metadata,
                     // we'll create a minimal FileDetail structure that matches what's expected
@@ -234,6 +252,100 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
         fetchCategory();
     }, [categorySlug]);
+
+    // ------------------------------------------------------------------
+    // Service-draft persistence (sessionStorage)
+    // ------------------------------------------------------------------
+    // Hydrate from the saved draft AFTER the category is loaded (so the
+    // default-spec seeding in `fetchCategory` doesn't overwrite us) and
+    // only once. We skip hydration when the template flow already
+    // restored uploaded files for this slug — otherwise we'd clobber
+    // those files with whatever URLs were in the draft.
+    useEffect(() => {
+        if (!category) return;
+        if (hasHydratedRef.current) return;
+
+        // Defer until next microtask so the `setSelectedSpecifications(defaults)`
+        // from fetchCategory has committed first; React batches both, and we
+        // want our hydrate to win for any slug present in the draft.
+        hasHydratedRef.current = true;
+
+        if (draftRestoredFromTemplateFlowRef.current) {
+            // Template flow already set uploadedFiles + pageCount; skip
+            // hydration to avoid double-application.
+            return;
+        }
+
+        const draft = getDraftServiceConfig(categorySlug);
+        if (!draft) return;
+
+        if (draft.selectedSpecifications && Object.keys(draft.selectedSpecifications).length > 0) {
+            setSelectedSpecifications((prev) => ({ ...prev, ...draft.selectedSpecifications }));
+        }
+        if (typeof draft.copies === 'number' && draft.copies > 0) {
+            setCopies(draft.copies);
+        }
+        if (typeof draft.pageCount === 'number' && draft.pageCount > 0) {
+            setPageCount(draft.pageCount);
+            setMinQuantityFromFiles(draft.pageCount);
+        }
+
+        // Reconstruct the "already uploaded" file state from durable URLs.
+        // File blobs are intentionally NOT restored — the uploaded copy on
+        // FTP is the source of truth; the local blob is only used for new
+        // uploads. We keep `s3Key` (the relative FTP path) on each entry
+        // so the add-to-cart path sees `uploadStatus: 'uploaded'` and skips
+        // re-upload.
+        if (Array.isArray(draft.uploadedFiles) && draft.uploadedFiles.length > 0) {
+            const restoredDetails: FileDetail[] = draft.uploadedFiles.map((f, idx) => {
+                const inferredType: 'pdf' | 'image' =
+                    /\.pdf(\?|$)/i.test(f.url) || /\.pdf$/i.test(f.name)
+                        ? 'pdf'
+                        : 'image';
+                const blob = new Blob([], {
+                    type: inferredType === 'pdf' ? 'application/pdf' : 'image/jpeg',
+                });
+                const reconstructed = new File([blob], f.name, {
+                    type: inferredType === 'pdf' ? 'application/pdf' : 'image/jpeg',
+                    lastModified: Date.now(),
+                });
+                // Preserve the original byte size so the UI shows the right
+                // figure even though the blob is empty.
+                if (f.size > 0) {
+                    Object.defineProperty(reconstructed, 'size', {
+                        value: f.size,
+                        writable: false,
+                        enumerable: true,
+                        configurable: true,
+                    });
+                }
+                return {
+                    file: reconstructed,
+                    type: inferredType,
+                    pageCount: f.pageCount ?? (inferredType === 'image' ? 1 : 0),
+                    id: `draft-${idx}-${Date.now()}`,
+                    s3Key: extractPathFromUrl(f.url),
+                    uploadStatus: 'uploaded' as const,
+                };
+            });
+            setUploadedFileDetails(restoredDetails);
+            setUploadedFilesS3(restoredDetails);
+            setUploadedFiles(restoredDetails.map((fd) => fd.file));
+        }
+
+        if (draft.pdfPasswords) {
+            const passwords = Object.values(draft.pdfPasswords).filter(Boolean);
+            if (passwords.length > 0) {
+                setFileHasPassword(true);
+                setFilePassword(passwords.join(','));
+                setIsPasswordSubmitted(true);
+            }
+        }
+        // `draft.selectedAddons` and `draft.halfPageAdjustments` are
+        // intentionally not re-applied here — both flow out of the
+        // restored specifications + page count via the `selectedAddonIds`
+        // memo defined below.
+    }, [category, categorySlug]);
 
     const calculatePrice = useCallback(async () => {
         if (!category) return;
@@ -457,6 +569,58 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         }
         return surviving;
     }, [availableAddons, selectedSpecifications, pageCount, effectivePageCount, copies, quantity, isCopiesMode]);
+
+    // Debounced save of the in-progress draft (300ms after last change).
+    // We skip until `hasHydratedRef` is true so the restore pass doesn't
+    // immediately overwrite the saved draft with a half-applied state.
+    useEffect(() => {
+        if (!hasHydratedRef.current) return;
+        if (!category) return;
+
+        const handle = window.setTimeout(() => {
+            const uploadedDraftFiles: ServiceDraftFile[] = uploadedFileDetails
+                .filter((fd) => fd.s3Key)
+                .map((fd) => ({
+                    url: fd.s3Key as string,
+                    name: fd.file?.name || 'file',
+                    size: fd.file?.size ?? 0,
+                    pageCount: fd.pageCount,
+                }));
+
+            const pdfPasswords: Record<string, string> = {};
+            if (fileHasPassword && filePassword) {
+                const passwordList = filePassword
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                uploadedDraftFiles.forEach((file, idx) => {
+                    const pw = passwordList[idx] ?? passwordList[0];
+                    if (pw) pdfPasswords[file.name] = pw;
+                });
+            }
+
+            saveDraftServiceConfig(categorySlug, {
+                selectedSpecifications: selectedSpecifications as Record<string, string>,
+                copies,
+                selectedAddons: selectedAddonIds,
+                uploadedFiles: uploadedDraftFiles,
+                pageCount,
+                pdfPasswords: Object.keys(pdfPasswords).length > 0 ? pdfPasswords : undefined,
+            });
+        }, 300);
+
+        return () => window.clearTimeout(handle);
+    }, [
+        category,
+        categorySlug,
+        selectedSpecifications,
+        copies,
+        selectedAddonIds,
+        uploadedFileDetails,
+        pageCount,
+        fileHasPassword,
+        filePassword,
+    ]);
 
     // Check if a specification should be visible based on dependencies
     const isSpecificationVisible = (spec: CategorySpecification): boolean => {
@@ -775,6 +939,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 };
 
                 await savePendingPurchaseData(purchaseData);
+                // The pending-purchase payload supersedes the draft for this
+                // flow; clear so a return to the service page after login
+                // starts clean rather than re-hydrating stale picks.
+                clearDraftServiceConfig(categorySlug);
                 // Guest add-to-cart: send to /cart so the user can see their
                 // item; auth is deferred until the Checkout button.
                 redirectGuestToCart(router);
@@ -997,6 +1165,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 setIsPasswordSubmitted(false);
                 // Clear pending purchase data after successful add to cart
                 clearPendingPurchaseData();
+                // Item is now in the server cart — drop the local draft so
+                // navigating back here doesn't re-hydrate stale selections.
+                clearDraftServiceConfig(categorySlug);
                 // Refresh cart to update count
                 await refetchCart();
                 // Redirect to cart page
@@ -1083,6 +1254,10 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 };
 
                 await savePendingPurchaseData(purchaseData);
+                // The pending-purchase payload is the source of truth from
+                // here; drop the local service draft so a post-login bounce
+                // back to this page (if any) doesn't double-up.
+                clearDraftServiceConfig(categorySlug);
                 // Buy Now → after login, land on /checkout (not back on the
                 // service config page). Add-to-cart flow continues to use the
                 // cart page as the return target.
@@ -1308,6 +1483,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
             // Clear pending purchase data after successful buy now
             clearPendingPurchaseData();
+            // Buy-now committed → user is leaving the configurator with a
+            // captured snapshot, so the local draft is no longer useful.
+            clearDraftServiceConfig(categorySlug);
 
             // Redirect to checkout immediately
             toastSuccess('Redirecting to checkout...');
