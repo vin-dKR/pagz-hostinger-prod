@@ -4,7 +4,7 @@ import { sendSuccess } from "../utils/response.js";
 import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { deriveHalfPageFromSelectedSpecs } from "../utils/half-page-from-specs.js";
-import { deleteFromFTP, extractFtpPathFromUrl } from "../services/ftp.js";
+import { deleteFromFTP, extractFtpPathFromUrl, verifyFTPFiles } from "../services/ftp.js";
 import { getParamAsString } from "../utils/db-utils.js";
 import {
     computeAddonLineTotal,
@@ -937,6 +937,52 @@ export const validateCartMinimums = async (req: Request, res: Response, next: Ne
 
         const shortfalls = await computeCategoryCartShortfalls(lines);
         return sendSuccess(res, { ok: shortfalls.length === 0, shortfalls });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Verify a list of FTP file paths still exist with size > 0.
+ *
+ * Powers the cart-page / checkout-page "retroactive 0KB sweep" added for
+ * issue #56: the prior pre-upload defences only catch *new* empties, so
+ * pre-existing cart items can still reference files that were uploaded
+ * before the fix landed.
+ *
+ * Request:   { paths: string[] }  — relative FTP paths and/or full URLs.
+ * Response:  { valid: string[], invalid: Array<{ path, reason }> }
+ *             reason ∈ "missing" | "empty" | "unreadable"
+ *
+ * Always 200 — the client decides what to do (strip the path from the
+ * cart row, surface a toast, block checkout). The server-side payment
+ * guard re-runs the same check before opening Razorpay so we never
+ * collect money for a corrupt-file order.
+ */
+export const verifyCartFiles = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            throw new UnauthorizedError("User not authenticated");
+        }
+
+        const rawPaths: unknown = (req.body as { paths?: unknown } | undefined)?.paths;
+        if (!Array.isArray(rawPaths)) {
+            throw new ValidationError("`paths` must be an array of strings");
+        }
+
+        // Normalise to canonical relative paths up-front so the response
+        // mirrors what the cart stores. Mixed full-URL / relative inputs
+        // are accepted — extractFtpPathFromUrl handles both.
+        const paths = rawPaths
+            .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+            .map((p) => extractFtpPathFromUrl(p.trim()));
+
+        if (paths.length === 0) {
+            return sendSuccess(res, { valid: [], invalid: [] });
+        }
+
+        const result = await verifyFTPFiles(paths);
+        return sendSuccess(res, result);
     } catch (error) {
         next(error);
     }

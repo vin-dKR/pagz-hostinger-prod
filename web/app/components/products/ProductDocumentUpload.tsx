@@ -73,6 +73,17 @@ export default function ProductDocumentUpload({
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [removingFileId, setRemovingFileId] = useState<string | null>(null);
+    // Per-file failures from the last upload batch (issue #56). These are
+    // intentionally kept OUT of `uploadedFilesS3` so failed files never
+    // leak into the attached-files list / page-count math. Surfaced
+    // separately below with a retry button per row.
+    const [uploadFailures, setUploadFailures] = useState<Array<{
+        file: File;
+        type: 'image' | 'pdf';
+        pageCount: number;
+        error: string;
+        id: string;
+    }>>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const uploadAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
     const batchAbortControllerRef = useRef<AbortController | null>(null);
@@ -306,7 +317,10 @@ export default function ProductDocumentUpload({
     /**
      * Helper — patch one file in `uploadedFilesS3` by id and schedule the
      * parent callback off the updated state. Keeps all in-place updates
-     * consistent so the parent always sees the same shape.
+     * consistent so the parent always sees the same shape. Page-count
+     * math excludes rows in the `error` slot (which includes cancelled
+     * uploads) so failed files can never inflate the order's pageCount
+     * (issue #56 invariant).
      */
     const patchFile = (id: string, patch: Partial<FileDetail>) => {
         setUploadedFilesS3((prev) => {
@@ -337,6 +351,33 @@ export default function ProductDocumentUpload({
             uploadAbortController: controller,
         });
 
+        // Helper: drop the just-failed files from the attached-list
+        // state and push them into the failure tray. Used by both the
+        // "all-failed" catch path and the per-file partial path.
+        const moveToFailures = (
+            failed: Array<{ detail: FileDetail; error: string }>,
+        ) => {
+            if (failed.length === 0) return;
+            setUploadedFilesS3((prev) => {
+                const failedIds = new Set(failed.map((f) => f.detail.id));
+                const updated = prev.filter((fd) => !failedIds.has(fd.id));
+                const files = updated.map((fd) => fd.file);
+                const totalQuantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+                pendingCallbackRef.current = { files, quantity: totalQuantity, details: updated };
+                return updated;
+            });
+            setUploadFailures((prev) => [
+                ...prev,
+                ...failed.map(({ detail, error }) => ({
+                    file: detail.file,
+                    type: detail.type,
+                    pageCount: detail.pageCount,
+                    error,
+                    id: detail.id,
+                })),
+            ]);
+        };
+
         try {
             const result = await uploadOneFile(
                 fd.file,
@@ -363,16 +404,48 @@ export default function ProductDocumentUpload({
                 return false;
             }
             const message = err instanceof Error ? err.message : 'Upload failed';
-            patchFile(fd.id, {
-                uploadStatus: 'error',
-                uploadError: message,
-                uploadAbortController: undefined,
-            });
+            // Issue #56 invariant: failed files must not pollute the
+            // attached-files list. Move the row out of `uploadedFilesS3`
+            // and into the failure tray (which has its own Retry/Dismiss
+            // actions). Cancelled uploads above keep the inline row so
+            // checkout guards still block on them.
+            moveToFailures([{ detail: fd, error: message }]);
             toastError(`Failed to upload ${fd.file.name}: ${message}`);
             return false;
         } finally {
             uploadAbortControllersRef.current.delete(fd.id);
         }
+    };
+
+    /**
+     * Retry a failed upload from the tray. Moves the row back into the
+     * attached list as `pending`, drops it from `uploadFailures`, and
+     * re-runs the same XHR upload path.
+     */
+    const handleRetryFailed = async (failedId: string) => {
+        const failure = uploadFailures.find((f) => f.id === failedId);
+        if (!failure) return;
+        const detail: FileDetail = {
+            file: failure.file,
+            type: failure.type,
+            pageCount: failure.pageCount,
+            id: failure.id,
+            uploadStatus: 'pending',
+        };
+        setUploadFailures((prev) => prev.filter((f) => f.id !== failedId));
+        setUploadedFilesS3((prev) => {
+            const updated = [...prev, detail];
+            const files = updated.map((fd) => fd.file);
+            const quantity = updated.reduce((sum, fd) => sum + fd.pageCount, 0);
+            pendingCallbackRef.current = { files, quantity, details: updated };
+            return updated;
+        });
+        await uploadSingleFileWithProgress(detail);
+    };
+
+    /** Drop a failed file from the tray (user-confirmed dismiss). */
+    const handleDismissFailed = (failedId: string) => {
+        setUploadFailures((prev) => prev.filter((f) => f.id !== failedId));
     };
 
     /**
@@ -709,6 +782,63 @@ export default function ProductDocumentUpload({
                             })}
                         </div>
 
+                    </div>
+                )}
+
+                {/* Failed-upload tray (issue #56). Kept OUTSIDE the
+                    `uploadedFilesS3` list so the page-count math and the
+                    cart payload never see phantom files. Each row has
+                    Retry and Dismiss actions. */}
+                {uploadFailures.length > 0 && (
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                            <AlertTriangle size={16} className="text-red-600 shrink-0" />
+                            <p className="text-sm font-medium text-red-700">
+                                {uploadFailures.length === 1
+                                    ? '1 file failed to upload'
+                                    : `${uploadFailures.length} files failed to upload`}
+                            </p>
+                        </div>
+                        {uploadFailures.map((failure) => (
+                            <div
+                                key={failure.id}
+                                className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200"
+                            >
+                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    {failure.type === 'image' ? (
+                                        <ImageIcon size={20} className="text-red-600 shrink-0" />
+                                    ) : (
+                                        <FileText size={20} className="text-red-600 shrink-0" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-gray-900 truncate">
+                                            {failure.file.name}
+                                        </p>
+                                        <p className="text-xs text-red-700 truncate" title={failure.error}>
+                                            {failure.error}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRetryFailed(failure.id)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-700 bg-white border border-red-300 rounded-md hover:bg-red-100 transition-colors"
+                                    >
+                                        <RotateCw size={12} />
+                                        Retry
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDismissFailed(failure.id)}
+                                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                        aria-label="Dismiss"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
 
