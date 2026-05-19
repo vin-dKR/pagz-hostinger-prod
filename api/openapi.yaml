@@ -1464,10 +1464,10 @@ paths:
                         discountAmount:
                           type: number
                           nullable: true
-                        phonePeOrderId:
+                        gatewayOrderId:
                           type: string
                           nullable: true
-                        phonePeTransactionId:
+                        gatewayTransactionId:
                           type: string
                           nullable: true
                         status:
@@ -1554,10 +1554,10 @@ paths:
                       discountAmount:
                         type: number
                         nullable: true
-                      phonePeOrderId:
+                      gatewayOrderId:
                         type: string
                         nullable: true
-                      phonePeTransactionId:
+                      gatewayTransactionId:
                         type: string
                         nullable: true
                       status:

@@ -937,11 +937,11 @@ export const getAdminOrders = async (req: Request, res: Response, next: NextFunc
             }
         }
 
-        // Search functionality - search by order ID, user email, user name, phone, product name, address, PhonePe IDs
+        // Search functionality - search by order ID, user email, user name, phone, product name, address, gateway IDs
         if (search) {
             const searchConditions: any[] = [
                 { id: { contains: search } },
-                { phonePeOrderId: { contains: search } },
+                { gatewayOrderId: { contains: search } },
                 {
                     user: {
                         OR: [
@@ -972,7 +972,7 @@ export const getAdminOrders = async (req: Request, res: Response, next: NextFunc
                 {
                     payments: {
                         some: {
-                            phonePeTransactionId: { contains: search },
+                            gatewayTransactionId: { contains: search },
                         },
                     },
                 },
@@ -1732,7 +1732,7 @@ export const processRefund = async (req: Request, res: Response, next: NextFunct
         if (!payment) throw new ValidationError("No successful payment found for this order");
 
         const paymentDetails = (payment.paymentDetails || {}) as Record<string, any>;
-        const gatewayPaymentId = payment.gatewayPaymentId || paymentDetails.razorpayPaymentId || payment.phonePeTransactionId;
+        const gatewayPaymentId = payment.gatewayPaymentId || paymentDetails.razorpayPaymentId || payment.gatewayTransactionId;
         if (!gatewayPaymentId) {
             throw new ValidationError("Gateway payment reference is missing for this order");
         }
@@ -2308,7 +2308,7 @@ export const getOrderInvoice = async (req: Request, res: Response, next: NextFun
             <h3>Payment Information</h3>
             <p><strong>Method:</strong> ${order.paymentMethod}</p>
             <p><strong>Status:</strong> ${order.paymentStatus}</p>
-            ${order.payments[0].phonePeTransactionId ? `<p><strong>Payment ID:</strong> ${order.payments[0].phonePeTransactionId}</p>` : ''}
+            ${order.payments[0].gatewayTransactionId ? `<p><strong>Payment ID:</strong> ${order.payments[0].gatewayTransactionId}</p>` : ''}
         </div>
         ` : ''}
 
@@ -2521,8 +2521,8 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                     method,
                     status,
                     transactionId:
-                        order.payments?.[0]?.phonePeTransactionId
-                        || order.payments?.[0]?.phonePeOrderId
+                        order.payments?.[0]?.gatewayTransactionId
+                        || order.payments?.[0]?.gatewayOrderId
                         || undefined,
                 };
             })(),
@@ -2650,7 +2650,7 @@ export const exportOrders = async (req: Request, res: Response, next: NextFuncti
                 'State',
                 'Zip Code',
                 'Country',
-                'PhonePe Order ID',
+                'Gateway Order ID',
                 'Created At',
                 'Updated At',
             ];
@@ -2676,7 +2676,7 @@ export const exportOrders = async (req: Request, res: Response, next: NextFuncti
                     address?.state || '',
                     address?.zipCode || '',
                     address?.country || '',
-                    order.phonePeOrderId || '',
+                    order.gatewayOrderId || '',
                     new Date(order.createdAt).toISOString(),
                     new Date(order.updatedAt).toISOString(),
                 ];

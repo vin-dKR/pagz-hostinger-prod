@@ -1,18 +1,16 @@
 import { Request, Response, NextFunction } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { initiatePhonePePayment, checkPhonePePaymentStatus, verifyPhonePeCallback, phonePeConfig } from "../services/phonepe.js";
+import crypto from "crypto";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { verifyFTPFiles, extractFtpPathFromUrl, type FtpVerifyInvalidEntry } from "../services/ftp.js";
-import crypto from "crypto";
 import {
-    collectAddonIds,
-    computeAddonsSubtotal,
-    fetchAddonRuleMap,
-    fetchAddonSpecMap,
-    normalizeAddonIds,
-} from "../utils/addon-pricing.js";
+    persistOrderWithRaceGuard,
+    recordPaymentEvent,
+    hashPayload,
+    type GatewayPaymentInfo,
+} from "../utils/payment-persistence.js";
 
 type RazorpayCreateOrderResponse = {
     id?: string;
@@ -23,10 +21,27 @@ type RazorpayCreateOrderResponse = {
 };
 
 /**
+ * Subset of Razorpay's `payment.entity` shape that we read on
+ * `payment.captured` / `payment.failed`. Permissive on unknown fields — the
+ * gateway adds fields over time and we don't want to fail on them.
+ */
+interface RazorpayPaymentEntity {
+    id?: string;
+    order_id?: string;
+    method?: string;
+    vpa?: string;
+    bank?: string;
+    wallet?: string;
+    upi?: { vpa?: string };
+    card?: { network?: string; type?: string; last4?: string; issuer?: string };
+    notes?: { merchantOrderId?: string };
+}
+
+/**
  * Gather every `customDesignUrl` entry referenced by a list of order
- * items (the request body shape used by `createRazorpayOrderFromCart`
- * and `createPhonePeOrderFromCart`). De-duplicated and normalised to
- * relative FTP paths so a single batch verify covers the whole order.
+ * items (the request body shape used by `createRazorpayOrderFromCart`).
+ * De-duplicated and normalised to relative FTP paths so a single batch
+ * verify covers the whole order.
  */
 function collectOrderFtpPaths(items: unknown): string[] {
     if (!Array.isArray(items)) return [];
@@ -95,94 +110,25 @@ async function assertOrderFilesValid(
     );
 }
 
-// Create PhonePe order from cart data (redirect-based flow)
-export const createPhonePeOrderFromCart = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        if (!req.user) {
-            throw new UnauthorizedError("User not authenticated");
-        }
+interface RazorpayOrderEntity {
+    id?: string;
+    receipt?: string;
+    notes?: { merchantOrderId?: string };
+}
 
-        const { items, addressId, amount, couponCode, shippingCharges, customerComment } = req.body;
+interface RazorpayWebhookPayload {
+    event?: string;
+    payload?: {
+        payment?: { entity?: RazorpayPaymentEntity };
+        order?: { entity?: RazorpayOrderEntity };
+    };
+}
 
-        if (!items || !Array.isArray(items) || items.length === 0) {
-            throw new ValidationError("Order items are required");
-        }
-
-        if (!addressId) {
-            throw new ValidationError("Shipping address is required");
-        }
-
-        if (!amount || Number(amount) <= 0) {
-            throw new ValidationError("Valid amount is required");
-        }
-        if (Number(amount) < 1) {
-            throw new ValidationError("Minimum payable amount for Razorpay is ₹1.00");
-        }
-
-        // Trim + cap free-form customer comment so adversarial input can't
-        // bloat the row or hold control characters.
-        const trimmedComment = typeof customerComment === "string"
-            ? customerComment.trim().slice(0, 2000)
-            : null;
-
-        // Verify address belongs to user
-        const address = await prisma.address.findFirst({
-            where: {
-                id: addressId,
-                userId: req.user.id,
-            },
-        });
-
-        if (!address) {
-            throw new NotFoundError("Address not found");
-        }
-
-        if (!phonePeConfig.isConfigured) {
-            return sendError(res, "PhonePe not configured", 500);
-        }
-
-        // Generate a unique merchant order ID
-        const merchantOrderId = uuidv4().replace(/-/g, "").slice(0, 32);
-        const amountInPaise = Math.round(Number(amount) * 100);
-
-        // Save cart data to PendingPayment table (expires in 1 hour)
-        await prisma.pendingPayment.create({
-            data: {
-                merchantOrderId,
-                userId: req.user.id,
-                addressId,
-                items: JSON.parse(JSON.stringify(items)),
-                amount: Number(amount),
-                couponCode: couponCode || null,
-                shippingCharges: shippingCharges ? Number(shippingCharges) : null,
-                customerComment: trimmedComment,
-                status: "PENDING",
-                expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-            },
-        });
-
-        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-        const apiUrl = process.env.API_URL || `http://localhost:${process.env.PORT || 3002}`;
-
-        // Initiate PhonePe payment
-        const { redirectUrl } = await initiatePhonePePayment({
-            merchantTransactionId: merchantOrderId,
-            amount: amountInPaise,
-            redirectUrl: `${frontendUrl}/payment/callback?merchantOrderId=${merchantOrderId}`,
-            callbackUrl: `${apiUrl}/api/webhooks/phonepe`,
-            merchantUserId: req.user.id.slice(0, 36),
-        });
-
-        return sendSuccess(res, {
-            redirectUrl,
-            merchantOrderId,
-        }, "PhonePe payment initiated successfully");
-    } catch (error) {
-        next(error);
-    }
-};
-
-// Create Razorpay order from cart data
+/**
+ * Create a Razorpay order from cart data. Persists a `PendingPayment` row so
+ * the cart payload survives the gateway hop; the row is consumed when
+ * `/payment/razorpay/verify` (or the webhook) lands.
+ */
 export const createRazorpayOrderFromCart = async (req: Request, res: Response, next: NextFunction) => {
     try {
         if (!req.user) {
@@ -200,6 +146,8 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
             throw new ValidationError("Valid amount is required");
         }
 
+        // Trim + cap free-form customer comment so adversarial input can't
+        // bloat the row or hold control characters.
         const trimmedComment = typeof customerComment === "string"
             ? customerComment.trim().slice(0, 2000)
             : null;
@@ -211,10 +159,7 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
         }
 
         const address = await prisma.address.findFirst({
-            where: {
-                id: addressId,
-                userId: req.user.id,
-            },
+            where: { id: addressId, userId: req.user.id },
         });
         if (!address) {
             throw new NotFoundError("Address not found");
@@ -272,7 +217,7 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
             return sendError(
                 res,
                 razorData?.error?.description || razorData?.error?.reason || "Failed to create Razorpay order",
-                400
+                400,
             );
         }
 
@@ -288,8 +233,20 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
     }
 };
 
-// Verify Razorpay payment and create order
+/**
+ * Verify a Razorpay payment by signature and persist the resulting Order +
+ * Payment from the matching `PendingPayment`. Hardened against (issue #55):
+ *  - duplicate submissions (idempotent on `gatewayOrderId`)
+ *  - verify-vs-webhook race (catches P2002 unique-constraint and re-reads)
+ *  - mid-write failures (Order/Payment/CouponUsage/PendingPayment all in one
+ *    `prisma.$transaction` so a single throw rolls everything back)
+ *  - silent loss (every entry + exit branch writes a PaymentEvent row).
+ */
 export const verifyRazorpayPayment = async (req: Request, res: Response, next: NextFunction) => {
+    const correlationId = crypto.randomUUID();
+    let merchantOrderIdForAudit: string | undefined;
+    let gatewayOrderIdForAudit: string | undefined;
+
     try {
         if (!req.user) {
             throw new UnauthorizedError("User not authenticated");
@@ -297,712 +254,417 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
 
         const { merchantOrderId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
         if (!merchantOrderId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
-            throw new ValidationError("merchantOrderId, razorpayOrderId, razorpayPaymentId and razorpaySignature are required");
+            throw new ValidationError(
+                "merchantOrderId, razorpayOrderId, razorpayPaymentId and razorpaySignature are required",
+            );
         }
+        merchantOrderIdForAudit = merchantOrderId;
+        gatewayOrderIdForAudit = razorpayOrderId;
 
         const razorKeySecret = process.env.RAZOR_LIVE_SECRET_KEY;
         if (!razorKeySecret) {
             return sendError(res, "Razorpay is not configured", 500);
         }
 
-        const expectedSignature = crypto
-            .createHmac("sha256", razorKeySecret)
-            .update(`${razorpayOrderId}|${razorpayPaymentId}`)
-            .digest("hex");
+        // Audit on entry — every verify hit is recorded regardless of
+        // outcome, so a failed payment isn't silently invisible in prod.
+        await recordPaymentEvent({
+            merchantOrderId,
+            gatewayOrderId: razorpayOrderId,
+            source: "verify",
+            code: "STARTED",
+            correlationId,
+            payloadHash: hashPayload(`${razorpayOrderId}|${razorpayPaymentId}`),
+        });
 
-        if (expectedSignature !== razorpaySignature) {
-            return sendSuccess(res, {
-                verified: false,
-                message: "Invalid Razorpay signature",
-            }, "Payment verification failed");
-        }
-
+        // Idempotency short-circuit: if we already persisted this order
+        // (user double-clicked, or webhook beat verify) just hand it back.
+        // We look up by Order.gatewayOrderId which carries the internal
+        // merchantOrderId (column `phonePeOrderId`, retained via @map).
         const existingOrder = await prisma.order.findFirst({
-            where: {
-                phonePeOrderId: merchantOrderId,
-                userId: req.user.id,
-            },
-        });
-        if (existingOrder) {
-            return sendSuccess(res, { verified: true, orderId: existingOrder.id }, "Payment already verified");
-        }
-
-        const pendingPayment = await prisma.pendingPayment.findUnique({
-            where: { merchantOrderId },
-        });
-        if (!pendingPayment) {
-            throw new NotFoundError("Pending payment not found");
-        }
-        if (pendingPayment.userId !== req.user.id) {
-            throw new UnauthorizedError("Payment does not belong to this user");
-        }
-
-        const items = pendingPayment.items as any[];
-        const addressId = pendingPayment.addressId;
-        const couponCode = pendingPayment.couponCode;
-        const shippingCharges = Number(pendingPayment.shippingCharges || 0);
-        const pendingCustomerComment = (pendingPayment as { customerComment?: string | null }).customerComment ?? null;
-
-        const address = await prisma.address.findFirst({
-            where: { id: addressId, userId: req.user.id },
-        });
-        if (!address) {
-            throw new NotFoundError("Address not found");
-        }
-
-        let subtotal = 0;
-        const orderItems: Array<{
-            productId: string;
-            variantId: string | null;
-            quantity: number;
-            price: number;
-            customDesignUrl: string[];
-            customText: string | null;
-            hasAddon: boolean;
-            addons: string[];
-            metadata?: any;
-            fileCount: number;
-        }> = [];
-
-        for (const item of items) {
-            const { productId, variantId, quantity, customDesignUrl, customText, metadata } = item;
-            if (!productId || !quantity || quantity < 1) {
-                throw new ValidationError("Invalid order item");
-            }
-
-            const product = await prisma.product.findUnique({
-                where: { id: productId },
-                include: { variants: true, images: true },
-            });
-            if (!product || !product.isActive) {
-                throw new NotFoundError(`Product ${productId} not found`);
-            }
-
-            let itemPrice = Number(product.sellingPrice || product.basePrice);
-            if (variantId) {
-                const variant = product.variants.find((v: { id: string }) => v.id === variantId);
-                if (!variant || !variant.available) {
-                    throw new ValidationError(`Variant ${variantId} not available`);
-                }
-                itemPrice += Number(variant.priceModifier);
-            }
-            // metadata.priceBreakdown (written by the service page) contains
-            // BOTH the base and the addon lines. Deriving item price from its
-            // sum would silently double-count addons because we add the
-            // server-computed `addonsSubtotal` to the total below. Only use
-            // the breakdown to recover the base-price portion.
-            if (metadata && Array.isArray(metadata.priceBreakdown)) {
-                const basePortion = metadata.priceBreakdown.reduce(
-                    (sum: number, entry: any) => {
-                        const label = typeof entry?.label === "string"
-                            ? entry.label.toLowerCase()
-                            : "";
-                        if (label.startsWith("addon")) return sum;
-                        return sum + Number(entry?.value || 0);
-                    },
-                    0
-                );
-                if (quantity > 0 && basePortion > 0) {
-                    itemPrice = basePortion / quantity;
-                }
-            }
-
-            subtotal += itemPrice * quantity;
-
-            let normalizedUrls: string[] = [];
-            if (customDesignUrl) {
-                if (Array.isArray(customDesignUrl)) {
-                    normalizedUrls = customDesignUrl.filter((url): url is string => typeof url === "string" && url.length > 0);
-                } else if (typeof customDesignUrl === "string" && customDesignUrl.length > 0) {
-                    normalizedUrls = [customDesignUrl];
-                }
-            }
-
-            // Prefer the explicit top-level addons array; fall back to
-            // metadata.selectedAddons for intent saved by "pending cart" flows
-            // that predate the top-level field.
-            const rawAddons = Array.isArray(item.addons)
-                ? item.addons
-                : Array.isArray(metadata?.selectedAddons)
-                    ? metadata.selectedAddons
-                    : [];
-            const selectedAddons = normalizeAddonIds(rawAddons);
-
-            orderItems.push({
-                productId,
-                variantId: variantId || null,
-                quantity,
-                price: itemPrice,
-                customDesignUrl: normalizedUrls,
-                customText: customText || null,
-                hasAddon: selectedAddons.length > 0,
-                addons: selectedAddons,
-                metadata: metadata || undefined,
-                fileCount: normalizedUrls.length,
-            });
-        }
-
-        // Compute addonsSubtotal before discount so % coupons apply against
-        // the true line total (base × qty × fileMultiplier + addons), not the
-        // base subtotal alone.
-        const addonIdsRzp = collectAddonIds(orderItems);
-        const [addonMapRzp, addonSpecMapRzp] = await Promise.all([
-            fetchAddonRuleMap(addonIdsRzp),
-            fetchAddonSpecMap(addonIdsRzp),
-        ]);
-        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapRzp, addonSpecMapRzp);
-        const grossSubtotal = subtotal + addonsSubtotal;
-
-        let discountAmount = 0;
-        let couponId = null;
-        if (couponCode && couponCode.trim()) {
-            const coupon = await prisma.coupon.findUnique({
-                where: { code: String(couponCode).toUpperCase() },
-            });
-            if (coupon && coupon.isActive) {
-                const now = new Date();
-                if (now >= coupon.validFrom && now <= coupon.validUntil) {
-                    if (!coupon.minPurchaseAmount || grossSubtotal >= Number(coupon.minPurchaseAmount)) {
-                        const usageCount = await prisma.couponUsage.count({ where: { couponId: coupon.id } });
-                        if (coupon.usageLimit === null || usageCount < coupon.usageLimit) {
-                            const userUsageCount = await prisma.couponUsage.count({
-                                where: { couponId: coupon.id, userId: req.user.id },
-                            });
-                            if (userUsageCount < coupon.usageLimitPerUser) {
-                                discountAmount = coupon.discountType === "PERCENTAGE"
-                                    ? (grossSubtotal * Number(coupon.discountValue)) / 100
-                                    : Number(coupon.discountValue);
-                                if (coupon.maxDiscountAmount && discountAmount > Number(coupon.maxDiscountAmount)) {
-                                    discountAmount = Number(coupon.maxDiscountAmount);
-                                }
-                                // Never discount more than the order is worth.
-                                if (discountAmount > grossSubtotal) {
-                                    discountAmount = grossSubtotal;
-                                }
-                                couponId = coupon.id;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Clamp at 0 so an oversized discount can never persist a negative total.
-        const total = Math.max(0, grossSubtotal - discountAmount + shippingCharges);
-        const order = await prisma.order.create({
-            data: {
-                userId: req.user.id,
-                addressId,
-                subtotal,
-                addonsSubtotal: addonsSubtotal > 0 ? addonsSubtotal : null,
-                discountAmount: discountAmount > 0 ? discountAmount : null,
-                shippingCharges: shippingCharges > 0 ? shippingCharges : null,
-                total,
-                paymentMethod: "ONLINE",
-                paymentStatus: "SUCCESS",
-                refundStatus: "PENDING",
-                refundEligibleAmount: total,
-                customerComment: pendingCustomerComment,
-                couponId,
-                phonePeOrderId: merchantOrderId,
-                status: "PENDING_REVIEW",
-                items: {
-                    create: orderItems.map((oi) => ({
-                        productId: oi.productId,
-                        variantId: oi.variantId,
-                        quantity: oi.quantity,
-                        price: oi.price,
-                        customDesignUrl: oi.customDesignUrl,
-                        customText: oi.customText,
-                        hasAddon: oi.hasAddon,
-                        metadata: oi.metadata ?? undefined,
-                        addons: oi.addons && oi.addons.length > 0
-                            ? { connect: oi.addons.map((id: string) => ({ id })) }
-                            : undefined,
-                    })),
-                },
-                statusHistory: {
-                    create: {
-                        status: "PENDING_REVIEW",
-                        comment: "Order created after successful Razorpay payment",
-                    },
+            where: { gatewayOrderId: merchantOrderId, userId: req.user.id },
+            select: {
+                id: true,
+                payments: {
+                    where: { status: "SUCCESS" },
+                    select: { id: true },
+                    take: 1,
                 },
             },
         });
-
-        await prisma.payment.create({
-            data: {
-                orderId: order.id,
-                userId: req.user.id,
-                amount: order.total,
-                discountAmount: discountAmount > 0 ? discountAmount : null,
-                phonePeOrderId: merchantOrderId,
-                phonePeTransactionId: razorpayPaymentId,
-                method: "ONLINE",
-                status: "SUCCESS",
-                gateway: "RAZORPAY",
+        if (existingOrder && existingOrder.payments.length > 0) {
+            await recordPaymentEvent({
+                merchantOrderId,
                 gatewayOrderId: razorpayOrderId,
-                gatewayPaymentId: razorpayPaymentId,
-                refundedAmount: 0,
-                paymentInstrument: "RAZORPAY",
-                paymentDetails: {
-                    gateway: "RAZORPAY",
-                    razorpayOrderId,
-                    razorpayPaymentId,
-                },
-                couponId,
-            },
-        });
-
-        if (couponId) {
-            await prisma.couponUsage.create({
-                data: {
-                    couponId,
-                    userId: req.user.id,
-                    orderId: order.id,
-                },
+                source: "verify",
+                code: "ALREADY_PERSISTED",
+                status: "SUCCESS",
+                correlationId,
             });
-        }
-
-        await prisma.pendingPayment.update({
-            where: { merchantOrderId },
-            data: { status: "COMPLETED" },
-        });
-
-        return sendSuccess(res, {
-            verified: true,
-            orderId: order.id,
-        }, "Payment verified and order created successfully");
-    } catch (error) {
-        next(error);
-    }
-};
-
-// Verify PhonePe payment and create order
-export const verifyPhonePePayment = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        if (!req.user) {
-            throw new UnauthorizedError("User not authenticated");
-        }
-
-        const { merchantOrderId } = req.body;
-
-        if (!merchantOrderId) {
-            throw new ValidationError("merchantOrderId is required");
-        }
-
-        // Check payment status with PhonePe
-        const statusResult = await checkPhonePePaymentStatus(merchantOrderId);
-
-        if (statusResult.state !== "COMPLETED") {
-            return sendSuccess(res, {
-                verified: false,
-                state: statusResult.state,
-                message: statusResult.state === "PENDING" ? "Payment is still pending" : "Payment failed",
-            }, statusResult.state === "PENDING" ? "Payment pending" : "Payment failed");
-        }
-
-        // Check if order already exists for this transaction
-        const existingOrder = await prisma.order.findFirst({
-            where: {
-                phonePeOrderId: merchantOrderId,
-                userId: req.user.id,
-            },
-        });
-
-        if (existingOrder) {
             return sendSuccess(res, {
                 verified: true,
                 orderId: existingOrder.id,
             }, "Payment already verified");
         }
 
-        // Fetch pending payment data
+        // HMAC-SHA256 signature check. Razorpay signs
+        //   `${order_id}|${payment_id}`
+        // with the live key secret. A mismatch means the redirect was
+        // tampered with — never persist anything.
+        const expectedSignature = crypto
+            .createHmac("sha256", razorKeySecret)
+            .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+            .digest("hex");
+        if (expectedSignature !== razorpaySignature) {
+            await recordPaymentEvent({
+                merchantOrderId,
+                gatewayOrderId: razorpayOrderId,
+                source: "verify",
+                code: "SIGNATURE_FAIL",
+                correlationId,
+            });
+            return sendSuccess(res, {
+                verified: false,
+                message: "Invalid Razorpay signature",
+            }, "Payment verification failed");
+        }
+
+        // Locate the cart snapshot we stashed at create-order time.
         const pendingPayment = await prisma.pendingPayment.findUnique({
             where: { merchantOrderId },
         });
-
         if (!pendingPayment) {
             throw new NotFoundError("Pending payment not found");
         }
-
         if (pendingPayment.userId !== req.user.id) {
             throw new UnauthorizedError("Payment does not belong to this user");
         }
 
-        if (pendingPayment.status === "COMPLETED") {
-            // Already processed - find the order
-            const order = await prisma.order.findFirst({
-                where: { phonePeOrderId: merchantOrderId },
-            });
-            return sendSuccess(res, {
-                verified: true,
-                orderId: order?.id,
-            }, "Payment already verified");
-        }
-
-        // Parse items from pending payment
-        const items = pendingPayment.items as any[];
-        const addressId = pendingPayment.addressId;
-        const couponCode = pendingPayment.couponCode;
-        const pendingCustomerComment = (pendingPayment as { customerComment?: string | null }).customerComment ?? null;
-        const shippingCharges = Number(pendingPayment.shippingCharges || 0);
-
-        // Verify address belongs to user
-        const address = await prisma.address.findFirst({
-            where: {
-                id: addressId,
-                userId: req.user.id,
+        const gatewayInfo: GatewayPaymentInfo = {
+            razorpayOrderId,
+            razorpayPaymentId,
+            paymentInstrument: "RAZORPAY",
+            paymentDetails: {
+                gateway: "RAZORPAY",
+                razorpayOrderId,
+                razorpayPaymentId,
             },
-        });
+        };
 
-        if (!address) {
-            throw new NotFoundError("Address not found");
-        }
-
-        // Calculate order totals
-        let subtotal = 0;
-        const orderItems: Array<{
-            productId: string;
-            variantId: string | null;
-            quantity: number;
-            price: number;
-            customDesignUrl: string[];
-            customText: string | null;
-            hasAddon: boolean;
-            addons: string[];
-            metadata?: any;
-            fileCount: number;
-        }> = [];
-
-        for (const item of items) {
-            const { productId, variantId, quantity, customDesignUrl, customText, addons, metadata } = item;
-
-            if (!productId || !quantity || quantity < 1) {
-                throw new ValidationError("Invalid order item");
-            }
-
-            const product = await prisma.product.findUnique({
-                where: { id: productId },
-                include: { variants: true, images: true },
-            });
-
-            if (!product || !product.isActive) {
-                throw new NotFoundError(`Product ${productId} not found`);
-            }
-
-            let itemPrice = Number(product.sellingPrice || product.basePrice);
-
-            if (variantId) {
-                const variant = product.variants.find((v: { id: string }) => v.id === variantId);
-                if (!variant || !variant.available) {
-                    throw new ValidationError(`Variant ${variantId} not available`);
-                }
-                itemPrice += Number(variant.priceModifier);
-            }
-
-            // metadata.priceBreakdown (written by the service page) contains
-            // BOTH the base and the addon lines. Deriving item price from its
-            // sum would silently double-count addons because we add the
-            // server-computed `addonsSubtotal` to the total below. Only use
-            // the breakdown to recover the base-price portion.
-            if (metadata && Array.isArray(metadata.priceBreakdown)) {
-                const basePortion = metadata.priceBreakdown.reduce(
-                    (sum: number, entry: any) => {
-                        const label = typeof entry?.label === "string"
-                            ? entry.label.toLowerCase()
-                            : "";
-                        if (label.startsWith("addon")) return sum;
-                        return sum + Number(entry?.value || 0);
-                    },
-                    0
-                );
-                if (quantity > 0 && basePortion > 0) {
-                    itemPrice = basePortion / quantity;
-                }
-            }
-
-            const itemTotal = itemPrice * quantity;
-            subtotal += itemTotal;
-
-            // Normalize customDesignUrl to array
-            let normalizedUrls: string[] = [];
-            if (customDesignUrl) {
-                if (Array.isArray(customDesignUrl)) {
-                    normalizedUrls = customDesignUrl.filter((url): url is string => typeof url === 'string' && url.length > 0);
-                } else if (typeof customDesignUrl === 'string' && customDesignUrl.length > 0) {
-                    normalizedUrls = [customDesignUrl];
-                }
-            }
-
-            // Extract addons from item.addons if present, otherwise from metadata
-            const rawAddons = Array.isArray(item.addons)
-                ? item.addons
-                : Array.isArray(metadata?.selectedAddons)
-                    ? metadata.selectedAddons
-                    : [];
-            const selectedAddons = normalizeAddonIds(rawAddons);
-
-            orderItems.push({
-                productId,
-                variantId: variantId || null,
-                quantity,
-                price: itemPrice,
-                customDesignUrl: normalizedUrls,
-                customText: customText || null,
-                hasAddon: selectedAddons.length > 0,
-                addons: selectedAddons,
-                metadata: metadata || undefined,
-                fileCount: normalizedUrls.length,
-            });
-        }
-
-        // Compute addons subtotal using the shared helper so cart, order
-        // creation, and invoice printing all produce the same number. Must
-        // happen BEFORE discount calculation so % coupons apply to the full
-        // line total, not just the base subtotal.
-        const addonIdsPpe = collectAddonIds(orderItems);
-        const [addonMapPpe, addonSpecMapPpe] = await Promise.all([
-            fetchAddonRuleMap(addonIdsPpe),
-            fetchAddonSpecMap(addonIdsPpe),
-        ]);
-        const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMapPpe, addonSpecMapPpe);
-        const grossSubtotal = subtotal + addonsSubtotal;
-
-        // Calculate discount from coupon if provided
-        let discountAmount = 0;
-        let couponId = null;
-
-        if (couponCode && couponCode.trim()) {
-            const coupon = await prisma.coupon.findUnique({
-                where: { code: String(couponCode).toUpperCase() },
-            });
-
-            if (coupon && coupon.isActive) {
-                const now = new Date();
-                if (now >= coupon.validFrom && now <= coupon.validUntil) {
-                    if (!coupon.minPurchaseAmount || grossSubtotal >= Number(coupon.minPurchaseAmount)) {
-                        const usageCount = await prisma.couponUsage.count({
-                            where: { couponId: coupon.id },
-                        });
-
-                        if (coupon.usageLimit === null || usageCount < coupon.usageLimit) {
-                            const userUsageCount = await prisma.couponUsage.count({
-                                where: {
-                                    couponId: coupon.id,
-                                    userId: req.user.id,
-                                },
-                            });
-
-                            if (userUsageCount < coupon.usageLimitPerUser) {
-                                if (coupon.discountType === "PERCENTAGE") {
-                                    discountAmount = (grossSubtotal * Number(coupon.discountValue)) / 100;
-                                } else {
-                                    discountAmount = Number(coupon.discountValue);
-                                }
-
-                                if (coupon.maxDiscountAmount && discountAmount > Number(coupon.maxDiscountAmount)) {
-                                    discountAmount = Number(coupon.maxDiscountAmount);
-                                }
-
-                                // Never discount more than the order is worth.
-                                if (discountAmount > grossSubtotal) {
-                                    discountAmount = grossSubtotal;
-                                }
-
-                                couponId = coupon.id;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Calculate final total (subtotal + addonsSubtotal - discount + shipping)
-        // Clamp at 0 so an oversized discount can never persist a negative total.
-        const total = Math.max(0, grossSubtotal - discountAmount + shippingCharges);
-
-        // Create order
-        const order = await prisma.order.create({
-            data: {
-                userId: req.user.id,
-                addressId,
-                subtotal,
-                addonsSubtotal: addonsSubtotal > 0 ? addonsSubtotal : null,
-                discountAmount: discountAmount > 0 ? discountAmount : null,
-                shippingCharges: shippingCharges > 0 ? shippingCharges : null,
-                total,
-                paymentMethod: "ONLINE",
-                paymentStatus: "SUCCESS",
-                refundStatus: "PENDING",
-                refundEligibleAmount: total,
-                customerComment: pendingCustomerComment,
-                couponId,
-                phonePeOrderId: merchantOrderId,
-                status: "PENDING_REVIEW",
-                items: {
-                    create: orderItems.map((oi) => ({
-                        productId: oi.productId,
-                        variantId: oi.variantId,
-                        quantity: oi.quantity,
-                        price: oi.price,
-                        customDesignUrl: oi.customDesignUrl,
-                        customText: oi.customText,
-                        hasAddon: oi.hasAddon,
-                        metadata: oi.metadata ?? undefined,
-                        ...(oi.addons && oi.addons.length > 0 && {
-                            addons: { connect: oi.addons.map((id: string) => ({ id })) },
-                        }),
-                    })),
-                },
-                statusHistory: {
-                    create: {
-                        status: "PENDING_REVIEW",
-                        comment: "Order created after successful PhonePe payment",
-                    },
-                },
+        const { orderId, raced } = await persistOrderWithRaceGuard(
+            {
+                merchantOrderId: pendingPayment.merchantOrderId,
+                userId: pendingPayment.userId,
+                addressId: pendingPayment.addressId,
+                items: pendingPayment.items,
+                couponCode: pendingPayment.couponCode,
+                shippingCharges: pendingPayment.shippingCharges,
+                customerComment: pendingPayment.customerComment ?? null,
             },
-            include: {
-                items: {
-                    include: {
-                        product: true,
-                        variant: true,
-                    },
-                },
-                address: true,
-            },
-        });
+            gatewayInfo,
+            "Order created after successful Razorpay payment",
+        );
 
-        // Create payment record
-        await prisma.payment.create({
-            data: {
-                orderId: order.id,
-                userId: req.user.id,
-                amount: order.total,
-                discountAmount: discountAmount > 0 ? discountAmount : null,
-                phonePeOrderId: merchantOrderId,
-                phonePeTransactionId: statusResult.transactionId || null,
-                method: "ONLINE",
-                status: "SUCCESS",
-                gateway: "PHONEPE",
-                gatewayOrderId: merchantOrderId,
-                gatewayPaymentId: statusResult.transactionId || merchantOrderId,
-                refundedAmount: 0,
-                paymentInstrument: statusResult.paymentInstrument || null,
-                paymentDetails: statusResult.paymentDetails || undefined,
-                couponId,
-            },
-        });
-
-        // Record coupon usage if applied
-        if (couponId) {
-            await prisma.couponUsage.create({
-                data: {
-                    couponId,
-                    userId: req.user.id,
-                    orderId: order.id,
-                },
-            });
-        }
-
-        // Mark pending payment as completed
-        await prisma.pendingPayment.update({
-            where: { merchantOrderId },
-            data: { status: "COMPLETED" },
+        await recordPaymentEvent({
+            merchantOrderId,
+            gatewayOrderId: razorpayOrderId,
+            source: "verify",
+            code: raced ? "ALREADY_PERSISTED" : "SUCCESS",
+            status: "SUCCESS",
+            correlationId,
         });
 
         return sendSuccess(res, {
             verified: true,
-            orderId: order.id,
+            orderId,
         }, "Payment verified and order created successfully");
     } catch (error) {
+        await recordPaymentEvent({
+            merchantOrderId: merchantOrderIdForAudit,
+            gatewayOrderId: gatewayOrderIdForAudit,
+            source: "verify",
+            code: "ERROR",
+            errorMessage: error instanceof Error ? error.message : String(error),
+            correlationId,
+        });
         next(error);
     }
 };
 
-// PhonePe S2S webhook callback
-export const phonePeWebhook = async (req: Request, res: Response, next: NextFunction) => {
+/**
+ * Razorpay S2S webhook. Mounted on a raw-body middleware so the HMAC over
+ * the exact bytes Razorpay signed actually verifies — `express.json()` would
+ * normalize the bytes and break the signature.
+ *
+ * Always returns 200 with an audit row describing the outcome. Razorpay
+ * retries on 4xx/5xx, but a true bad signature can never be fixed by retry,
+ * and a missing PendingPayment isn't recoverable either; the audit table is
+ * the source of truth for triage.
+ */
+export const razorpayWebhook = async (req: Request, res: Response) => {
+    const correlationId = crypto.randomUUID();
+    // The raw-body middleware stashes the original Buffer on `req.rawBody`.
+    // Fall back to JSON.stringify(req.body) only as a defensive measure;
+    // signature verification will fail if we go that path, which is exactly
+    // what we want — better to record INVALID_SIGNATURE than silently act.
+    const rawBuf = (req as Request & { rawBody?: Buffer }).rawBody;
+    const rawBody = rawBuf ? rawBuf.toString("utf8") : JSON.stringify(req.body);
+
     try {
-        const xVerifyHeader = req.headers["x-verify"] as string;
-        const body = JSON.stringify(req.body);
+        const signature = req.headers["x-razorpay-signature"];
+        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-        if (xVerifyHeader) {
-            const isValid = verifyPhonePeCallback(xVerifyHeader, body);
-            if (!isValid) {
-                console.warn("PhonePe webhook: invalid signature");
-                return sendError(res, "Invalid signature", 400);
-            }
+        if (!webhookSecret || typeof signature !== "string") {
+            await recordPaymentEvent({
+                source: "webhook",
+                code: "INVALID_SIGNATURE",
+                errorMessage: !webhookSecret
+                    ? "RAZORPAY_WEBHOOK_SECRET not configured"
+                    : "missing x-razorpay-signature header",
+                correlationId,
+                payloadHash: hashPayload(rawBody),
+            });
+            return sendSuccess(res, { received: true }, "Webhook acknowledged");
         }
 
-        // PhonePe sends the response in base64 encoded format
-        const responseData = req.body.response
-            ? JSON.parse(Buffer.from(req.body.response, "base64").toString())
-            : req.body;
+        const expectedSignature = crypto
+            .createHmac("sha256", webhookSecret)
+            .update(rawBody)
+            .digest("hex");
 
-        const merchantTransactionId = responseData?.data?.merchantTransactionId;
-        const code = responseData?.code;
+        // Constant-time compare to avoid leaking signature bytes via timing.
+        const sigBuf = Buffer.from(signature, "utf8");
+        const expBuf = Buffer.from(expectedSignature, "utf8");
+        const signatureValid = sigBuf.length === expBuf.length
+            && crypto.timingSafeEqual(sigBuf, expBuf);
 
-        if (!merchantTransactionId) {
-            console.warn("PhonePe webhook: missing merchantTransactionId");
-            return sendSuccess(res, { received: true });
+        if (!signatureValid) {
+            await recordPaymentEvent({
+                source: "webhook",
+                code: "INVALID_SIGNATURE",
+                correlationId,
+                payloadHash: hashPayload(rawBody),
+            });
+            // Always 200: a bad signature is a misconfiguration, not a
+            // retry-able transient. Audit log is the alert path.
+            return sendSuccess(res, { received: true }, "Webhook acknowledged");
         }
 
-        if (code === "PAYMENT_SUCCESS") {
-            // Extract payment instrument details from webhook
-            const instrument = responseData?.data?.paymentInstrument;
-            let paymentInstrument: string | null = null;
-            let paymentDetails: Record<string, any> | undefined = undefined;
+        // Body is already JSON-parsed by the time we reach this handler
+        // (the raw-body middleware re-parses for us).
+        const payload = (req.body ?? {}) as RazorpayWebhookPayload;
+        const event = payload.event;
+        const paymentEntity = payload.payload?.payment?.entity;
+        const orderEntity = payload.payload?.order?.entity;
 
-            if (instrument) {
-                paymentInstrument = instrument.type || null;
-                if (instrument.type === "UPI") {
-                    paymentDetails = { vpa: instrument.utr || instrument.vpa || null };
-                } else if (instrument.type === "CARD") {
-                    paymentDetails = {
-                        cardNetwork: instrument.cardNetwork || null,
-                        cardType: instrument.cardType || null,
-                        last4: instrument.maskedCardNumber?.slice(-4) || null,
-                        issuer: instrument.issuer || null,
-                    };
-                } else if (instrument.type === "NETBANKING") {
-                    paymentDetails = { bankName: instrument.bankId || null };
-                } else if (instrument.type === "WALLET") {
-                    paymentDetails = { walletType: instrument.walletType || null };
-                }
+        const razorpayOrderId: string | undefined = paymentEntity?.order_id ?? orderEntity?.id;
+        const razorpayPaymentId: string | undefined = paymentEntity?.id;
+        const merchantOrderIdFromNotes: string | undefined =
+            paymentEntity?.notes?.merchantOrderId ?? orderEntity?.notes?.merchantOrderId;
+        // Razorpay echoes our `receipt` (which we set to merchantOrderId at
+        // create-order time) on the order entity. Notes is the primary path;
+        // receipt is the fallback for `payment.captured` events that don't
+        // include the order entity inline.
+        const receipt: string | undefined = orderEntity?.receipt;
+        const merchantOrderId = merchantOrderIdFromNotes ?? receipt;
+
+        const payloadHash = hashPayload(rawBody);
+
+        // payment.failed → mark Payment row FAILED. No Order creation here:
+        // a failed payment never has a corresponding cart-to-persist.
+        if (event === "payment.failed") {
+            if (razorpayOrderId) {
+                const updated = await prisma.payment.updateMany({
+                    where: { gatewayProviderOrderId: razorpayOrderId },
+                    data: { status: "FAILED" },
+                });
+                await recordPaymentEvent({
+                    merchantOrderId: merchantOrderId ?? null,
+                    gatewayOrderId: razorpayOrderId,
+                    source: "webhook",
+                    code: "PAYMENT_FAILED",
+                    status: updated.count > 0 ? "FAILED" : "NOT_FOUND",
+                    payloadHash,
+                    correlationId,
+                });
+            } else {
+                await recordPaymentEvent({
+                    source: "webhook",
+                    code: "PAYMENT_FAILED_NO_ORDER_ID",
+                    payloadHash,
+                    correlationId,
+                });
             }
+            return sendSuccess(res, { received: true }, "Webhook acknowledged");
+        }
 
-            // Update payment status
-            await prisma.payment.updateMany({
-                where: { phonePeOrderId: merchantTransactionId },
-                data: {
-                    status: "SUCCESS",
-                    phonePeTransactionId: responseData?.data?.transactionId || null,
-                    paymentInstrument,
-                    paymentDetails: paymentDetails || undefined,
+        // We only persist orders from `payment.captured` / `order.paid`.
+        // Other events (refund.*, dispute.*, etc) are no-ops for now —
+        // record an audit row so we can spot patterns later.
+        if (event !== "payment.captured" && event !== "order.paid") {
+            await recordPaymentEvent({
+                merchantOrderId: merchantOrderId ?? null,
+                gatewayOrderId: razorpayOrderId ?? null,
+                source: "webhook",
+                code: `IGNORED:${event ?? "unknown"}`,
+                payloadHash,
+                correlationId,
+            });
+            return sendSuccess(res, { received: true }, "Webhook acknowledged");
+        }
+
+        if (!merchantOrderId) {
+            // Without merchantOrderId we have no way to locate the
+            // PendingPayment row. Record + ack — manual reconciliation.
+            await recordPaymentEvent({
+                gatewayOrderId: razorpayOrderId ?? null,
+                source: "webhook",
+                code: "ORPHAN_NO_MERCHANT_ID",
+                payloadHash,
+                correlationId,
+            });
+            return sendSuccess(res, { received: true }, "Webhook acknowledged");
+        }
+
+        // Idempotent path: if Order already exists with a successful Payment,
+        // do nothing. This is the steady state once verify has won the race.
+        const existingOrder = await prisma.order.findUnique({
+            where: { gatewayOrderId: merchantOrderId },
+            select: {
+                id: true,
+                payments: {
+                    where: { status: "SUCCESS" },
+                    select: { id: true },
+                    take: 1,
                 },
+            },
+        });
+        if (existingOrder && existingOrder.payments.length > 0) {
+            await recordPaymentEvent({
+                merchantOrderId,
+                gatewayOrderId: razorpayOrderId ?? null,
+                source: "webhook",
+                code: "NOOP",
+                status: "SUCCESS",
+                payloadHash,
+                correlationId,
             });
-
-            await prisma.order.updateMany({
-                where: { phonePeOrderId: merchantTransactionId },
-                data: { paymentStatus: "SUCCESS" },
-            });
-        } else if (code === "PAYMENT_ERROR" || code === "PAYMENT_DECLINED") {
-            await prisma.payment.updateMany({
-                where: { phonePeOrderId: merchantTransactionId },
-                data: { status: "FAILED" },
-            });
-
-            await prisma.order.updateMany({
-                where: { phonePeOrderId: merchantTransactionId },
-                data: { paymentStatus: "FAILED" },
-            });
+            return sendSuccess(res, { received: true }, "Webhook acknowledged");
         }
 
-        return sendSuccess(res, { received: true }, "Webhook processed");
+        const pendingPayment = await prisma.pendingPayment.findUnique({
+            where: { merchantOrderId },
+        });
+        if (!pendingPayment) {
+            // PendingPayment got cleaned up before the webhook arrived AND
+            // there's no Order — manual intervention territory. Audit.
+            await recordPaymentEvent({
+                merchantOrderId,
+                gatewayOrderId: razorpayOrderId ?? null,
+                source: "webhook",
+                code: "ORPHAN_NO_PENDING",
+                payloadHash,
+                correlationId,
+            });
+            return sendSuccess(res, { received: true }, "Webhook acknowledged");
+        }
+
+        // Extract instrument details when Razorpay surfaces them on
+        // payment.captured. Not all event shapes carry method-specifics.
+        const instrument = mapRazorpayInstrument(paymentEntity);
+
+        const gatewayInfo: GatewayPaymentInfo = {
+            razorpayOrderId: razorpayOrderId ?? "",
+            razorpayPaymentId: razorpayPaymentId ?? "",
+            paymentInstrument: instrument.label,
+            paymentDetails: {
+                gateway: "RAZORPAY",
+                razorpayOrderId,
+                razorpayPaymentId,
+                ...instrument.details,
+            },
+        };
+
+        const { orderId, raced } = await persistOrderWithRaceGuard(
+            {
+                merchantOrderId: pendingPayment.merchantOrderId,
+                userId: pendingPayment.userId,
+                addressId: pendingPayment.addressId,
+                items: pendingPayment.items,
+                couponCode: pendingPayment.couponCode,
+                shippingCharges: pendingPayment.shippingCharges,
+                customerComment: pendingPayment.customerComment ?? null,
+            },
+            gatewayInfo,
+            "Order created from Razorpay webhook",
+        );
+
+        await recordPaymentEvent({
+            merchantOrderId,
+            gatewayOrderId: razorpayOrderId ?? null,
+            source: "webhook",
+            code: raced ? "NOOP" : "SUCCESS",
+            status: "SUCCESS",
+            payloadHash,
+            correlationId,
+            errorMessage: orderId,
+        });
+
+        return sendSuccess(res, { received: true }, "Webhook acknowledged");
     } catch (error) {
-        next(error);
+        await recordPaymentEvent({
+            source: "webhook",
+            code: "ERROR",
+            errorMessage: error instanceof Error ? error.message : String(error),
+            correlationId,
+            payloadHash: hashPayload(rawBody),
+        });
+        // Swallow + 200 so Razorpay doesn't retry-storm us on a code bug.
+        return sendSuccess(res, { received: true }, "Webhook acknowledged");
     }
 };
+
+/**
+ * Map a Razorpay `payment.entity` method block to our internal
+ * `(paymentInstrument, paymentDetails)` shape. Mirrors the field names
+ * surfaced to the admin UI.
+ */
+function mapRazorpayInstrument(paymentEntity: RazorpayPaymentEntity | undefined): {
+    label: string | null;
+    details: Record<string, unknown>;
+} {
+    if (!paymentEntity) return { label: null, details: {} };
+    const method = paymentEntity.method;
+    switch (method) {
+        case "upi":
+            return {
+                label: "UPI",
+                details: { vpa: paymentEntity.vpa ?? paymentEntity.upi?.vpa ?? null },
+            };
+        case "card":
+            return {
+                label: "CARD",
+                details: {
+                    cardNetwork: paymentEntity.card?.network ?? null,
+                    cardType: paymentEntity.card?.type ?? null,
+                    last4: paymentEntity.card?.last4 ?? null,
+                    issuer: paymentEntity.card?.issuer ?? null,
+                },
+            };
+        case "netbanking":
+            return {
+                label: "NETBANKING",
+                details: { bankName: paymentEntity.bank ?? null },
+            };
+        case "wallet":
+            return {
+                label: "WALLET",
+                details: { walletType: paymentEntity.wallet ?? null },
+            };
+        default:
+            return { label: method ? method.toUpperCase() : null, details: {} };
+    }
+}
 
 /**
  * @openapi
@@ -1044,10 +706,10 @@ export const phonePeWebhook = async (req: Request, res: Response, next: NextFunc
  *                       discountAmount:
  *                         type: number
  *                         nullable: true
- *                       phonePeOrderId:
+ *                       gatewayOrderId:
  *                         type: string
  *                         nullable: true
- *                       phonePeTransactionId:
+ *                       gatewayTransactionId:
  *                         type: string
  *                         nullable: true
  *                       status:
@@ -1153,12 +815,13 @@ export const getAdminPayments = async (req: Request, res: Response, next: NextFu
             where.orderId = orderId;
         }
 
-        // Search functionality - search by payment ID, PhonePe IDs, user email/name
+        // Search functionality - search by payment ID, gateway IDs, user email/name
         if (search) {
             const searchConditions: any[] = [
                 { id: { contains: search } },
-                { phonePeOrderId: { contains: search } },
-                { phonePeTransactionId: { contains: search } },
+                { gatewayOrderId: { contains: search } },
+                { gatewayTransactionId: { contains: search } },
+                { gatewayProviderOrderId: { contains: search } },
                 {
                     user: {
                         OR: [
@@ -1261,69 +924,6 @@ export const getAdminPayments = async (req: Request, res: Response, next: NextFu
  *     responses:
  *       200:
  *         description: Payment statistics retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - success
- *                 - data
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     totalPayments:
- *                       type: integer
- *                     payments:
- *                       type: object
- *                       properties:
- *                         today:
- *                           type: integer
- *                         week:
- *                           type: integer
- *                         month:
- *                           type: integer
- *                     totalRevenue:
- *                       type: number
- *                     revenue:
- *                       type: object
- *                       properties:
- *                         today:
- *                           type: number
- *                         week:
- *                           type: number
- *                         month:
- *                           type: number
- *                     paymentsByStatus:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           status:
- *                             type: string
- *                           count:
- *                             type: integer
- *                     paymentsByMethod:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           method:
- *                             type: string
- *                           count:
- *                             type: integer
- *                     pendingPaymentsCount:
- *                       type: integer
- *                     averagePaymentValue:
- *                       type: number
- *                     successfulPaymentsCount:
- *                       type: integer
- *                     failedPaymentsCount:
- *                       type: integer
- *       401:
- *         description: Unauthorized - Admin authentication required
  */
 // Admin: Get payment statistics
 export const getPaymentStatistics = async (req: Request, res: Response, next: NextFunction) => {
@@ -1565,10 +1165,10 @@ export const getPaymentStatistics = async (req: Request, res: Response, next: Ne
  *                     discountAmount:
  *                       type: number
  *                       nullable: true
- *                     phonePeOrderId:
+ *                     gatewayOrderId:
  *                       type: string
  *                       nullable: true
- *                     phonePeTransactionId:
+ *                     gatewayTransactionId:
  *                       type: string
  *                       nullable: true
  *                     status:
@@ -1586,33 +1186,6 @@ export const getPaymentStatistics = async (req: Request, res: Response, next: Ne
  *                     updatedAt:
  *                       type: string
  *                       format: date-time
- *                     user:
- *                       type: object
- *                       properties:
- *                         id:
- *                           type: string
- *                         name:
- *                           type: string
- *                         email:
- *                           type: string
- *                         phone:
- *                           type: string
- *                     order:
- *                       type: object
- *                       properties:
- *                         id:
- *                           type: string
- *                         status:
- *                           type: string
- *                         total:
- *                           type: number
- *                         items:
- *                           type: array
- *                         address:
- *                           type: object
- *                     coupon:
- *                       type: object
- *                       nullable: true
  *       404:
  *         description: Payment not found
  *       401:

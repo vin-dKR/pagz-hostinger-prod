@@ -503,7 +503,7 @@ model Order {
   refundEligibleAmount Decimal? @db.Decimal(10, 2)
   refundProcessedAt DateTime?
   refundFailureReason String?
-  phonePeOrderId  String?       @unique
+  gatewayOrderId  String?       @unique @map("phonePeOrderId")
   couponId        String? // Applied coupon
   shippingMethodId String?
   /// Optional free-form note from the customer at checkout (e.g. delivery
@@ -527,7 +527,7 @@ model Order {
   @@index([createdAt])
   @@index([userId, status])
   @@index([status, createdAt])
-  @@index([phonePeOrderId])
+  @@index([gatewayOrderId])
   @@index([refundStatus])
   @@index([shippingMethodId])
   @@map("orders")
@@ -604,14 +604,14 @@ model Payment {
   userId            String
   amount            Decimal       @db.Decimal(10, 2)
   discountAmount    Decimal?      @db.Decimal(10, 2) // Discount from coupon
-  phonePeOrderId      String?       @unique
-  phonePeTransactionId String?      @unique
+  gatewayOrderId       String?    @unique @map("phonePeOrderId") // Internal merchant order id (UUID we generate)
+  gatewayTransactionId String?    @unique @map("phonePeTransactionId") // Gateway-side transaction/payment id
   status            PaymentStatus @default(PENDING)
   method            PaymentMethod
   paymentInstrument String?       // UPI, CARD, NETBANKING, WALLET
   gateway           String?
   gatewayPaymentId  String?
-  gatewayOrderId    String?
+  gatewayProviderOrderId String?  @map("gatewayOrderId") // Gateway-issued order id (e.g. Razorpay `order_xxx`)
   refundedAmount    Decimal       @default(0) @db.Decimal(10, 2)
   paymentDetails    Json?         // { vpa, cardNetwork, last4, bankName, etc. }
   couponId          String? // Applied coupon
@@ -627,10 +627,10 @@ model Payment {
   @@index([orderId])
   @@index([status])
   @@index([userId, status])
-  @@index([phonePeOrderId])
-  @@index([phonePeTransactionId])
-  @@index([gatewayPaymentId])
   @@index([gatewayOrderId])
+  @@index([gatewayTransactionId])
+  @@index([gatewayPaymentId])
+  @@index([gatewayProviderOrderId])
   @@map("payments")
 }
 
@@ -662,7 +662,7 @@ model Refund {
   @@map("refunds")
 }
 
-// PendingPayment model (stores cart data during PhonePe redirect)
+// PendingPayment model (stores cart data during gateway redirect)
 model PendingPayment {
   id              String   @id @default(uuid())
   merchantOrderId String   @unique
@@ -684,6 +684,25 @@ model PendingPayment {
   @@index([userId])
   @@index([status])
   @@map("pending_payments")
+}
+
+// PaymentEvent model — append-only audit log for every verify/webhook hit.
+// Used to debug the "payment succeeded but order missing" class of failures.
+model PaymentEvent {
+  id              String   @id @default(cuid())
+  merchantOrderId String?
+  gatewayOrderId  String?
+  source          String   // 'verify' | 'webhook'
+  code            String?  // STARTED | SUCCESS | ALREADY_PERSISTED | SIGNATURE_FAIL | ORPHAN_NO_PENDING | NOOP | ERROR | INVALID_SIGNATURE
+  status          String?
+  payloadHash     String?
+  errorMessage    String?  @db.Text
+  correlationId   String?
+  createdAt       DateTime @default(now())
+
+  @@index([merchantOrderId])
+  @@index([createdAt])
+  @@map("payment_events")
 }
 
 // Cart model (Shopping Cart)

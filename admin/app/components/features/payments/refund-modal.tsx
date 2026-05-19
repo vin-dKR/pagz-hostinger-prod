@@ -140,7 +140,7 @@ export function RefundModal({ payment, isOpen, onClose, onSuccess }: RefundModal
                                 onChange={(e) => setMethod(e.target.value as 'AUTOMATIC' | 'MANUAL')}
                                 disabled={isProcessing || !canRefund}
                             >
-                                <option value="AUTOMATIC">Automatic (via PhonePe)</option>
+                                <option value="AUTOMATIC">Automatic (via Razorpay)</option>
                                 <option value="MANUAL">Manual</option>
                             </Select>
                         </div>
