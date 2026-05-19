@@ -1,6 +1,7 @@
 import multer from "multer";
 import path from "path";
-import { Request } from "express";
+import { Request, Response, NextFunction } from "express";
+import { ValidationError } from "../utils/errors.js";
 
 // Disk storage for FTP uploads (files saved temporarily before uploading to FTP)
 const diskStorage = multer.diskStorage({
@@ -42,3 +43,45 @@ export const uploadFTPFile = multer({
     limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
     fileFilter: ftpFileFilter,
 });
+
+/**
+ * Reusable middleware: reject any 0-byte file that multer just parsed.
+ *
+ * Multer's `fileFilter` runs before the stream finishes, so `file.size`
+ * is unreliable there. By the time we hit the next middleware, every
+ * file has its final `size` populated (memory storage) or `size` on the
+ * fs entry (disk storage). Checking here is the single reliable choke
+ * point for "user selected an empty file" on the server side, regardless
+ * of whether the client-side guard runs.
+ *
+ * Apply after the multer middleware on every upload route. Works with
+ * `single()`, `array()`, and `fields()` shapes.
+ */
+export const rejectEmptyFiles = (
+    req: Request,
+    _res: Response,
+    next: NextFunction,
+): void => {
+    const collected: Express.Multer.File[] = [];
+    if (req.file) collected.push(req.file);
+    if (Array.isArray(req.files)) {
+        collected.push(...req.files);
+    } else if (req.files && typeof req.files === "object") {
+        for (const list of Object.values(req.files)) {
+            if (Array.isArray(list)) collected.push(...list);
+        }
+    }
+
+    const empty = collected.filter((f) => !f || f.size === 0);
+    if (empty.length > 0) {
+        const names = empty.map((f) => f?.originalname || "<unnamed>").join(", ");
+        next(
+            new ValidationError(
+                `Empty file(s) detected: ${names}. Please re-select the file(s) and try again.`,
+            ),
+        );
+        return;
+    }
+
+    next();
+};

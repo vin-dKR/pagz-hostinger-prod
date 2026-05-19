@@ -5,8 +5,14 @@
  * Files are organised into purpose-specific folders on the server.
  */
 
-import { uploadMultipleFiles, uploadSingleFile, FTP_FOLDERS } from './ftp';
+import {
+    uploadMultipleFiles,
+    uploadSingleFile,
+    FTP_FOLDERS,
+    type FTPUploadFailure,
+} from './ftp';
 import type { ApiResponse } from '../api-client';
+import { assertNonEmptyFiles, EmptyFilesError } from '../utils/file-validation';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -16,11 +22,22 @@ export interface UploadFileResult {
     filename: string;
     size: number;
     mimetype: string;
+    /**
+     * The user-facing filename from the original `File`. Optional because
+     * the FTP-tier helpers (`ftp.ts → uploadMultipleFiles`) populate it
+     * from a different field — kept as `string | undefined` so legacy
+     * consumers that only need `key` / `url` keep working.
+     */
+    originalName?: string;
 }
 
 export interface UploadFilesResponse {
     files: UploadFileResult[];
     sessionId?: string;
+    /** Per-file failures from a partial batch. Empty / undefined when all succeeded. */
+    failures?: FTPUploadFailure[];
+    /** Convenience flag mirroring the backend response. */
+    partial?: boolean;
 }
 
 // ─── Order files ─────────────────────────────────────────────────────────────
@@ -37,21 +54,37 @@ export async function uploadOrderFilesToS3(
     files: File[],
 ): Promise<ApiResponse<UploadFilesResponse>> {
     try {
+        // Reject 0-byte files BEFORE the network round-trip. The helper
+        // throws `EmptyFilesError` whose message already includes every
+        // offending filename, so we just bubble it up.
+        assertNonEmptyFiles(files);
+
         const result = await uploadMultipleFiles(files, FTP_FOLDERS.ORDERS);
 
         const uploadedFiles: UploadFileResult[] = result.files.map((f) => ({
-            key:      f.path,       // Relative path stored in DB
-            url:      f.publicUrl,  // Full URL for display
-            filename: f.filename,
-            size:     f.size,
-            mimetype: f.mimetype,
+            key:          f.path,       // Relative path stored in DB
+            url:          f.publicUrl,  // Full URL for display
+            filename:     f.filename,
+            size:         f.size,
+            mimetype:     f.mimetype,
+            originalName: f.originalName,
         }));
 
         return {
             success: true,
-            data: { files: uploadedFiles },
+            data: {
+                files:    uploadedFiles,
+                failures: result.failures,
+                partial:  result.partial,
+            },
         };
     } catch (error: any) {
+        // Preserve EmptyFilesError shape so callers can branch on it if
+        // they want a custom UI; the default `error` string is the
+        // already-formatted human message.
+        if (error instanceof EmptyFilesError) {
+            return { success: false, error: error.message };
+        }
         return {
             success: false,
             error:   error?.message || 'Failed to upload order files',
@@ -74,21 +107,31 @@ export async function uploadReviewImages(
     _productId?: string,
 ): Promise<ApiResponse<UploadFilesResponse>> {
     try {
+        assertNonEmptyFiles(files);
+
         const result = await uploadMultipleFiles(files, FTP_FOLDERS.REVIEWS);
 
         const uploadedFiles: UploadFileResult[] = result.files.map((f) => ({
-            key:      f.path,
-            url:      f.publicUrl,
-            filename: f.filename,
-            size:     f.size,
-            mimetype: f.mimetype,
+            key:          f.path,
+            url:          f.publicUrl,
+            filename:     f.filename,
+            size:         f.size,
+            mimetype:     f.mimetype,
+            originalName: f.originalName,
         }));
 
         return {
             success: true,
-            data: { files: uploadedFiles },
+            data: {
+                files:    uploadedFiles,
+                failures: result.failures,
+                partial:  result.partial,
+            },
         };
     } catch (error: any) {
+        if (error instanceof EmptyFilesError) {
+            return { success: false, error: error.message };
+        }
         return {
             success: false,
             error:   error?.message || 'Failed to upload review images',

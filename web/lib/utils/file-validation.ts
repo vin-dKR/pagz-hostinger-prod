@@ -1,7 +1,48 @@
 /**
  * File Validation Utilities
- * Reusable utilities for file type and page count validation
+ * Reusable utilities for file type, size, and page count validation.
+ *
+ * The `assertNonEmptyFiles` helper + `EmptyFilesError` are the single
+ * client-side choke point for 0-byte uploads. Every upload entry point
+ * (TemplateForm, lib/api/ftp.ts, lib/api/uploads.ts, …) should call it
+ * BEFORE building FormData so the user gets immediate feedback instead
+ * of waiting for the server to reject the multipart payload. See
+ * GitHub issue #56 for the layered-defence design.
  */
+
+/**
+ * Thrown by `assertNonEmptyFiles` when one or more selected files are 0
+ * bytes. The `.fileNames` array lets the UI list every offender at once
+ * rather than failing on the first.
+ */
+export class EmptyFilesError extends Error {
+    readonly fileNames: string[];
+
+    constructor(fileNames: string[]) {
+        const summary = fileNames.length === 1
+            ? `"${fileNames[0]}"`
+            : `${fileNames.length} files (${fileNames.map((n) => `"${n}"`).join(', ')})`;
+        super(`${summary} is empty. Please re-select the file(s) and try again.`);
+        this.name = 'EmptyFilesError';
+        this.fileNames = fileNames;
+    }
+}
+
+/**
+ * Reject any selected file with `size === 0` before it ever hits the
+ * network. The check is deliberately strict — a 0-byte file is almost
+ * always a broken drag-drop / cancelled-download artifact and the user
+ * benefits from an immediate, file-specific error rather than a generic
+ * server rejection after the upload round-trip.
+ *
+ * @throws {EmptyFilesError} if any file is empty.
+ */
+export function assertNonEmptyFiles(files: File[]): void {
+    const empties = files.filter((f) => !f || f.size === 0);
+    if (empties.length > 0) {
+        throw new EmptyFilesError(empties.map((f) => f?.name || 'unnamed'));
+    }
+}
 
 // Supported file types
 export const ALLOWED_FILE_TYPES = {

@@ -18,6 +18,7 @@
 
 import { getAuthToken, type ApiResponse } from '../api-client';
 import { extractPathFromUrl } from '../utils/fileUrl';
+import { assertNonEmptyFiles } from '../utils/file-validation';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -33,9 +34,23 @@ export interface FTPUploadResult {
     originalName: string;
 }
 
+/**
+ * Per-file failure entry returned when a batch upload partially succeeds.
+ * Mirrors the backend `failures` array from `controllers/uploadController.ts`
+ * and `controllers/ftpController.ts`.
+ */
+export interface FTPUploadFailure {
+    originalName: string;
+    error: string;
+}
+
 export interface FTPMultipleUploadResult {
     files: FTPUploadResult[];
     count: number;
+    /** Per-file failures (empty when every file uploaded successfully). */
+    failures: FTPUploadFailure[];
+    /** Convenience flag: `failures.length > 0 && files.length > 0`. */
+    partial: boolean;
 }
 
 // ─── Folder constants ────────────────────────────────────────────────────────
@@ -68,6 +83,8 @@ export interface FTPUploadResponse {
 export interface FTPMultipleUploadResponse {
     files: FTPUploadResult[];
     count: number;
+    failures?: FTPUploadFailure[];
+    partial?: boolean;
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
@@ -135,6 +152,11 @@ export async function uploadSingleFile(
     folder: FTPFolder,
     fileName?: string,
 ): Promise<FTPUploadResult> {
+    // Block 0-byte files at the source — see issue #56. Throws
+    // `EmptyFilesError` so callers can render a typed toast instead of
+    // a generic "upload failed" once the server rejects the multipart.
+    assertNonEmptyFiles([file]);
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('subDir', folder);
@@ -161,7 +183,10 @@ export async function uploadMultipleFiles(
     files: File[],
     folder: FTPFolder,
 ): Promise<FTPMultipleUploadResult> {
-    if (files.length === 0) return { files: [], count: 0 };
+    if (files.length === 0) return { files: [], count: 0, failures: [], partial: false };
+
+    // Block 0-byte files at the source — see issue #56.
+    assertNonEmptyFiles(files);
 
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
@@ -173,10 +198,21 @@ export async function uploadMultipleFiles(
         body: formData,
     });
 
-    const raw = await parseResponse<{ files: any[]; count: number }>(response);
+    const raw = await parseResponse<{
+        files: any[];
+        count: number;
+        failures?: FTPUploadFailure[];
+        partial?: boolean;
+    }>(response);
     const mappedFiles = raw.files.map(mapResult);
+    const failures = Array.isArray(raw.failures) ? raw.failures : [];
 
-    return { files: mappedFiles, count: mappedFiles.length };
+    return {
+        files: mappedFiles,
+        count: mappedFiles.length,
+        failures,
+        partial: failures.length > 0 && mappedFiles.length > 0,
+    };
 }
 
 // ─── Legacy functions (preserved for backward compatibility) ─────────────────
@@ -222,6 +258,8 @@ export async function uploadMultipleFilesToFTP(
         data: {
             files: result.files,
             count: result.count,
+            failures: result.failures,
+            partial: result.partial,
         },
     };
 }

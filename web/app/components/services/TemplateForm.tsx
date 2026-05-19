@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { type CategoryTemplate, type FormField } from '@/lib/api/templates';
 import { uploadOrderFilesToS3 } from '@/lib/api/uploads';
-import { toastError, toastSuccess } from '@/lib/utils/toast';
+import { toastError, toastSuccess, toastWarning } from '@/lib/utils/toast';
+import { assertNonEmptyFiles, EmptyFilesError } from '@/lib/utils/file-validation';
 import { getPublicS3Url } from '@/lib/utils/s3';
 import { ArrowLeft, X } from 'lucide-react';
 
@@ -116,15 +117,41 @@ export function TemplateForm({
     const handleImageUpload = async (files: File[]) => {
         if (files.length === 0) return;
 
+        // Issue #56: stop 0-byte files at the source so the user sees an
+        // actionable per-file message instead of a generic upload failure
+        // after a round-trip — and so the server never has to defend
+        // against this in the first place.
+        try {
+            assertNonEmptyFiles(files);
+        } catch (err) {
+            if (err instanceof EmptyFilesError) {
+                toastError(err.message);
+                return;
+            }
+            throw err;
+        }
+
         try {
             setUploadingImages(true);
             const response = await uploadOrderFilesToS3(files);
             if (response.success && response.data?.files) {
-                const newImageUrls = response.data.files.map((f: any) => f.key);
+                const newImageUrls = response.data.files.map((f) => f.key);
                 setFormImages((prev) => [...prev, ...newImageUrls]);
-                toastSuccess('Images uploaded successfully');
+
+                // Surface partial-success state: keep the uploaded ones,
+                // tell the user exactly which files failed so they can
+                // re-select only those instead of resubmitting the batch.
+                const failures = response.data.failures ?? [];
+                if (failures.length > 0) {
+                    toastWarning(
+                        `Uploaded ${newImageUrls.length} of ${files.length}. Failed: ${failures.map((f) => f.originalName).join(', ')}`,
+                        6000,
+                    );
+                } else {
+                    toastSuccess('Images uploaded successfully');
+                }
             } else {
-                toastError('Failed to upload images');
+                toastError(response.error || 'Failed to upload images');
             }
         } catch (error) {
             console.error('Image upload error:', error);

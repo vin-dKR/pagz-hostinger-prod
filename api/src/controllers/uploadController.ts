@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { sendSuccess } from "../utils/response.js";
-import { ValidationError, NotFoundError } from "../utils/errors.js";
+import { AppError, ValidationError, NotFoundError } from "../utils/errors.js";
 import {
     uploadBufferToFTP,
     deleteFromFTP,
@@ -21,6 +21,80 @@ function generateFilename(originalName: string, prefix?: string): string {
     const random = Math.round(Math.random() * 1e9);
     const stem = prefix ? `${prefix}-${timestamp}-${random}` : `${timestamp}-${random}`;
     return ext ? `${stem}.${ext}` : stem;
+}
+
+/**
+ * Shared shape used by every multi-file upload handler in this controller.
+ *
+ *   { files, failures, partial }
+ *
+ * - `files`    — successfully uploaded entries (same shape as before).
+ * - `failures` — per-file error rows for the rejected uploads.
+ * - `partial`  — `true` iff at least one of each occurred.
+ *
+ * Old clients that only read `files` still work; new clients can
+ * surface per-file retry UI by walking `failures`.
+ */
+interface BatchUploadFailure {
+    originalName: string;
+    error: string;
+}
+
+interface BatchUploadOutput<T> {
+    successes: T[];
+    failures: BatchUploadFailure[];
+}
+
+/**
+ * Run an async upload task over each multer file. Successes and rejections
+ * are partitioned so the controller can decide whether to return success
+ * (any success), 4xx (all failed), or success-with-warnings.
+ *
+ * Errors are logged with the offending filename so server logs remain
+ * actionable when partial failures occur.
+ */
+async function runBatchUploads<T>(
+    files: Express.Multer.File[],
+    task: (file: Express.Multer.File, index: number) => Promise<T>,
+): Promise<BatchUploadOutput<T>> {
+    const settled = await Promise.allSettled(files.map((file, idx) => task(file, idx)));
+
+    const successes: T[] = [];
+    const failures: BatchUploadFailure[] = [];
+
+    settled.forEach((result, idx) => {
+        const file = files[idx];
+        const originalName = file?.originalname ?? "<unknown>";
+        if (result.status === "fulfilled") {
+            successes.push(result.value);
+        } else {
+            const message = result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason);
+            console.error(`[Upload] failed for "${originalName}":`, message);
+            failures.push({ originalName, error: message });
+        }
+    });
+
+    return { successes, failures };
+}
+
+/**
+ * If every file failed, escalate to a thrown `AppError` so the existing
+ * `next(error)` chain converts it to a 4xx response. The full per-file
+ * error list is included on `details` for clients that want to render
+ * the breakdown.
+ */
+function assertAnySuccess(
+    successes: unknown[],
+    failures: BatchUploadFailure[],
+    totalCount: number,
+): void {
+    if (successes.length > 0) return;
+    const message = failures.length === 1 && failures[0]
+        ? `Upload failed for "${failures[0].originalName}": ${failures[0].error}`
+        : `All ${totalCount} file(s) failed to upload.`;
+    throw new AppError(message, 400, { failures });
 }
 
 // Upload design/order file (customer)
@@ -84,27 +158,39 @@ export const uploadOrderFiles = async (req: Request, res: Response, next: NextFu
         // Use session-based subfolder for unauthenticated users, userId for authenticated
         const subfolder = req.user?.id ? `orders/${userId}` : `orders/guest/${sessionId}`;
 
-        const uploadResults = await Promise.all(
-            files.map(async (file) => {
-                const filename = generateFilename(file.originalname, "design");
-                const remoteFileName = `${sessionId}-${filename}`;
-                const remotePath = await uploadBufferToFTP(file.buffer, remoteFileName, subfolder);
-                const publicUrl = getPublicFtpUrl(remotePath);
+        // Each upload runs independently so one corrupt / failed file no
+        // longer aborts the rest of the batch (which previously left
+        // orphaned siblings on the FTP server).
+        const { successes: uploadResults, failures } = await runBatchUploads(files, async (file) => {
+            const filename = generateFilename(file.originalname, "design");
+            const remoteFileName = `${sessionId}-${filename}`;
+            const remotePath = await uploadBufferToFTP(file.buffer, remoteFileName, subfolder);
+            const publicUrl = getPublicFtpUrl(remotePath);
 
-                return {
-                    key: remotePath,
-                    url: publicUrl,
-                    filename: remoteFileName,
-                    size: file.size,
-                    mimetype: file.mimetype,
-                };
-            })
-        );
+            return {
+                key: remotePath,
+                url: publicUrl,
+                filename: remoteFileName,
+                // Echo back the user-facing name so clients can correlate
+                // batch results to their original `File[]` even when the
+                // success array is shorter than the input (partial batch).
+                originalName: file.originalname,
+                size: file.size,
+                mimetype: file.mimetype,
+            };
+        });
+
+        assertAnySuccess(uploadResults, failures, files.length);
 
         return sendSuccess(res, {
             files: uploadResults,
+            failures,
+            partial: failures.length > 0,
             sessionId,
-        }, "Files uploaded successfully", 201);
+        }, failures.length > 0
+            ? `${uploadResults.length} of ${files.length} file(s) uploaded; ${failures.length} failed.`
+            : "Files uploaded successfully",
+        201);
     } catch (error) {
         next(error);
     }
@@ -182,24 +268,32 @@ export const uploadReviewImages = async (req: Request, res: Response, next: Next
             ? `reviews/${userId}/${productId}`
             : `reviews/${userId}`;
 
-        const uploadResults = await Promise.all(
-            files.map(async (file, index) => {
-                const filename = generateFilename(file.originalname, "review");
-                const remoteFileName = `${Date.now()}-${index}-${filename}`;
-                const remotePath = await uploadBufferToFTP(file.buffer, remoteFileName, subfolder);
-                const publicUrl = getPublicFtpUrl(remotePath);
+        const { successes: uploadResults, failures } = await runBatchUploads(files, async (file, index) => {
+            const filename = generateFilename(file.originalname, "review");
+            const remoteFileName = `${Date.now()}-${index}-${filename}`;
+            const remotePath = await uploadBufferToFTP(file.buffer, remoteFileName, subfolder);
+            const publicUrl = getPublicFtpUrl(remotePath);
 
-                return {
-                    key: remotePath,
-                    url: publicUrl,
-                    filename: remoteFileName,
-                    size: file.size,
-                    mimetype: file.mimetype,
-                };
-            })
+            return {
+                key: remotePath,
+                url: publicUrl,
+                filename: remoteFileName,
+                originalName: file.originalname,
+                size: file.size,
+                mimetype: file.mimetype,
+            };
+        });
+
+        assertAnySuccess(uploadResults, failures, files.length);
+
+        return sendSuccess(
+            res,
+            { files: uploadResults, failures, partial: failures.length > 0 },
+            failures.length > 0
+                ? `${uploadResults.length} of ${files.length} review image(s) uploaded; ${failures.length} failed.`
+                : "Review images uploaded successfully",
+            201,
         );
-
-        return sendSuccess(res, { files: uploadResults }, "Review images uploaded successfully", 201);
     } catch (error) {
         next(error);
     }
