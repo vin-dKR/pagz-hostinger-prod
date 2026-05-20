@@ -48,6 +48,12 @@ export interface CartItemAddonPricing {
      *  `specificationValues`. Mirrors the legacy client-side `getAddonLabel`. */
     name: string;
     total: number;
+    /** Phase 2 — per-file price breakdown surfaced by the cart endpoint.
+     *  One entry per uploaded file for `perFileEvaluation` rules; one
+     *  synthetic aggregate entry (`fileUrl: null`) for legacy / non
+     *  per-file rules. UI renders uniformly without branching on the
+     *  rule shape. See `AddonBreakdownEntry`. */
+    breakdown: AddonBreakdownEntry[];
 }
 
 export interface CartItemPricing {
@@ -326,10 +332,27 @@ export interface CalculatePricingRequest {
     side?: 'one' | 'both';
 }
 
+/**
+ * Phase 2 — per-file price breakdown surfaced on each addon entry. One
+ * entry per uploaded file for `perFileEvaluation` addons; one synthetic
+ * aggregate entry (`fileUrl: null`) for legacy / non-per-file addons.
+ * UI can render uniformly without branching on the rule shape.
+ */
+export interface AddonBreakdownEntry {
+    /** Relative FTP path / URL of the file this entry priced.
+     *  `null` for the aggregate fallback (no per-file evaluation). */
+    fileUrl: string | null;
+    pageCount: number;
+    effectivePages: number;
+    price: number;
+}
+
 export interface CalculatePricingAddon {
     ruleId: string;
     name: string;
     total: number;
+    /** Phase 2 — always populated. See `AddonBreakdownEntry`. */
+    breakdown: AddonBreakdownEntry[];
 }
 
 export interface CalculatePricingResponse {

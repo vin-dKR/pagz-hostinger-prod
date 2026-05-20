@@ -35,6 +35,19 @@ export interface AddonPricingRule {
      *  reduction when applicable) and the final price is multiplied by
      *  the copies count. */
     copyMultiplier?: boolean;
+    /** Phase 2: evaluate the addon separately for each uploaded file
+     *  (using its own pageCount), then sum the per-file results. The
+     *  other multiplier flags (`fileMultiplier`, `copyMultiplier`,
+     *  `quantityMultiplier`) still apply *inside* the per-file branch
+     *  but operate on a single-file subline. Use for per-book
+     *  bindings on multi-PDF orders where each file becomes its own
+     *  physical artefact.
+     *
+     *  Back-compat: when the flag is unset (default false), the
+     *  engine takes its existing aggregate path. When set but the
+     *  line has no `metadata.files`, the engine ALSO falls back to
+     *  aggregate and logs a warning so prod surfaces stale rows. */
+    perFileEvaluation?: boolean;
     minQuantity: number | null;
     maxQuantity: number | null;
     isActive?: boolean;
@@ -72,6 +85,11 @@ export interface PricingLineMetadata {
      *  rows written before Phase 0 lack this and the engine falls back
      *  to the aggregate path. */
     files?: PricingFileMeta[];
+    /** Side spec applied to the line, used by Phase 2 per-file
+     *  evaluation to recompute each file's effective page count.
+     *  When omitted the engine falls back to "no half-page" for the
+     *  subline (consistent with existing aggregate path). */
+    side?: "one" | "both";
 }
 
 export interface AddonLineItemInput {
@@ -197,6 +215,67 @@ export const getCopiesCount = (
 };
 
 /**
+ * Per-file effective page count for a given side spec.
+ *
+ * Pure: (rawPages, side) -> reducedPages. Mirrors the half-page reduction
+ * applied to aggregate metadata by `processHalfPageCalculation`
+ * (`api/src/utils/half-page-calculation.ts`) — kept in sync so a single
+ * file evaluated through this helper produces the same effective count
+ * the aggregate path would produce for the same raw input.
+ *
+ * Used by `deriveFileSubline` in the `perFileEvaluation` branch. Exposed
+ * so Phase 3 UI breakdown rendering can show the same numbers without
+ * importing the controller-side helper.
+ */
+export const halfPageReduce = (
+    rawPages: number,
+    side: "one" | "both" | undefined
+): number => {
+    if (!Number.isFinite(rawPages) || rawPages <= 0) return 0;
+    return side === "both" ? Math.ceil(rawPages / 2) : Math.floor(rawPages);
+};
+
+/**
+ * Build a per-file subline metadata from a parent line + one file.
+ *
+ * Used internally by `computeAddonLineTotal`'s perFileEvaluation branch.
+ * Exposed for UI breakdown rendering (Phase 3).
+ *
+ *   - `pageCount`           = the file's own raw pageCount
+ *   - `effectivePageCount`  = re-derived from the file's pageCount + parent
+ *                             `side` spec (half-page reduce when side='both').
+ *                             Falls back to undefined when no side info is
+ *                             available, so the engine's downstream effective-
+ *                             page lookup transparently reverts to the raw
+ *                             count (same behaviour as legacy aggregate rows).
+ *   - `copies`              = parent.copies (unchanged — copies multiply each
+ *                             file equally; the per-file branch doesn't
+ *                             distribute copies across files).
+ *   - `side`                = parent.side (carried forward for any nested
+ *                             consumer that re-reads it).
+ *   - `files`               = OMITTED. The subline represents a single file
+ *                             and must not re-trigger the per-file branch.
+ */
+export const deriveFileSubline = (
+    parent: PricingLineMetadata,
+    file: PricingFileMeta
+): PricingLineMetadata => {
+    const rawPages = Number.isFinite(file.pageCount) && file.pageCount > 0
+        ? Math.floor(file.pageCount)
+        : 0;
+    const reduced = parent.side ? halfPageReduce(rawPages, parent.side) : 0;
+    const subline: PricingLineMetadata = {
+        pageCount: rawPages > 0 ? rawPages : null,
+        copies: parent.copies ?? null,
+    };
+    if (reduced > 0 && reduced !== rawPages) {
+        subline.effectivePageCount = reduced;
+    }
+    if (parent.side) subline.side = parent.side;
+    return subline;
+};
+
+/**
  * Check whether an addon's page-range gate is satisfied.
  */
 export const isAddonInPageRange = (
@@ -216,6 +295,12 @@ export const isAddonInPageRange = (
  * item (returns 0 when the addon is out-of-range).
  *
  * Multiplier matrix (resolved in this order):
+ *   - perFileEvaluation           -> recurse with each file as a virtual
+ *                                    subline (fileCount=1, perFileEvaluation
+ *                                    cleared on the inner rule); sum the
+ *                                    per-file results. Falls back to the
+ *                                    aggregate path when the line has no
+ *                                    `metadata.files` (logs a warning).
  *   - fileMultiplier              -> unit × files (more specific signal, wins).
  *   - copyMultiplier              -> range checked against per-copy pages.
  *                                    unit × (perCopyPages if also
@@ -229,6 +314,50 @@ export const computeAddonLineTotal = (
     addon: AddonPricingRule,
     line: AddonLineItemInput
 ): number => {
+    // ── Phase 2: per-file evaluation branch ──────────────────────────────
+    // Recurses depth-1: the inner call clears `perFileEvaluation` so we
+    // can't loop. Each file becomes a virtual subline with its own
+    // pageCount + re-derived effective pages (half-page reduced when
+    // side='both'). Multipliers inside the branch (`copyMultiplier`,
+    // `fileMultiplier`, `quantityMultiplier`) keep their normal
+    // semantics but operate on the single-file subline:
+    //   - fileMultiplier becomes degenerate (1 file per subline) — by
+    //     design, since perFileEvaluation already iterates files.
+    //   - copyMultiplier × N copies still multiplies per file, matching
+    //     "one binding per book × N copies".
+    //   - quantityMultiplier × per-file pages, summed across files —
+    //     equivalent to charging per page across the whole job for
+    //     non-tiered rules; the win is range-gating each file
+    //     independently when ranges are set.
+    if (addon.perFileEvaluation) {
+        const files = line.metadata?.files;
+        if (files && files.length > 0) {
+            const parentMeta = line.metadata as PricingLineMetadata;
+            // Recurse with perFileEvaluation cleared — depth-1, no infinite
+            // recursion risk. Each subline carries its own pageCount +
+            // effective pages derived from the parent's side spec.
+            const innerRule: AddonPricingRule = { ...addon, perFileEvaluation: false };
+            let total = 0;
+            for (const file of files) {
+                const sublineMeta = deriveFileSubline(parentMeta, file);
+                total += computeAddonLineTotal(innerRule, {
+                    quantity: line.quantity,
+                    addons: line.addons,
+                    metadata: sublineMeta,
+                    fileCount: 1,
+                });
+            }
+            return total;
+        }
+        // Back-compat: rule has the flag but the line predates Phase 0
+        // (no metadata.files persisted). Fall through to the aggregate
+        // path and surface the row to ops.
+        console.warn(
+            "[pricing] perFileEvaluation rule applied to line without files; falling back to aggregate",
+            { addonId: addon.id }
+        );
+    }
+
     const unit = getAddonUnitPrice(addon);
 
     // fileMultiplier wins when both flags are on — it's a more specific signal.
@@ -272,14 +401,28 @@ const stableSpecKey = (specs: Record<string, unknown> | null | undefined): strin
 };
 
 /**
- * Filter addon rules through the spec-group dominance rule:
+ * Filter addon rules through the spec-group dominance rule.
+ *
+ * Precedence (highest dominance wins; rules below are suppressed within
+ * the same spec group):
+ *
+ *   perFileEvaluation  >  copyMultiplier  >  fileMultiplier  >  others
+ *
  *   - Group rules by spec values (binding=Spiral, paper=A4, ...).
- *   - If ANY rule in a group has copyMultiplier=true, every other rule
- *     in the same group is suppressed. Same-spec total-page tiers
- *     (e.g. "Spiral 51-100 pages" alongside "Spiral 1-50 pages × copies")
- *     thus never both fire — the per-copy semantics win and the total-
- *     page tier drops out cleanly. fileMultiplier rules are exempt
- *     since they gate on file count, not pages.
+ *   - If ANY rule in a group has perFileEvaluation=true, every other
+ *     rule in the same group is suppressed EXCEPT other
+ *     perFileEvaluation rules and fileMultiplier rules. The per-file
+ *     branch evaluates the addon once per uploaded file using each
+ *     file's own pageCount — a stale aggregate-tier rule
+ *     (e.g. "Spiral 1000-1500 pages flat") would double-charge on top
+ *     of it. fileMultiplier rules are exempt: they gate on file count,
+ *     not pages, so the two are orthogonal.
+ *   - If ANY rule in a group has copyMultiplier=true and no
+ *     perFileEvaluation rule is present, every other rule in the same
+ *     group is suppressed EXCEPT fileMultiplier rules. Same-spec
+ *     total-page tiers (e.g. "Spiral 51-100 pages" alongside
+ *     "Spiral 1-50 pages × copies") thus never both fire — the
+ *     per-copy semantics win and the total-page tier drops out cleanly.
  *   - Each surviving rule's own range/multiplier logic still runs in
  *     `computeAddonLineTotal`.
  */
@@ -297,9 +440,21 @@ export const resolveActiveAddons = <T extends AddonPricingRule>(
 
     const surviving: T[] = [];
     for (const group of groups.values()) {
+        const hasPerFileDominant = group.some((g) => g.rule.perFileEvaluation);
         const hasCopyDominant = group.some((g) => g.rule.copyMultiplier);
         for (const { rule } of group) {
-            if (hasCopyDominant && !rule.copyMultiplier && !rule.fileMultiplier) {
+            if (hasPerFileDominant && !rule.perFileEvaluation && !rule.fileMultiplier) {
+                // Suppressed: same-spec aggregate-tier rule that would
+                // double-charge alongside the per-file branch. fileMultiplier
+                // rules survive because they gate on file count, not pages.
+                continue;
+            }
+            if (
+                !hasPerFileDominant
+                && hasCopyDominant
+                && !rule.copyMultiplier
+                && !rule.fileMultiplier
+            ) {
                 // Suppressed: same-spec, non-copy-multiplier tier built
                 // for total-page ranges — would double-charge alongside
                 // the per-copy variant.
@@ -309,6 +464,77 @@ export const resolveActiveAddons = <T extends AddonPricingRule>(
         }
     }
     return surviving;
+};
+
+/**
+ * Per-file breakdown for UI rendering (Phase 3 consumer).
+ *
+ * Returns one entry per uploaded file when `perFileEvaluation` is on
+ * and the line has `metadata.files`; otherwise returns one synthetic
+ * "aggregate" entry (`fileUrl: null`) reflecting the engine's existing
+ * aggregate path. Callers can render the array directly without
+ * branching on the rule shape.
+ */
+export interface AddonBreakdownEntry {
+    /** Relative FTP url for the file this entry priced. `null` for the
+     *  aggregate fallback (legacy rows, or rules without perFileEvaluation). */
+    fileUrl: string | null;
+    /** Raw pages used for this entry (per-file in the per-file branch;
+     *  aggregate `pageCount` in the fallback path). */
+    pageCount: number;
+    /** Post half-page reduction. Mirrors `pageCount` when no half-page
+     *  applied. */
+    effectivePages: number;
+    /** Price contribution of this entry (already rounded to 2dp). */
+    price: number;
+}
+
+export const computeAddonBreakdown = (
+    addon: AddonPricingRule,
+    line: AddonLineItemInput
+): AddonBreakdownEntry[] => {
+    const files = line.metadata?.files;
+    // Per-file branch: one entry per file, priced by recursing the
+    // engine with perFileEvaluation cleared (same depth-1 trick as
+    // computeAddonLineTotal so behaviour stays in lock-step).
+    if (addon.perFileEvaluation && files && files.length > 0) {
+        const parentMeta = line.metadata as PricingLineMetadata;
+        const innerRule: AddonPricingRule = { ...addon, perFileEvaluation: false };
+        const entries: AddonBreakdownEntry[] = [];
+        for (const file of files) {
+            const sublineMeta = deriveFileSubline(parentMeta, file);
+            const price = computeAddonLineTotal(innerRule, {
+                quantity: line.quantity,
+                addons: line.addons,
+                metadata: sublineMeta,
+                fileCount: 1,
+            });
+            const rawPages = sublineMeta.pageCount ?? 0;
+            const effective = sublineMeta.effectivePageCount ?? rawPages;
+            entries.push({
+                fileUrl: file.url,
+                pageCount: rawPages,
+                effectivePages: effective,
+                price: Number(price.toFixed(2)),
+            });
+        }
+        return entries;
+    }
+
+    // Aggregate fallback: one synthetic entry. Mirrors the engine's
+    // aggregate-path math so totals line up exactly.
+    const price = computeAddonLineTotal(addon, line);
+    const rawPages = Number(line.metadata?.pageCount ?? 0) || 0;
+    const reduced = Number(line.metadata?.effectivePageCount ?? 0) || 0;
+    const effective = reduced > 0 ? reduced : rawPages;
+    return [
+        {
+            fileUrl: null,
+            pageCount: rawPages,
+            effectivePages: effective,
+            price: Number(price.toFixed(2)),
+        },
+    ];
 };
 
 /**
@@ -392,6 +618,7 @@ export const fetchAddonRuleMap = async (
                 quantityMultiplier: rule.quantityMultiplier,
                 fileMultiplier: (rule as { fileMultiplier?: boolean }).fileMultiplier ?? false,
                 copyMultiplier: (rule as { copyMultiplier?: boolean }).copyMultiplier ?? false,
+                perFileEvaluation: (rule as { perFileEvaluation?: boolean }).perFileEvaluation ?? false,
                 minQuantity: rule.minQuantity,
                 maxQuantity: rule.maxQuantity,
                 isActive: rule.isActive,

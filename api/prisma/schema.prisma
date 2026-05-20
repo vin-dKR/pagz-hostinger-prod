@@ -170,6 +170,7 @@ model CategoryPricingRule {
   quantityMultiplier  Boolean         @default(false) // Price multiplies by effective quantity/pages
   fileMultiplier      Boolean         @default(false) // Price multiplies by uploaded-file count
   copyMultiplier      Boolean         @default(false) // Price multiplies by copies count (one per physical copy, e.g. binding); range checked per-copy pages when true
+  perFileEvaluation   Boolean         @default(false) // Evaluate the addon separately for each uploaded file (using its own pageCount), then sum. Inner multipliers still apply per-file. Use for per-book bindings on multi-PDF orders.
   minQuantity         Int? // For quantity tiers
   maxQuantity         Int? // For quantity tiers
   isActive            Boolean         @default(true)

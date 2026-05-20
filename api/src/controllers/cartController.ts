@@ -7,6 +7,7 @@ import { deriveHalfPageFromSelectedSpecs } from "../utils/half-page-from-specs.j
 import { deleteFromFTP, extractFtpPathFromUrl, verifyFTPFiles } from "../services/ftp.js";
 import { getParamAsString } from "../utils/db-utils.js";
 import {
+    computeAddonBreakdown,
     computeAddonLineTotal,
     computeLineAddonsTotal,
     fetchAddonRuleMap,
@@ -15,6 +16,7 @@ import {
     normalizeAddonIds,
     resolveActiveAddons,
     sanitizePricingFiles,
+    type AddonBreakdownEntry,
     type AddonPricingRule,
     type PricingFileMeta,
 } from "../utils/addon-pricing.js";
@@ -36,6 +38,7 @@ const CART_ADDON_SELECT = {
     quantityMultiplier: true,
     fileMultiplier: true,
     copyMultiplier: true,
+    perFileEvaluation: true,
     minQuantity: true,
     maxQuantity: true,
 } as const;
@@ -315,13 +318,34 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             // the cart UI can render the addon row breakdown without
             // recomputing client-side. Each entry corresponds to one addon
             // rule that survived spec-group dominance.
-            const addonLineDetails: Array<{ ruleId: string; name: string; total: number }> = [];
+            // Phase 2 — also surface the per-file breakdown so the cart UI
+            // can show "file1: ₹50, file2: ₹50" for perFileEvaluation rules
+            // without re-running the engine client-side.
+            const addonLineDetails: Array<{
+                ruleId: string;
+                name: string;
+                total: number;
+                breakdown: AddonBreakdownEntry[];
+            }> = [];
 
             if (item.addons && item.addons.length > 0) {
                 const lineFileCount = normalizeDesignUrls(item.customDesignUrl).length;
                 const itemAddons = item.addons as Array<AddonPricingRule & {
                     specificationValues?: Record<string, unknown> | null;
                 }>;
+                // Pull through the persisted per-file metadata + side hint
+                // so the perFileEvaluation branch (Phase 2) can re-derive
+                // each file's effective page count. `side` is inferred from
+                // the half-page detection above when the writer didn't
+                // persist it explicitly.
+                const persistedFiles = sanitizePricingFiles(
+                    (item.metadata as { files?: unknown } | null | undefined)?.files,
+                );
+                const persistedSide = (item.metadata as { side?: unknown } | null | undefined)?.side;
+                const sideForMeta: "one" | "both" | undefined =
+                    persistedSide === "one" || persistedSide === "both"
+                        ? persistedSide
+                        : hasHalfPage ? "both" : undefined;
                 const pricingLine = {
                     quantity: item.quantity,
                     addons: itemAddons.map((a) => a.id),
@@ -332,6 +356,8 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                         // rules charge per book and check range against the
                         // post-half-page sheet count, not raw document pages.
                         effectivePageCount: hasHalfPage ? effectivePageCount : null,
+                        files: persistedFiles,
+                        side: sideForMeta,
                     },
                     fileCount: lineFileCount,
                 };
@@ -358,6 +384,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                         ruleId: addon.id,
                         name,
                         total: Number(addonLineTotal.toFixed(2)),
+                        breakdown: computeAddonBreakdown(addon, pricingLine),
                     });
                 }
             }
@@ -1142,6 +1169,11 @@ export interface CalculatePricingAddonResponse {
     ruleId: string;
     name: string;
     total: number;
+    /** Phase 2 — per-file breakdown for UI rendering. Always populated
+     *  (one entry per file for `perFileEvaluation` rules; one synthetic
+     *  aggregate entry with `fileUrl: null` otherwise) so the client
+     *  can render uniformly without branching on the rule shape. */
+    breakdown: AddonBreakdownEntry[];
 }
 
 export interface CalculatePricingResponse {
@@ -1350,6 +1382,9 @@ export const calculatePricing = async (
                     quantityMultiplier: rule.quantityMultiplier,
                     fileMultiplier: Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier),
                     copyMultiplier: Boolean((rule as { copyMultiplier?: boolean }).copyMultiplier),
+                    perFileEvaluation: Boolean(
+                        (rule as { perFileEvaluation?: boolean }).perFileEvaluation,
+                    ),
                     minQuantity: rule.minQuantity,
                     maxQuantity: rule.maxQuantity,
                     isActive: rule.isActive,
@@ -1367,6 +1402,14 @@ export const calculatePricing = async (
         );
         const survivingIds = new Set(surviving.map((r) => r.id));
 
+        // `side` is propagated into metadata so the per-file
+        // (perFileEvaluation) branch can re-derive each file's effective
+        // page count via `halfPageReduce` without re-reading specs.
+        // Prefer the explicit body.side, fall back to inferring "both"
+        // from the half-page spec detection above.
+        const sideForMeta: "one" | "both" | undefined = body.side
+            ? body.side
+            : hasHalfPage ? "both" : undefined;
         const lineMetadata = {
             pageCount: pageCount > 0 ? pageCount : null,
             copies,
@@ -1374,24 +1417,27 @@ export const calculatePricing = async (
                 ? effectivePageCount
                 : null,
             files: files.length > 0 ? files : undefined,
+            side: sideForMeta,
         };
 
         const addonsResponse: CalculatePricingAddonResponse[] = [];
         let addonsSubtotal = 0;
         for (const entry of activeAddonInputs) {
             if (!survivingIds.has(entry.rule.id)) continue;
-            const total = computeAddonLineTotal(entry.rule, {
+            const lineInput = {
                 quantity: pageCount > 0 ? pageCount * copies : 1,
                 addons: [entry.rule.id],
                 metadata: lineMetadata,
                 fileCount,
-            });
+            };
+            const total = computeAddonLineTotal(entry.rule, lineInput);
             if (total <= 0) continue;
             addonsSubtotal += total;
             addonsResponse.push({
                 ruleId: entry.rule.id,
                 name: entry.name,
                 total: Number(total.toFixed(2)),
+                breakdown: computeAddonBreakdown(entry.rule, lineInput),
             });
         }
 
