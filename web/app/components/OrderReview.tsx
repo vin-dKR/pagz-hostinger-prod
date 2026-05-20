@@ -4,6 +4,7 @@ import Image from "next/image";
 import { CartItem } from "@/lib/api/cart";
 import { FileText } from "lucide-react";
 import { getPublicS3Url } from "@/lib/utils/s3";
+import { AddonBreakdownRows } from "./AddonBreakdownRows";
 
 interface OrderReviewProps {
     items: CartItem[];
@@ -104,8 +105,21 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                 {item.pricing?.addons && item.pricing.addons.length > 0 && (
                                     <div className="mt-1 pl-2 border-l-2 border-purple-200">
                                         {item.pricing.addons.map((addon) => (
-                                            <div key={addon.ruleId} className="text-xs text-purple-700 mb-0.5">
-                                                {addon.name}: ₹{toNumber(addon.total).toFixed(2)}
+                                            <div key={addon.ruleId} className="mb-1 last:mb-0">
+                                                <div className="text-xs text-purple-700">
+                                                    {addon.name}: ₹{toNumber(addon.total).toFixed(2)}
+                                                </div>
+                                                {/* Phase 3 — per-file sub-rows
+                                                    surface for `perFileEvaluation`
+                                                    addons when 2+ files were
+                                                    uploaded. Single-entry
+                                                    breakdowns collapse silently. */}
+                                                {addon.breakdown && addon.breakdown.length > 1 && (
+                                                    <AddonBreakdownRows
+                                                        breakdown={addon.breakdown}
+                                                        variant="compact"
+                                                    />
+                                                )}
                                             </div>
                                         ))}
                                     </div>

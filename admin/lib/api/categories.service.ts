@@ -141,6 +141,11 @@ export interface CategoryPricingRule {
      *  page range and per-page math run against the *per-copy* page count
      *  (post half-page reduction) and the price is multiplied by copies. */
     copyMultiplier?: boolean;
+    /** Phase 3 of per-file addon pricing — evaluate the addon separately
+     *  for each uploaded file (using its own pageCount), then sum. Used
+     *  for per-book bindings on multi-PDF orders. The other multiplier
+     *  flags still apply *inside* each per-file evaluation. */
+    perFileEvaluation?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
     isActive: boolean;
@@ -440,6 +445,9 @@ export interface CreatePricingRuleData {
     fileMultiplier?: boolean;
     /** Per-physical-copy charge (binding / hardcase / etc.). */
     copyMultiplier?: boolean;
+    /** Per-file evaluation (Phase 3) — evaluate addon once per uploaded
+     *  PDF and sum. See `CategoryPricingRule.perFileEvaluation`. */
+    perFileEvaluation?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
     isActive?: boolean;

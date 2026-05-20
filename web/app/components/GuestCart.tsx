@@ -28,6 +28,8 @@ import { getProduct, type Product } from "@/lib/api/products";
 import { getCategoryBySlug, getCategoryAddons, type Category, type CategoryAddon } from "@/lib/api/categories";
 import BillingSummary from "./BillingSummary";
 import { useCalculatePricing } from "@/lib/hooks/use-calculate-pricing";
+import { AddonBreakdownRows } from "./AddonBreakdownRows";
+import type { AddonBreakdownEntry } from "@/lib/api/cart";
 
 interface GuestCartProps {
     onEmpty?: () => void;
@@ -179,6 +181,17 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
         return (pending.files || []).map(fileChipFromPending);
     }, [pending]);
 
+    // Phase 3 — map ftp/s3 url → original filename so the per-file addon
+    // breakdown sub-rows show "design.pdf" instead of the opaque url
+    // basename. Falls back gracefully inside `AddonBreakdownRows`.
+    const resolveFilename = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const f of pending?.files || []) {
+            if (f.s3Key && f.name) map.set(f.s3Key, f.name);
+        }
+        return (fileUrl: string) => map.get(fileUrl);
+    }, [pending]);
+
     // Live pricing via the public /cart/calculate-pricing endpoint —
     // Phase 1 of per-file addon pricing. The api computes the addon and
     // base totals from the rules currently live for this category, so a
@@ -206,7 +219,20 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
 
     // Server-authoritative price with a graceful fallback to the cached
     // total saved at add-to-cart time (handles initial render / offline).
-    const priceBreakdown = useMemo(() => {
+    // Use a single explicit return shape so TS can `.breakdown` into the
+    // addon list without union narrowing dropping the optional field.
+    interface PriceBreakdownAddon {
+        ruleId: string;
+        name: string;
+        total: number;
+        breakdown?: AddonBreakdownEntry[];
+    }
+    const priceBreakdown = useMemo<{
+        baseTotal: number;
+        addonTotal: number;
+        total: number;
+        addons: PriceBreakdownAddon[];
+    }>(() => {
         const live = pricingHook.data;
         if (live) {
             return {
@@ -227,7 +253,7 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                     baseTotal: Number(base) || 0,
                     addonTotal: Number(addons) || 0,
                     total: (Number(base) || 0) + (Number(addons) || 0),
-                    addons: [] as Array<{ ruleId: string; name: string; total: number }>,
+                    addons: [] as Array<{ ruleId: string; name: string; total: number; breakdown?: AddonBreakdownEntry[] }>,
                 };
             }
             const total = Number(pending.totalPrice || pending.currentPrice || 0);
@@ -235,7 +261,7 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                 baseTotal: total,
                 addonTotal: 0,
                 total,
-                addons: [] as Array<{ ruleId: string; name: string; total: number }>,
+                addons: [] as Array<{ ruleId: string; name: string; total: number; breakdown?: AddonBreakdownEntry[] }>,
             };
         }
         return {
@@ -430,12 +456,21 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                                 first render, surface just the addon labels so
                                 the row doesn't pop in once the request lands. */}
                             {priceBreakdown.addons.length > 0 ? (
-                                <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                                <ul className="mt-1.5 space-y-1">
                                     {priceBreakdown.addons.map((addon) => (
                                         <li key={addon.ruleId} className="text-[11px] text-gray-500">
-                                            <span className="text-gray-600">{addon.name}</span>
-                                            {addon.total > 0 && (
-                                                <span className="font-medium text-gray-700"> {formatPrice(addon.total)}</span>
+                                            <div>
+                                                <span className="text-gray-600">{addon.name}</span>
+                                                {addon.total > 0 && (
+                                                    <span className="font-medium text-gray-700"> {formatPrice(addon.total)}</span>
+                                                )}
+                                            </div>
+                                            {addon.breakdown && addon.breakdown.length > 1 && (
+                                                <AddonBreakdownRows
+                                                    breakdown={addon.breakdown}
+                                                    resolveFilename={resolveFilename}
+                                                    variant="compact"
+                                                />
                                             )}
                                         </li>
                                     ))}

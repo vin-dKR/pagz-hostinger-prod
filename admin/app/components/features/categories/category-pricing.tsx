@@ -76,6 +76,11 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         quantityMultiplier: boolean;
         fileMultiplier: boolean;
         copyMultiplier: boolean;
+        /** Phase 3 — when on, the engine evaluates the addon once per
+         *  uploaded file and sums the per-file results. Use for per-book
+         *  bindings on multi-PDF orders. The other multiplier flags
+         *  still apply inside each per-file evaluation. */
+        perFileEvaluation: boolean;
         minQuantity: string;
         maxQuantity: string;
         isActive: boolean;
@@ -87,6 +92,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
         quantityMultiplier: true,
         fileMultiplier: false,
         copyMultiplier: false,
+        perFileEvaluation: false,
         minQuantity: '',
         maxQuantity: '',
         isActive: true,
@@ -158,6 +164,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             quantityMultiplier: true,
             fileMultiplier: false,
             copyMultiplier: false,
+            perFileEvaluation: false,
             minQuantity: '',
             maxQuantity: '',
             isActive: true,
@@ -223,6 +230,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                 quantityMultiplier: form.quantityMultiplier,
                 fileMultiplier: form.fileMultiplier,
                 copyMultiplier: form.copyMultiplier,
+                perFileEvaluation: form.perFileEvaluation,
                 minQuantity: form.minQuantity ? Number(form.minQuantity) : null,
                 maxQuantity: form.maxQuantity ? Number(form.maxQuantity) : null,
                 isActive: form.isActive,
@@ -295,6 +303,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             quantityMultiplier: rule.quantityMultiplier,
             fileMultiplier: (rule as any).fileMultiplier ?? false,
             copyMultiplier: (rule as any).copyMultiplier ?? false,
+            perFileEvaluation: (rule as any).perFileEvaluation ?? false,
             minQuantity:
                 (rule.ruleType === 'ADDON' || rule.ruleType === 'QUANTITY_TIER') && rule.minQuantity != null
                     ? String(rule.minQuantity)
@@ -389,6 +398,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
             quantityMultiplier: rule.quantityMultiplier,
             fileMultiplier: (rule as any).fileMultiplier ?? false,
             copyMultiplier: (rule as any).copyMultiplier ?? false,
+            perFileEvaluation: (rule as any).perFileEvaluation ?? false,
             minQuantity:
                 (rule.ruleType === 'ADDON' || rule.ruleType === 'QUANTITY_TIER') && rule.minQuantity != null
                     ? String(rule.minQuantity)
@@ -1245,6 +1255,44 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                     </Label>
                                                 </div>
                                             )}
+                                            {/* Phase 3 — per-file evaluation flag.
+                                                When on, the engine evaluates the
+                                                addon separately for each uploaded
+                                                file and sums the results. Use for
+                                                per-book bindings on multi-PDF
+                                                orders. The other multiplier flags
+                                                still apply inside the per-file
+                                                branch. ADDON-only — the flag has
+                                                no meaning on base/spec rules. */}
+                                            {form.ruleType === 'ADDON' && (
+                                                <div className="flex flex-col gap-0.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            id="per-file-evaluation"
+                                                            type="checkbox"
+                                                            checked={form.perFileEvaluation}
+                                                            onChange={(e) =>
+                                                                setForm((prev) => ({
+                                                                    ...prev,
+                                                                    perFileEvaluation: e.target.checked,
+                                                                }))
+                                                            }
+                                                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        <Label htmlFor="per-file-evaluation">
+                                                            Evaluate per uploaded file
+                                                        </Label>
+                                                    </div>
+                                                    <p className="text-[11px] text-gray-500 ml-6 leading-snug">
+                                                        Run the addon separately for each uploaded PDF
+                                                        and sum. Use for per-book bindings
+                                                        (e.g. spiral binding charged once per file
+                                                        when a user uploads multiple PDFs). The
+                                                        other multiplier flags still apply inside
+                                                        each per-file evaluation.
+                                                    </p>
+                                                </div>
+                                            )}
                                             <div className="flex items-center gap-2">
                                                 <input
                                                     id="is-active"
@@ -1724,6 +1772,18 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                     <div className="text-[10px] text-gray-400 mt-1">
                                                                         {(rule as any).fileMultiplier ? '× Files' : rule.quantityMultiplier ? '× Qty' : 'Fixed'}
                                                                     </div>
+                                                                    {/* Phase 3 — quick-scan badge so admins
+                                                                        can spot per-file evaluation rules
+                                                                        in the addon list without opening
+                                                                        the edit form. */}
+                                                                    {(rule as any).perFileEvaluation && (
+                                                                        <div
+                                                                            className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                                                                            title="Addon evaluated separately for each uploaded file (per-file evaluation)"
+                                                                        >
+                                                                            Per file
+                                                                        </div>
+                                                                    )}
                                                                 </td>
 
                                                                 {/* Dynamic specification cells - show value or "Any" */}

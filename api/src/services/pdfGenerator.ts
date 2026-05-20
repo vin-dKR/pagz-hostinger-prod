@@ -31,6 +31,19 @@ export interface InvoiceData {
         addons?: Array<{
             name: string;
             price: number;
+            /** Phase 3 of per-file addon pricing — per-file sub-rows
+             *  rendered underneath this addon line when the rule has
+             *  `perFileEvaluation` on and 2+ files were uploaded.
+             *  Single-entry breakdowns collapse to the parent line. */
+            breakdown?: Array<{
+                /** Display filename (basename of the FTP url) — orderController
+                 *  pre-resolves it so the PDF generator doesn't need to know
+                 *  about FTP paths. */
+                label: string;
+                /** Optional page count hint for the sub-row (`500p`). */
+                pageCount?: number;
+                price: number;
+            }>;
         }>;
         /** Persisted breakdown rows from `OrderItem.metadata.priceBreakdown`,
          *  e.g. `Base Price (242 pages × 1 copies) → 266.20`. Rendered with
@@ -304,7 +317,19 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                     ? breakdown.reduce((sum, row) => sum + (Number(row.value) > 0 ? Number(row.value) : 0), 0)
                     : item.total + (item.addons || []).reduce((sum, a) => sum + a.price, 0);
 
-                ensurePageSpace(60 + breakdown.length * 14 + (item.addons?.length || 0) * 12);
+                // Account for Phase 3 per-file sub-rows under each addon
+                // (one extra ~12px row per sub-entry). The renderer calls
+                // `ensurePageSpace` again per sub-row so this is just a
+                // hint that keeps the title + Qty/Unit block grouped with
+                // the first few breakdown rows.
+                const addonSubRowCount = (item.addons || []).reduce(
+                    (sum, a) => sum + (a.breakdown?.length ?? 0),
+                    0,
+                );
+                ensurePageSpace(
+                    60 + breakdown.length * 14 + (item.addons?.length || 0) * 12
+                    + addonSubRowCount * 12,
+                );
 
                 const itemTitle = item.variant ? `${item.name} (${item.variant})` : item.name;
                 doc.font('Helvetica-Bold').fontSize(11).fillColor(colors.ink);
@@ -330,9 +355,42 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                 });
                 y += 14;
 
+                // Phase 3 — render per-file sub-rows for any addon with
+                // `perFileEvaluation` on and 2+ uploaded files. Reused by
+                // both the priceBreakdown path (sub-rows appear after the
+                // matching `Addon: <name>` row) and the legacy fallback.
+                const renderAddonSubRows = (
+                    subRows: NonNullable<typeof item.addons>[number]['breakdown'],
+                ) => {
+                    if (!subRows || subRows.length === 0) return;
+                    for (const sub of subRows) {
+                        ensurePageSpace(12);
+                        const pagesHint = sub.pageCount && sub.pageCount > 0
+                            ? ` (${sub.pageCount} pages)`
+                            : '';
+                        doc.font('Helvetica').fontSize(8.5).fillColor(colors.muted);
+                        doc.text(`  └ ${sub.label}${pagesHint}`, margin + 12, y, {
+                            width: contentWidth - 100,
+                        });
+                        doc.font('Helvetica').fontSize(8.5).fillColor(colors.ink);
+                        doc.text(currency(sub.price), margin, y, {
+                            width: contentWidth - 8,
+                            align: 'right',
+                        });
+                        y += 12;
+                    }
+                };
+
                 if (breakdown.length > 0) {
                     // Rows from server-stored priceBreakdown so the invoice
-                    // matches the customer-facing order detail screen.
+                    // matches the customer-facing order detail screen. When
+                    // a row label matches one of the order's addons by name
+                    // (`Addon: <specs>` prefix), inject the per-file
+                    // sub-rows right after it so the breakdown reads
+                    // top-down end-to-end.
+                    const addonByName = new Map(
+                        (item.addons || []).map((a) => [a.name.toLowerCase(), a]),
+                    );
                     for (const row of breakdown) {
                         ensurePageSpace(14);
                         doc.font('Helvetica').fontSize(9.5).fillColor(colors.muted);
@@ -345,6 +403,17 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                             });
                         }
                         y += 14;
+                        const lower = row.label.toLowerCase();
+                        // Match either explicit `addon: <name>` or any row
+                        // containing the addon's display name. Defensive
+                        // because cart/order writers historically used a
+                        // few different labels.
+                        const matched = Array.from(addonByName.entries()).find(
+                            ([key]) => lower.includes(key),
+                        );
+                        if (matched && matched[1].breakdown && matched[1].breakdown.length > 0) {
+                            renderAddonSubRows(matched[1].breakdown);
+                        }
                     }
                 } else {
                     // Fallback: the legacy item.total + addons list path.
@@ -360,6 +429,7 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                         doc.font('Helvetica').fontSize(9).fillColor(colors.ink);
                         doc.text(currency(addon.price), margin, y, { width: contentWidth - 8, align: 'right' });
                         y += 12;
+                        renderAddonSubRows(addon.breakdown);
                     }
                 }
 

@@ -8,6 +8,7 @@ import { Trash2 } from "lucide-react";
 import { getPublicS3Url, isImageFile, getFilenameFromS3Key } from "@/lib/utils/s3";
 import { UploadedFileTile } from "./UploadedFileTile";
 import { validateFiles } from "@/lib/utils/file-validation";
+import { AddonBreakdownRows } from "./AddonBreakdownRows";
 
 /**
  * Read base/addon/total from the server-computed `item.pricing` block
@@ -452,15 +453,25 @@ export default function CartItem({
                         `item.pricing.addons` (Phase 1 of per-file addon
                         pricing). The api is the single source of truth, so
                         no client-side `computeAddonLineTotal` recursion
-                        runs here anymore. */}
+                        runs here anymore. Phase 3 expands a per-file
+                        sub-row under each addon when the rule has
+                        `perFileEvaluation` on and 2+ files were uploaded. */}
                     {item.pricing?.addons && item.pricing.addons.length > 0 && (
-                        <ul className="mt-1.5 space-y-0.5">
+                        <ul className="mt-1.5 space-y-1">
                             {item.pricing.addons.map((addon) => (
                                 <li key={addon.ruleId} className="text-[11px] text-gray-500">
-                                    <span className="text-gray-600">{addon.name}</span>{" "}
-                                    <span className="font-medium text-gray-700">
-                                        ₹{toNumber(addon.total).toFixed(2)}
-                                    </span>
+                                    <div>
+                                        <span className="text-gray-600">{addon.name}</span>{" "}
+                                        <span className="font-medium text-gray-700">
+                                            ₹{toNumber(addon.total).toFixed(2)}
+                                        </span>
+                                    </div>
+                                    {addon.breakdown && addon.breakdown.length > 1 && (
+                                        <AddonBreakdownRows
+                                            breakdown={addon.breakdown}
+                                            variant="compact"
+                                        />
+                                    )}
                                 </li>
                             ))}
                         </ul>

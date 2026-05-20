@@ -74,7 +74,14 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     const [quantity, setQuantity] = useState<number>(1); // Keep for backward compatibility with NUMBER spec type
     const [isCopiesMode, setIsCopiesMode] = useState(false); // Track if user is in copies mode
 
-    const [priceBreakdown, setPriceBreakdown] = useState<Array<{ label: string; value: number }>>([]);
+    const [priceBreakdown, setPriceBreakdown] = useState<Array<{
+        label: string;
+        value: number;
+        /** Phase 3 — per-file price breakdown for `perFileEvaluation`
+         *  addons surfaced by `/cart/calculate-pricing`. The price card
+         *  renders sub-rows when length > 1. */
+        breakdown?: import('@/lib/api/cart').AddonBreakdownEntry[];
+    }>>([]);
     const [totalPrice, setTotalPrice] = useState<number>(0);
     const [basePricePerUnit, setBasePricePerUnit] = useState<number>(0);
     const [effectivePageCount, setEffectivePageCount] = useState<number | undefined>(undefined);
@@ -499,6 +506,26 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             }));
     }, [uploadedFileDetails]);
 
+    // Phase 3 — `resolveFilename` lets the price card render the per-file
+    // addon breakdown rows using the user's original filename (e.g.
+    // `design.pdf`) rather than an opaque FTP url basename. Falls back
+    // to the basename automatically inside `AddonBreakdownRows` when
+    // the map misses (e.g. user reloaded after upload).
+    const fileNameByUrl = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const fd of uploadedFileDetails) {
+            if (typeof fd.s3Key === 'string' && fd.s3Key && fd.file?.name) {
+                map.set(fd.s3Key, fd.file.name);
+            }
+        }
+        return map;
+    }, [uploadedFileDetails]);
+
+    const resolveFilename = useCallback(
+        (fileUrl: string) => fileNameByUrl.get(fileUrl),
+        [fileNameByUrl],
+    );
+
     const pricingHook = useCalculatePricing(
         {
             categoryId: category?.id ?? '',
@@ -518,7 +545,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         baseSubtotal: number;
         addonsSubtotal: number;
         total: number;
-        addons: Array<{ ruleId: string; name: string; total: number }>;
+        addons: Array<{
+            ruleId: string;
+            name: string;
+            total: number;
+            breakdown?: import('@/lib/api/cart').AddonBreakdownEntry[];
+        }>;
         effectivePageCount?: number;
         hasHalfPageAdjustment: boolean;
         pageCount: number;
@@ -549,7 +581,11 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         // one row per active addon. Mirrors the legacy `calculateCategoryPrice`
         // shape minus the half-page "informational" line (now surfaced via
         // `hasHalfPageAdjustment` + `effectivePageCount` instead).
-        const breakdown: Array<{ label: string; value: number }> = [];
+        const breakdown: Array<{
+            label: string;
+            value: number;
+            breakdown?: import('@/lib/api/cart').AddonBreakdownEntry[];
+        }> = [];
         if (data.baseSubtotal > 0) {
             const baseSuffix = data.pageCount > 0
                 ? ` (${data.effectivePageCount ?? data.pageCount} pages × ${pageCount > 0 ? copies : 1} copies)`
@@ -557,7 +593,14 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             breakdown.push({ label: `Base Price${baseSuffix}`, value: data.baseSubtotal });
         }
         for (const addon of data.addons) {
-            breakdown.push({ label: `Addon: ${addon.name}`, value: addon.total });
+            // `addon.breakdown` carries the per-file split for
+            // `perFileEvaluation` rules (Phase 3). The price card
+            // collapses it for single-entry breakdowns automatically.
+            breakdown.push({
+                label: `Addon: ${addon.name}`,
+                value: addon.total,
+                breakdown: addon.breakdown,
+            });
         }
         setPriceBreakdown(breakdown);
         setTotalPrice(data.total);
@@ -1842,6 +1885,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     setFilePassword('');
                 }}
                 priceItems={priceBreakdown}
+                resolveFilename={resolveFilename}
                 totalPrice={totalPrice}
                 basePricePerUnit={basePricePerUnit}
                 pageCount={effectivePageCount !== undefined ? effectivePageCount : (pageCount > 0 ? pageCount : undefined)}
