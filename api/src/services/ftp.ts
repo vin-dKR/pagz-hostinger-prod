@@ -28,6 +28,54 @@ const FTP_REMOTE_DIR = process.env.FTP_REMOTE_DIR || "public_html";
 // Used by controllers that accept multer "memoryStorage" and need a local path for basic-ftp.
 const FTP_TEMP_DIR = path.join(process.cwd(), "uploads", "ftp-temp");
 
+/**
+ * Navigate the client into the public root (FTP_REMOTE_DIR).
+ *
+ * Hostinger lands the FTP user in `/public_html` already — a blind
+ * `cd FTP_REMOTE_DIR` then creates `/public_html/public_html` via
+ * `ensureDir` and the rest of the session operates on the phantom
+ * subtree (uploads land in real `/public_html/orders/`, deletes look
+ * in phantom `/public_html/public_html/orders/`, etc.). Other hosts
+ * land in `/`, in which case we do need the cd.
+ *
+ * Returns the resulting `pwd()` so callers can log / verify.
+ */
+async function enterPublicRoot(client: Client): Promise<string> {
+    const currentPwd = await client.pwd();
+
+    // Already in the public root → no-op. Match by either exact path or
+    // by the trailing segment so both `/public_html` and a chrooted
+    // `/home/user/public_html` are accepted.
+    const target = FTP_REMOTE_DIR.replace(/^\/+|\/+$/g, "");
+    if (currentPwd === `/${target}` || currentPwd.endsWith(`/${target}`)) {
+        return currentPwd;
+    }
+
+    try {
+        await client.cd(FTP_REMOTE_DIR);
+        return await client.pwd();
+    } catch {
+        // Absolute-path form relative to login dir.
+        try {
+            const absolutePath = currentPwd.endsWith("/")
+                ? `${currentPwd}${target}`
+                : `${currentPwd}/${target}`;
+            await client.cd(absolutePath);
+            return await client.pwd();
+        } catch {
+            // Last resort: create it. Only safe to create the bare
+            // FTP_REMOTE_DIR — never the absolute combined path, because
+            // that's how `/public_html/public_html` was getting created.
+            try {
+                await client.ensureDir(FTP_REMOTE_DIR);
+                return await client.pwd();
+            } catch {
+                return currentPwd;
+            }
+        }
+    }
+}
+
 // Ensure temp directory exists
 if (!fs.existsSync(FTP_TEMP_DIR)) {
     fs.mkdirSync(FTP_TEMP_DIR, { recursive: true });
@@ -392,19 +440,9 @@ async function withFtpClient<T>(fn: (client: Client) => Promise<T>): Promise<T> 
 
         // Land in `public_html` so probe paths can be relative to the
         // public root (matching how callers store `customDesignUrl`).
-        // Mirrors the cd logic in `listFTPFiles` / `deleteFromFTP`.
-        try {
-            await client.cd(FTP_REMOTE_DIR);
-        } catch {
-            try {
-                await client.ensureDir(FTP_REMOTE_DIR);
-                await client.cd(FTP_REMOTE_DIR);
-            } catch {
-                // If we still can't cd, fall through — relative paths may
-                // still resolve from the login directory. probeFtpFile()
-                // will report `missing` if they don't.
-            }
-        }
+        // Uses the shared helper so we don't create the phantom
+        // `/public_html/public_html` subtree on Hostinger.
+        await enterPublicRoot(client);
 
         return await fn(client);
     } finally {
@@ -660,15 +698,13 @@ export async function deleteFromFTP(remoteFilePath: string): Promise<void> {
     
     try {
         await client.access(FTP_CONFIG);
-        
-        // Try to change to public_html, if it fails, try to create it
-        try {
-            await client.cd(FTP_REMOTE_DIR);
-        } catch (cdError) {
-            await client.ensureDir(FTP_REMOTE_DIR);
-            await client.cd(FTP_REMOTE_DIR);
-        }
-        
+
+        // Land in the public root. Smart helper detects when we're
+        // already there (Hostinger lands in /public_html on login) so
+        // we don't accidentally create a phantom /public_html/public_html
+        // subtree where deletes look but uploads never land.
+        await enterPublicRoot(client);
+
         const cleanPath = normalizeRemoteDeletePath(remoteFilePath);
         if (!cleanPath) {
             throw new Error("Invalid FTP file path");
@@ -696,7 +732,9 @@ export async function deleteFromFTP(remoteFilePath: string): Promise<void> {
 
         let lastError: unknown = null;
         let onlyNotFoundErrors = true;
+        const triedPaths: string[] = [];
         for (const candidate of candidates) {
+            triedPaths.push(candidate);
             try {
                 await client.remove(candidate);
                 return;
@@ -710,8 +748,17 @@ export async function deleteFromFTP(remoteFilePath: string): Promise<void> {
             }
         }
 
-        // Deleting an already-missing file is effectively idempotent success.
+        // 550 not-found across all candidates: treat as idempotent
+        // success — the deletion goal (file gone) is satisfied. This
+        // also covers the common UX case where the user clicks remove
+        // on a row whose file was already wiped by a prior session,
+        // sweep, or aborted-upload cleanup. We still log loudly so prod
+        // can investigate stored-path/CWD mismatches if they ever start
+        // happening en masse.
         if (onlyNotFoundErrors && candidates.length > 0) {
+            console.warn(
+                `[FTP] delete: file already absent; treating as success. input=${remoteFilePath} tried=${JSON.stringify(triedPaths)} cwd=${currentDir}`,
+            );
             return;
         }
 

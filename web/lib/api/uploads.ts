@@ -13,6 +13,7 @@ import {
     type UploadProgressCallback,
     type UploadProgressEvent,
 } from './ftp';
+import { extractPathFromUrl } from '../utils/fileUrl';
 import type { ApiResponse } from '../api-client';
 import { assertNonEmptyFiles, EmptyFilesError } from '../utils/file-validation';
 
@@ -187,25 +188,33 @@ export async function uploadReviewImages(
  *       We pass through the key (which is already the relative path).
  */
 export async function deleteOrderFile(fileKey: string): Promise<ApiResponse<null>> {
+    // Normalize: accept both a relative FTP path ("orders/abc.pdf") and a
+    // full URL ("https://pagz.in/orders/abc.pdf"). encodeURIComponent
+    // keeps `/` as `%2F` so the single-segment :filePath route still
+    // captures the full path; Express auto-decodes back on the server.
+    //
+    // Public call — no Authorization header. Matches the public upload
+    // routes; services page lets guests configure + upload before login
+    // so the matching cleanup can't require auth. The backend enforces
+    // a folder allowlist instead.
+    const path = extractPathFromUrl(fileKey);
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
     try {
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
         const response = await fetch(
-            `${API_BASE_URL}/ftp/delete/${encodeURIComponent(fileKey)}`,
+            `${API_BASE_URL}/ftp/delete/${encodeURIComponent(path)}`,
             { method: 'DELETE' },
         );
-
         if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             return {
                 success: false,
-                error: data.message || data.error || 'Failed to delete file',
+                error: data.message || data.error || `Failed to delete file (${response.status})`,
             };
         }
-
         return { success: true, data: null };
-    } catch (error: any) {
-        // Non-fatal — log but don't block the UI
-        console.warn('[uploads] deleteOrderFile failed (non-critical):', error?.message);
-        return { success: false, error: error?.message || 'Failed to delete file' };
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Failed to delete file';
+        console.warn('[uploads] deleteOrderFile failed:', message);
+        return { success: false, error: message };
     }
 }

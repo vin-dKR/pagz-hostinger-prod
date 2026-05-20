@@ -532,14 +532,19 @@ export default function ProductDocumentUpload({
             uploadAbortControllersRef.current.delete(fileId);
         }
 
-        // If file is already uploaded to S3, delete it
+        // If file is already uploaded, delete it from FTP. The wrapper
+        // returns `{ success: false, error }` on backend failure instead
+        // of throwing, so check explicitly — the previous try/catch would
+        // never fire and the success toast lied.
         if (fileToRemove.uploadStatus === 'uploaded' && fileToRemove.s3Key) {
-            try {
-                await deleteOrderFile(fileToRemove.s3Key);
+            const res = await deleteOrderFile(fileToRemove.s3Key);
+            if (res.success) {
                 toastSuccess('File removed from storage');
-            } catch (err) {
-                console.error('Failed to delete file from S3:', err);
-                // Continue with removal even if S3 delete fails
+            } else {
+                console.error('[uploads] FTP delete failed:', res.error, 'path:', fileToRemove.s3Key);
+                toastError(res.error || 'Failed to delete file from storage');
+                setRemovingFileId(null);
+                return; // keep row visible so user can retry
             }
         }
 
@@ -561,24 +566,26 @@ export default function ProductDocumentUpload({
     };
 
     // ── Derived upload-progress stats (issue #58) ─────────────────────────────
-    // `overallPercent` = (completed files + current file's percent) / total
-    // across every file currently visible in the list. Already-uploaded
-    // rows from prior batches count as 100% so the bar reflects the full
-    // session, not just the most recent selection.
+    // Per-row bars are the source of truth for % progress (each row shows
+    // its own real byte-count from xhr.upload.onprogress). Header just
+    // tracks current-of-total counts for at-a-glance status — no fake %.
     const files = uploadedFilesS3 ?? [];
-    const hasUploadsInFlight = files.some(
+    const inFlightFiles = files.filter(
         (fd) => fd.uploadStatus === 'pending' || fd.uploadStatus === 'uploading'
     );
-    const overallPercent = (() => {
-        if (files.length === 0) return 0;
-        const sum = files.reduce((acc, fd) => {
-            if (fd.uploadStatus === 'uploaded') return acc + 100;
-            if (fd.uploadStatus === 'uploading') return acc + (fd.uploadProgress ?? 0);
-            // pending/error → 0 toward progress; the row still shows its own state.
-            return acc;
-        }, 0);
-        return Math.min(100, Math.round(sum / files.length));
-    })();
+    const hasUploadsInFlight = inFlightFiles.length > 0;
+    const currentlyUploading = files.find((fd) => fd.uploadStatus === 'uploading');
+    // Among files participating in *this* upload session (excluding ones
+    // already uploaded before the current batch started), how many are done?
+    // We approximate by counting uploaded vs the (uploaded + inFlight) total
+    // — error rows are skipped so a failed upload doesn't make the count
+    // jump.
+    const sessionTotal = files.filter(
+        (fd) => fd.uploadStatus === 'pending' ||
+                fd.uploadStatus === 'uploading' ||
+                fd.uploadStatus === 'uploaded'
+    ).length;
+    const sessionDone = files.filter((fd) => fd.uploadStatus === 'uploaded').length;
 
     return (
         <div className={className}>
@@ -607,7 +614,9 @@ export default function ProductDocumentUpload({
                         {(isProcessing || hasUploadsInFlight) ? (
                             <>
                                 <Loader2 size={18} className="animate-spin" />
-                                {hasUploadsInFlight ? `Uploading ${overallPercent}%…` : 'Processing...'}
+                                {hasUploadsInFlight
+                                    ? `Uploading ${Math.min(sessionDone + 1, sessionTotal)}/${sessionTotal}…`
+                                    : 'Processing...'}
                             </>
                         ) : (
                             <>
@@ -656,22 +665,25 @@ export default function ProductDocumentUpload({
                 {/* File List */}
                 {uploadedFilesS3 && uploadedFilesS3.length > 0 && (
                     <div className="space-y-3">
-                        {/* Overall progress + cancel-all (issue #58) */}
+                        {/* Compact session header: current file name + cancel-all.
+                            Per-row bars below show the real % for each file —
+                            no duplicate aggregate bar (issue #58 follow-up). */}
                         {hasUploadsInFlight && (
-                            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                <Loader2 size={16} className="text-blue-600 shrink-0 animate-spin" />
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between text-xs text-blue-700 mb-1">
-                                        <span>Uploading files…</span>
-                                        <span className="font-semibold">{overallPercent}%</span>
-                                    </div>
-                                    <div className="w-full bg-blue-100 rounded-full h-1.5 overflow-hidden">
-                                        <div
-                                            className="bg-blue-600 h-1.5 rounded-full transition-all duration-200"
-                                            style={{ width: `${overallPercent}%` }}
-                                        />
-                                    </div>
-                                </div>
+                            <div className="flex items-center justify-between gap-3 px-1 text-xs text-blue-700">
+                                <span className="truncate">
+                                    Uploading{' '}
+                                    <span className="font-medium">
+                                        {Math.min(sessionDone + 1, sessionTotal)} of {sessionTotal}
+                                    </span>
+                                    {currentlyUploading && (
+                                        <>
+                                            <span className="text-gray-500"> · </span>
+                                            <span className="font-medium truncate">
+                                                {currentlyUploading.file.name}
+                                            </span>
+                                        </>
+                                    )}
+                                </span>
                                 <button
                                     type="button"
                                     onClick={handleCancelAll}
