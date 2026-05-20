@@ -12,13 +12,13 @@ import { QuantityWithCopiesSelector } from '@/app/components/services/QuantityWi
 import { FileDetail } from '@/app/components/products/ProductDocumentUpload';
 import {
     getCategoryBySlug,
-    calculateCategoryPrice,
     getProductsBySpecifications,
     getCategoryAddons,
     type Category,
     type CategorySpecification,
     type CategoryAddon,
 } from '@/lib/api/categories';
+import { useCalculatePricing } from '@/lib/hooks/use-calculate-pricing';
 import { SubcategoryGrid } from '@/app/components/services/SubcategoryGrid';
 import CategoryReviewsSection from '@/app/components/reviews/CategoryReviewsSection';
 import {
@@ -371,71 +371,6 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         // memo defined below.
     }, [category, categorySlug]);
 
-    const calculatePrice = useCallback(async () => {
-        if (!category) return;
-
-        try {
-            setCalculatingPrice(true);
-
-            // Log the combination being used for price calculation
-            const combinationLog: Record<string, string> = {};
-            Object.entries(selectedSpecifications).forEach(([slug, value]) => {
-                const spec = category.specifications?.find(s => s.slug === slug);
-                if (spec) {
-                    const option = spec.options.find(o => o.value === value);
-                    combinationLog[spec.name] = option?.label || value || 'Not selected';
-                } else {
-                    combinationLog[slug] = String(value);
-                }
-            });
-
-            // Always use totalQuantity which already includes copies multiplication
-            const result = await calculateCategoryPrice(categorySlug, {
-                specifications: selectedSpecifications,
-                quantity: totalQuantity,
-                pageCount: pageCount > 0 ? pageCount : undefined,
-                copies: pageCount > 0 ? copies : undefined,
-                // Drives fileMultiplier addon rules so the preview matches
-                // the cart/checkout totals. At least 1 so a single-file
-                // upload still multiplies correctly.
-                fileCount: uploadedFiles.length > 0 ? uploadedFiles.length : undefined,
-            });
-
-            setPriceBreakdown(result.breakdown);
-            setTotalPrice(result.totalPrice);
-            setEffectivePageCount(result.effectivePageCount);
-            setOriginalPageCount(result.originalPageCount);
-            setHasHalfPageAdjustment(result.hasHalfPageAdjustment || false);
-
-            // Derive base price per unit only from the base price line, not including addons
-            // Use effective quantity if available (for half-page adjustments)
-            const effectiveQuantity = result.quantity || totalQuantity;
-            const baseLine = result.breakdown.find((item) =>
-                item.label.toLowerCase().startsWith('base')
-            );
-            // Only compute per-unit base price if the pricing rule actually multiplied by quantity
-            if (baseLine && effectiveQuantity > 0 && result.baseQuantityMultiplierApplied) {
-                setBasePricePerUnit(baseLine.value / effectiveQuantity);
-            } else {
-                setBasePricePerUnit(0);
-            }
-        } catch (err: any) {
-            // Only log network errors, don't show toasts or redirect
-            if (err?.message?.includes('NetworkError') || err?.name === 'TypeError') {
-                console.warn('Price calculation network error (will retry):', err);
-            } else {
-                console.error('Price calculation error:', err);
-            }
-            // Don't clear price on network errors - keep previous values
-            if (!err?.message?.includes('NetworkError') && err?.name !== 'TypeError') {
-                setPriceBreakdown([]);
-                setTotalPrice(0);
-            }
-        } finally {
-            setCalculatingPrice(false);
-        }
-    }, [category, categorySlug, selectedSpecifications, totalQuantity, pageCount, copies, uploadedFiles.length]);
-
     const checkForProduct = useCallback(async () => {
         if (!category) return;
 
@@ -497,15 +432,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
     }, [category, categorySlug, selectedSpecifications]);
 
 
-    // Calculate price and check for products whenever selections or quantity change
+    // Product-match lookup (separate from pricing — runs when the user has
+    // picked enough specs to identify a published product). Pricing is now
+    // driven by the `useCalculatePricing` hook below, not this effect.
     useEffect(() => {
         if (category && Object.keys(selectedSpecifications).length > 0) {
-            calculatePrice();
             checkForProduct();
         } else {
             setMatchingProduct(null);
         }
-    }, [selectedSpecifications, totalQuantity, category, categorySlug, calculatePrice, checkForProduct]);
+    }, [selectedSpecifications, category, categorySlug, checkForProduct]);
 
     // Get available options for a specification based on dependencies
     const getAvailableOptions = (spec: CategorySpecification): Option[] => {
@@ -522,77 +458,130 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         }));
     };
 
-    // Compute which addon pricing rules are active for current selection and total pages.
-    // Spec values are compared as strings because dropdowns produce strings while
-    // the admin UI can persist booleans / numbers in the rule's specificationValues.
+    // Spec-matched addon rule ids for the current selections.
+    //
+    // Previously this also did range-gating and spec-group dominance to
+    // match the server math. Phase 1 moves all that logic into
+    // `/cart/calculate-pricing` (engine: `api/src/utils/addon-pricing.ts`),
+    // so the client only needs to identify which rules match the current
+    // spec map — the server filters out out-of-range and dominated rules.
+    // String compare because dropdowns produce strings while admin can
+    // persist booleans / numbers in `rule.specificationValues`.
     const selectedAddonIds = useMemo(() => {
         if (!availableAddons || availableAddons.length === 0) return [];
-
         const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
-
-        // Two range bases — copyMultiplier addons gate on per-copy
-        // *effective* sheets (binding-style: one binding per book, range
-        // vs sheets actually printed in a single book post half-page).
-        // All other addons gate on total effective sheets (sheets ×
-        // copies) so binding / lamination / page-numbering all gate on
-        // the physical sheet count, not the raw document length.
-        const safeCopies = copies > 0 ? copies : 1;
-        // Per-copy effective sheets — prefer half-page-reduced count.
-        const perCopySheets = effectivePageCount && effectivePageCount > 0
-            ? effectivePageCount
-            : pageCount > 0
-                ? pageCount
-                : null;
-        const totalEffectiveSheets = perCopySheets != null
-            ? perCopySheets * safeCopies
-            : (isCopiesMode ? quantity * safeCopies : quantity);
-        const totalRange = totalEffectiveSheets > 0 ? totalEffectiveSheets : null;
-        const perCopyRange = perCopySheets;
-
-        const stableSpecKey = (specs: Record<string, any>) => {
-            const keys = Object.keys(specs).sort();
-            return keys.map((k) => `${k}=${normalize(specs[k])}`).join("|") || "__empty__";
-        };
-
-        // Step 1: spec-match + range-gate filter.
-        const specMatched = availableAddons.filter((rule) => {
-            const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
-            for (const [slug, val] of Object.entries(ruleSpecs)) {
-                if (normalize(selectedSpecifications[slug]) !== normalize(val)) {
-                    return false;
+        return availableAddons
+            .filter((rule) => {
+                const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
+                for (const [slug, val] of Object.entries(ruleSpecs)) {
+                    if (normalize(selectedSpecifications[slug]) !== normalize(val)) {
+                        return false;
+                    }
                 }
-            }
-            const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
-            if (!hasPageRange) return true;
-            const basis = rule.copyMultiplier ? perCopyRange : totalRange;
-            if (basis == null) return false;
-            if (rule.minQuantity != null && basis < rule.minQuantity) return false;
-            if (rule.maxQuantity != null && basis > rule.maxQuantity) return false;
-            return true;
-        });
+                return true;
+            })
+            .map((rule) => rule.id);
+    }, [availableAddons, selectedSpecifications]);
 
-        // Step 2: spec-group dominance — when any rule in a spec group
-        // is copyMultiplier=true, drop the non-copyMultiplier siblings
-        // so a "51-100 pages" total-tier rule doesn't double-charge
-        // alongside a "1-50 pages × copies" per-book rule on the same
-        // binding spec.
-        const groups = new Map<string, typeof specMatched>();
-        for (const rule of specMatched) {
-            const key = stableSpecKey((rule.specificationValues || {}) as Record<string, any>);
-            const list = groups.get(key);
-            if (list) list.push(rule);
-            else groups.set(key, [rule]);
+    // ── Live pricing via the public /cart/calculate-pricing endpoint ────────
+    // Phase 1 of the per-file addon pricing rollout
+    // (`prompts/per-file-addon-pricing-architecture.md` §2 Phase 1).
+    // The api is the single source of truth for the number we display here.
+    // 200ms debounce hides the round-trip during spec / copy / addon edits.
+    const pricingFiles = useMemo(() => {
+        return uploadedFileDetails
+            .filter((fd) => typeof fd.s3Key === 'string' && fd.s3Key.length > 0)
+            .map((fd) => ({
+                url: fd.s3Key as string,
+                pageCount: fd.type === 'image'
+                    ? 1
+                    : (typeof fd.pageCount === 'number' && fd.pageCount > 0 ? fd.pageCount : 1),
+            }));
+    }, [uploadedFileDetails]);
+
+    const pricingHook = useCalculatePricing(
+        {
+            categoryId: category?.id ?? '',
+            selectedSpecifications: selectedSpecifications as Record<string, string>,
+            selectedAddons: selectedAddonIds,
+            files: pricingFiles.length > 0 ? pricingFiles : undefined,
+            copies: pageCount > 0 ? copies : 1,
+        },
+        {
+            enabled: Boolean(category?.id) && Object.keys(selectedSpecifications).length > 0,
+        },
+    );
+
+    // Hold the last successful response so a transient network error keeps
+    // the visible price stable instead of bouncing back to ₹0.
+    const lastPricingRef = useRef<{
+        baseSubtotal: number;
+        addonsSubtotal: number;
+        total: number;
+        addons: Array<{ ruleId: string; name: string; total: number }>;
+        effectivePageCount?: number;
+        hasHalfPageAdjustment: boolean;
+        pageCount: number;
+    } | null>(null);
+
+    // Sync the hook's response into the page-local state shapes the existing
+    // price card + add-to-cart payload consumers already expect. Keeps the
+    // refactor surgical — no downstream component contract changes.
+    useEffect(() => {
+        if (pricingHook.isLoading) {
+            setCalculatingPrice(true);
+        } else {
+            setCalculatingPrice(false);
         }
-        const surviving: string[] = [];
-        for (const group of groups.values()) {
-            const hasCopyDominant = group.some((r) => r.copyMultiplier);
-            for (const rule of group) {
-                if (hasCopyDominant && !rule.copyMultiplier && !rule.fileMultiplier) continue;
-                surviving.push(rule.id);
+
+        const data = pricingHook.data;
+        if (!data) {
+            if (pricingHook.isError) {
+                // Keep the last good response on screen — log only.
+                console.warn('[services] pricing request failed; using last known total', pricingHook.error);
             }
+            return;
         }
-        return surviving;
-    }, [availableAddons, selectedSpecifications, pageCount, effectivePageCount, copies, quantity, isCopiesMode]);
+
+        lastPricingRef.current = data;
+
+        // Build the labeled breakdown the price card consumes. Base row +
+        // one row per active addon. Mirrors the legacy `calculateCategoryPrice`
+        // shape minus the half-page "informational" line (now surfaced via
+        // `hasHalfPageAdjustment` + `effectivePageCount` instead).
+        const breakdown: Array<{ label: string; value: number }> = [];
+        if (data.baseSubtotal > 0) {
+            const baseSuffix = data.pageCount > 0
+                ? ` (${data.effectivePageCount ?? data.pageCount} pages × ${pageCount > 0 ? copies : 1} copies)`
+                : '';
+            breakdown.push({ label: `Base Price${baseSuffix}`, value: data.baseSubtotal });
+        }
+        for (const addon of data.addons) {
+            breakdown.push({ label: `Addon: ${addon.name}`, value: addon.total });
+        }
+        setPriceBreakdown(breakdown);
+        setTotalPrice(data.total);
+        setEffectivePageCount(data.effectivePageCount);
+        setOriginalPageCount(data.pageCount > 0 ? data.pageCount : undefined);
+        setHasHalfPageAdjustment(data.hasHalfPageAdjustment);
+
+        // Derive a per-unit base price for the price card's "₹X × N pages"
+        // line. Only meaningful when the base scales with pages (legacy
+        // `baseQuantityMultiplierApplied` flag).
+        const effPages = (data.effectivePageCount ?? data.pageCount) * (pageCount > 0 ? copies : 1);
+        if (effPages > 1 && data.baseSubtotal > 0) {
+            setBasePricePerUnit(data.baseSubtotal / effPages);
+        } else {
+            setBasePricePerUnit(0);
+        }
+    }, [
+        pricingHook.data,
+        pricingHook.isLoading,
+        pricingHook.isError,
+        pricingHook.error,
+        copies,
+        pageCount,
+    ]);
 
     // Debounced save of the in-progress draft (300ms after last change).
     // We skip until `hasHydratedRef` is true so the restore pass doesn't

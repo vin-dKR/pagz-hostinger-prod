@@ -1,18 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { CartItem, AddonRule } from "@/lib/api/cart";
+import { CartItem } from "@/lib/api/cart";
 import { FileText } from "lucide-react";
-import {
-    computeAddonLineTotal,
-    derivePriceBreakdown,
-    getAddonLabel,
-} from "@/lib/utils/addon-pricing";
 import { getPublicS3Url } from "@/lib/utils/s3";
 
 interface OrderReviewProps {
     items: CartItem[];
 }
+
+const toNumber = (value: unknown): number => {
+    if (value === null || value === undefined) return 0;
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : 0;
+};
 
 export default function OrderReview({ items }: OrderReviewProps) {
     return (
@@ -29,8 +30,12 @@ export default function OrderReview({ items }: OrderReviewProps) {
                     : "/images/placeholder.png";
                 const productName = product?.name || "Unknown Product";
 
-                const { baseTotal: finalBaseTotal, addonTotal: finalAddonTotal, total: finalTotal } =
-                    derivePriceBreakdown(item);
+                // Server-authoritative pricing — see `cartController.getCart`
+                // Phase 1 of per-file addon pricing rolled all the math up
+                // into one engine on the api side.
+                const finalBaseTotal = toNumber(item.pricing?.baseTotal);
+                const finalAddonTotal = toNumber(item.pricing?.addonTotal);
+                const finalTotal = toNumber(item.pricing?.total);
 
                 // Get uploaded files from cart item (S3 URLs already stored)
                 const uploadedFileUrls = Array.isArray(item.customDesignUrl)
@@ -96,20 +101,13 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                         <span className="font-medium">₹{finalAddonTotal.toFixed(2)}</span>
                                     </div> 
                                 )}
-                                {item.addons && item.addons.length > 0 && (
+                                {item.pricing?.addons && item.pricing.addons.length > 0 && (
                                     <div className="mt-1 pl-2 border-l-2 border-purple-200">
-                                        {(item.addons as AddonRule[]).map((addon, idx) => {
-                                            const addonItemTotal = computeAddonLineTotal(addon, {
-                                                quantity: item.quantity,
-                                                metadata: item.metadata,
-                                                fileCount: uploadedFileUrls.length,
-                                            });
-                                            return (
-                                                <div key={addon.id ?? idx} className="text-xs text-purple-700 mb-0.5">
-                                                    {getAddonLabel(addon, idx)}: ₹{addonItemTotal.toFixed(2)}
-                                                </div>
-                                            );
-                                        })}
+                                        {item.pricing.addons.map((addon) => (
+                                            <div key={addon.ruleId} className="text-xs text-purple-700 mb-0.5">
+                                                {addon.name}: ₹{toNumber(addon.total).toFixed(2)}
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                                 <div className="flex justify-between text-sm font-hkgb font-bold text-gray-900 mt-1 pt-1 border-t border-gray-200">

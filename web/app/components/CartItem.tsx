@@ -2,13 +2,25 @@
 
 import { useState, useRef, useMemo } from "react";
 import PriceDisplay from "./PriceDisplay";
-import { CartItem as CartItemType, AddonRule } from "@/lib/api/cart";
+import { CartItem as CartItemType } from "@/lib/api/cart";
 import Image from "next/image";
 import { Trash2 } from "lucide-react";
 import { getPublicS3Url, isImageFile, getFilenameFromS3Key } from "@/lib/utils/s3";
-import { derivePriceBreakdown, getAddonLabel, computeAddonLineTotal } from "@/lib/utils/addon-pricing";
 import { UploadedFileTile } from "./UploadedFileTile";
 import { validateFiles } from "@/lib/utils/file-validation";
+
+/**
+ * Read base/addon/total from the server-computed `item.pricing` block
+ * returned by `GET /cart`. Falls back to ₹0 — Phase 1 of per-file addon
+ * pricing eliminated the client-side fallback math (`derivePriceBreakdown`
+ * + the inline `computeAddonLineTotal` recursion) so the cart UI never
+ * derives a number itself.
+ */
+const toNumber = (value: unknown): number => {
+    if (value === null || value === undefined) return 0;
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : 0;
+};
 
 interface CartItemProps {
     item: CartItemType;
@@ -143,9 +155,19 @@ export default function CartItem({
         return productImage;
     }, [hasTemplate, templateFormImages, uploadedFileUrls, productImage]);
 
-    // Unified price derivation (prefers server-computed pricing, falls back to
-    // metadata breakdown, finally to local calc). See lib/utils/addon-pricing.
-    const priceBreakdown = useMemo(() => derivePriceBreakdown(item), [item]);
+    // Server-authoritative pricing — `GET /cart` always returns `pricing`,
+    // computed via `api/src/utils/addon-pricing.ts`. Phase 1 removed every
+    // client-side fallback computation. If `pricing` is missing the row
+    // renders at ₹0 (only possible if the api response shape changed —
+    // surface in monitoring rather than silently guess).
+    const priceBreakdown = useMemo(() => {
+        const pricing = item.pricing;
+        return {
+            baseTotal: toNumber(pricing?.baseTotal),
+            addonTotal: toNumber(pricing?.addonTotal),
+            total: toNumber(pricing?.total),
+        };
+    }, [item.pricing]);
 
     const size = variant?.name;
 
@@ -426,63 +448,21 @@ export default function CartItem({
                         </div>
                     </div>
 
-                    {/* Per-addon list. Each row shows the math
-                        (`₹unit × N pages × M copies = ₹total`) for
-                        copyMultiplier / quantityMultiplier addons so the
-                        customer sees the same breakdown as the admin
-                        order detail and the order detail screen. */}
-                    {item.addons && item.addons.length > 0 && (
+                    {/* Per-addon list — reads server-computed totals from
+                        `item.pricing.addons` (Phase 1 of per-file addon
+                        pricing). The api is the single source of truth, so
+                        no client-side `computeAddonLineTotal` recursion
+                        runs here anymore. */}
+                    {item.pricing?.addons && item.pricing.addons.length > 0 && (
                         <ul className="mt-1.5 space-y-0.5">
-                            {(item.addons as AddonRule[]).map((addon, idx) => {
-                                const total = computeAddonLineTotal(addon, {
-                                    quantity: item.quantity,
-                                    metadata: item.metadata,
-                                    fileCount: uploadedFileUrls.length,
-                                });
-                                const unit =
-                                    addon.priceModifier != null
-                                        ? Number(addon.priceModifier)
-                                        : addon.basePrice != null
-                                            ? Number(addon.basePrice)
-                                            : 0;
-                                const meta = (item.metadata || {}) as {
-                                    pageCount?: number;
-                                    copies?: number;
-                                    effectivePageCount?: number;
-                                };
-                                const safeCopies = meta.copies && meta.copies > 0 ? meta.copies : 1;
-                                const perCopySheets = meta.effectivePageCount && meta.effectivePageCount > 0
-                                    ? meta.effectivePageCount
-                                    : meta.pageCount && meta.pageCount > 0
-                                        ? meta.pageCount
-                                        : 0;
-                                const totalSheets = perCopySheets > 0 ? perCopySheets * safeCopies : 0;
-                                const parts: string[] = [];
-                                if (addon.copyMultiplier) {
-                                    if (addon.quantityMultiplier && perCopySheets > 1) {
-                                        parts.push(`${perCopySheets} ${perCopySheets === 1 ? "page" : "pages"}`);
-                                    }
-                                    parts.push(`${safeCopies} ${safeCopies === 1 ? "copy" : "copies"}`);
-                                } else if (addon.fileMultiplier && uploadedFileUrls.length > 1) {
-                                    parts.push(`${uploadedFileUrls.length} files`);
-                                } else if (addon.quantityMultiplier && totalSheets > 1) {
-                                    parts.push(`${totalSheets} ${totalSheets === 1 ? "page" : "pages"}`);
-                                }
-                                const mathStr = parts.length > 0
-                                    ? `₹${unit.toFixed(2)} × ${parts.join(" × ")} = ₹${total.toFixed(2)}`
-                                    : null;
-                                return (
-                                    <li key={addon.id} className="text-[11px] text-gray-500">
-                                        <span className="text-gray-600">{getAddonLabel(addon, idx)}</span>{" "}
-                                        <span className="font-medium text-gray-700">₹{total.toFixed(2)}</span>
-                                        {mathStr && (
-                                            <span className="block ml-0 mt-0.5 text-[10px] font-mono text-gray-400">
-                                                {mathStr}
-                                            </span>
-                                        )}
-                                    </li>
-                                );
-                            })}
+                            {item.pricing.addons.map((addon) => (
+                                <li key={addon.ruleId} className="text-[11px] text-gray-500">
+                                    <span className="text-gray-600">{addon.name}</span>{" "}
+                                    <span className="font-medium text-gray-700">
+                                        ₹{toNumber(addon.total).toFixed(2)}
+                                    </span>
+                                </li>
+                            ))}
                         </ul>
                     )}
                 </div>
