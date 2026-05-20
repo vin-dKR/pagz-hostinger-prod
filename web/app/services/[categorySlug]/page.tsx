@@ -26,7 +26,7 @@ import {
     isSpecificationVisible as isSpecificationVisibleUtil,
     clearDependentSpecifications,
 } from '@/lib/utils/specification-dependencies';
-import { addToCart } from '@/lib/api/cart';
+import { addToCart, type FileMeta } from '@/lib/api/cart';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import { ProductData, BreadcrumbItem } from '@/types';
@@ -215,6 +215,30 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
 
         return { pdfPageCount: pdfPages, imageCount: images };
     }, [uploadedFileDetails]);
+
+    /**
+     * Phase 0 — per-file `{ url, pageCount }` array built from a snapshot
+     * of `FileDetail[]` whose `s3Key` is populated (i.e. the file has
+     * landed on FTP). Used by add-to-cart and buy-now to populate
+     * `metadata.files` on the cart/pending-purchase payload.
+     *
+     * Caller passes the current snapshot — we don't read closure state
+     * directly because the auth path can inline-upload mid-handler and
+     * needs to capture the freshly assigned `s3Key`s without waiting
+     * for a re-render.
+     *
+     * Spec reference: `prompts/per-file-addon-pricing-architecture.md` §3.1.
+     */
+    const buildFilesMeta = useCallback((details: FileDetail[]): FileMeta[] => {
+        return details
+            .filter((fd) => typeof fd.s3Key === 'string' && fd.s3Key.length > 0)
+            .map((fd) => ({
+                url: fd.s3Key as string,
+                pageCount: fd.type === 'image'
+                    ? 1
+                    : (typeof fd.pageCount === 'number' && fd.pageCount > 0 ? fd.pageCount : 0),
+            }));
+    }, []);
 
     // Fetch category data on mount
     useEffect(() => {
@@ -900,6 +924,11 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     )
                     : [];
 
+                // Phase 0 — guest entry carries per-file `{url, pageCount}`
+                // so the post-login merge can POST it to `/cart` and the
+                // server can persist `CartItem.metadata.files`.
+                const guestFilesMeta = buildFilesMeta(uploadedFileDetails);
+
                 const purchaseData: PendingPurchaseData = {
                     type: 'service',
                     categorySlug,
@@ -931,6 +960,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         effectivePageCount: hasHalfPageAdjustment ? effectivePageCount : undefined,
                         originalPageCount: hasHalfPageAdjustment ? originalPageCount : undefined,
                         hasHalfPageAdjustment: hasHalfPageAdjustment || undefined,
+                        files: guestFilesMeta.length > 0 ? guestFilesMeta : undefined,
                     },
                     currentPrice: totalPrice,
                     totalPrice,
@@ -993,6 +1023,23 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 .map(f => f.s3Key!)
                 .filter(Boolean);
 
+            // Phase 0 — local lookup of `s3Key/url → pageCount` so we can
+            // build `metadata.files` after any inline uploads complete.
+            // Closure state from `uploadedFileDetails` won't reflect
+            // setState mutations made later in this handler, so we mirror
+            // the per-file pageCount here and update it alongside each
+            // newly assigned key.
+            const filePageCountByKey = new Map<string, number>();
+            const pageCountForDetail = (fd: FileDetail): number =>
+                fd.type === 'image'
+                    ? 1
+                    : (typeof fd.pageCount === 'number' && fd.pageCount > 0 ? fd.pageCount : 0);
+            for (const fd of uploadedFileDetails) {
+                if (typeof fd.s3Key === 'string' && fd.s3Key.length > 0) {
+                    filePageCountByKey.set(fd.s3Key, pageCountForDetail(fd));
+                }
+            }
+
             // If we have files but no S3 keys, upload them now
             // Only check this if files are actually required (not if template is selected)
             if (uploadedFiles.length > 0 && s3Keys.length === 0 && !selectedTemplateId) {
@@ -1005,6 +1052,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             if (response.success && response.data?.files?.[0]?.key) {
                                 const key = response.data.files[0].key;
                                 s3Keys.push(key);
+                                filePageCountByKey.set(key, pageCountForDetail(fileDetail));
                                 setUploadedFilesS3(prev =>
                                     prev.map(fd =>
                                         fd.id === fileDetail.id
@@ -1033,6 +1081,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     const filesWithKeys = uploadedFilesS3.filter(f => f.s3Key);
                     if (filesWithKeys.length > 0) {
                         s3Keys = filesWithKeys.map(f => f.s3Key!).filter(Boolean);
+                        for (const fd of filesWithKeys) {
+                            if (fd.s3Key) filePageCountByKey.set(fd.s3Key, pageCountForDetail(fd));
+                        }
                     } else {
                         // Files don't have s3Key - they need to be uploaded
                         // Try to upload files that don't have s3Key
@@ -1045,6 +1096,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                     if (response.success && response.data?.files?.[0]?.key) {
                                         const key = response.data.files[0].key;
                                         s3Keys.push(key);
+                                        filePageCountByKey.set(key, pageCountForDetail(fileDetail));
                                         setUploadedFilesS3(prev =>
                                             prev.map(fd =>
                                                 fd.id === fileDetail.id
@@ -1080,6 +1132,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             // The template preview image should only be in metadata.templatePreviewImage
             // customDesignUrl should only contain user-uploaded files
 
+            // Phase 0 — per-file `{ url, pageCount }` for the authoritative
+            // cart-write. Built from `s3Keys` (live order, including any
+            // inline uploads we just completed) zipped against
+            // `filePageCountByKey` so the array stays in sync with what
+            // we just persisted to FTP.
+            const filesMeta: FileMeta[] = s3Keys.map((url) => ({
+                url,
+                pageCount: filePageCountByKey.get(url) ?? 0,
+            }));
+
             // Prepare metadata with template information
             const hasTemplateFormData = Object.keys(templateFormData).length > 0;
             const metadata: any = {
@@ -1087,6 +1149,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 copies: pageCount > 0 ? copies : undefined,
                 priceBreakdown,
                 selectedAddons: selectedAddonIds,
+                files: filesMeta.length > 0 ? filesMeta : undefined,
                 fileHasPassword: fileHasPassword ? true : undefined,
                 filePassword: fileHasPassword ? (filePassword || undefined) : undefined,
                 filePasswords: fileHasPassword
@@ -1216,6 +1279,12 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     )
                     : [];
 
+                // Phase 0 — buy-now guest entry also carries per-file
+                // metadata so the post-login `/cart` POST persists
+                // `CartItem.metadata.files` consistently with the
+                // add-to-cart path.
+                const guestBuyNowFilesMeta = buildFilesMeta(uploadedFileDetails);
+
                 const purchaseData: PendingPurchaseData = {
                     type: 'service',
                     categorySlug,
@@ -1246,6 +1315,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                         effectivePageCount: hasHalfPageAdjustment ? effectivePageCount : undefined,
                         originalPageCount: hasHalfPageAdjustment ? originalPageCount : undefined,
                         hasHalfPageAdjustment: hasHalfPageAdjustment || undefined,
+                        files: guestBuyNowFilesMeta.length > 0 ? guestBuyNowFilesMeta : undefined,
                     },
                     currentPrice: totalPrice,
                     totalPrice,
@@ -1325,6 +1395,22 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 .map(f => f.s3Key!)
                 .filter(Boolean);
 
+            // Phase 0 — local `url → pageCount` map mirrored alongside any
+            // inline uploads completed below, so the per-file metadata sent
+            // into the buy-now payload stays in sync with what we just
+            // persisted to FTP. See the matching block in `handleAddToCart`
+            // for the rationale.
+            const filePageCountByKey = new Map<string, number>();
+            const pageCountForDetail = (fd: FileDetail): number =>
+                fd.type === 'image'
+                    ? 1
+                    : (typeof fd.pageCount === 'number' && fd.pageCount > 0 ? fd.pageCount : 0);
+            for (const fd of uploadedFileDetails) {
+                if (typeof fd.s3Key === 'string' && fd.s3Key.length > 0) {
+                    filePageCountByKey.set(fd.s3Key, pageCountForDetail(fd));
+                }
+            }
+
             // If we have files but no S3 keys, upload them now
             // Only check this if files are actually required (not if template is selected)
             if (uploadedFiles.length > 0 && s3Keys.length === 0 && !selectedTemplateId) {
@@ -1337,6 +1423,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             if (response.success && response.data?.files?.[0]?.key) {
                                 const key = response.data.files[0].key;
                                 s3Keys.push(key);
+                                filePageCountByKey.set(key, pageCountForDetail(fileDetail));
                                 setUploadedFilesS3(prev =>
                                     prev.map(fd =>
                                         fd.id === fileDetail.id
@@ -1365,6 +1452,9 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                     const filesWithKeys = uploadedFilesS3.filter(f => f.s3Key);
                     if (filesWithKeys.length > 0) {
                         s3Keys = filesWithKeys.map(f => f.s3Key!).filter(Boolean);
+                        for (const fd of filesWithKeys) {
+                            if (fd.s3Key) filePageCountByKey.set(fd.s3Key, pageCountForDetail(fd));
+                        }
                     } else {
                         // Files don't have s3Key - they need to be uploaded
                         // Try to upload files that don't have s3Key
@@ -1377,6 +1467,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                     if (response.success && response.data?.files?.[0]?.key) {
                                         const key = response.data.files[0].key;
                                         s3Keys.push(key);
+                                        filePageCountByKey.set(key, pageCountForDetail(fileDetail));
                                         setUploadedFilesS3(prev =>
                                             prev.map(fd =>
                                                 fd.id === fileDetail.id
@@ -1412,6 +1503,16 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             // The template preview image should only be in metadata.templatePreviewImage
             // customDesignUrl should only contain user-uploaded files
 
+            // Phase 0 — per-file metadata for the buy-now path. The
+            // sessionStorage `buyNow` blob is consumed by the checkout
+            // page which passes `metadata` straight through to
+            // `/payment/razorpay/create-order-from-cart`, so the same
+            // shape lands on `PendingPayment.items` → `OrderItem.metadata`.
+            const filesMeta: FileMeta[] = s3Keys.map((url) => ({
+                url,
+                pageCount: filePageCountByKey.get(url) ?? 0,
+            }));
+
             // Prepare metadata with template information
             const hasTemplateFormData = Object.keys(templateFormData).length > 0;
             const buyNowMetadata: any = {
@@ -1419,6 +1520,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 copies: pageCount > 0 ? copies : undefined,
                 priceBreakdown,
                 selectedAddons: selectedAddonIds,
+                files: filesMeta.length > 0 ? filesMeta : undefined,
                 fileHasPassword: fileHasPassword ? true : undefined,
                 filePassword: fileHasPassword ? (filePassword || undefined) : undefined,
                 filePasswords: fileHasPassword

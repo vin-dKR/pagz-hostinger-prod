@@ -111,6 +111,15 @@ function buildMetadata(pendingData: PendingPurchaseData): PendingCartMetadata | 
         metadata.filePassword = pendingData.filePassword;
     }
 
+    // Phase 0 — forward per-file `{ url, pageCount }` from the guest entry
+    // so the server persists `CartItem.metadata.files`. Legacy entries
+    // without `metadata.files` flow through with the field omitted (the
+    // server keeps the engine's aggregate path for those rows).
+    const pendingFilesMeta = pendingData.metadata?.files;
+    if (Array.isArray(pendingFilesMeta) && pendingFilesMeta.length > 0 && metadata.files === undefined) {
+        metadata.files = pendingFilesMeta;
+    }
+
     return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 

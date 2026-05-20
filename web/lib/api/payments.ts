@@ -7,6 +7,7 @@
  */
 
 import { post, type ApiResponse } from "../api-client";
+import type { FileMeta } from "./cart";
 
 export interface CreateRazorpayOrderRequest {
     items: Array<{
@@ -25,6 +26,11 @@ export interface CreateRazorpayOrderRequest {
                 label: string;
                 value: number;
             }>;
+            /** Phase 0 — per-file `{ url, pageCount }`. Carried through
+             *  from CartItem.metadata.files → PendingPayment.items →
+             *  OrderItem.metadata.files so payment/order-create paths
+             *  preserve the metadata captured at add-to-cart time. */
+            files?: FileMeta[];
         };
     }>;
     addressId: string;

@@ -14,7 +14,9 @@ import {
     getAddonUnitPrice,
     normalizeAddonIds,
     resolveActiveAddons,
+    sanitizePricingFiles,
     type AddonPricingRule,
+    type PricingFileMeta,
 } from "../utils/addon-pricing.js";
 import { computeCategoryCartShortfalls } from "../utils/category-min-cart-value.js";
 
@@ -36,6 +38,42 @@ const CART_ADDON_SELECT = {
     minQuantity: true,
     maxQuantity: true,
 } as const;
+
+/**
+ * Phase 0 — per-file metadata capture.
+ *
+ * Take an incoming `metadata` blob from the client and return a new blob
+ * with `files` re-derived from a sanitised view of the raw input:
+ *   - if the client sent `metadata.files` (Phase 0+ clients), it gets
+ *     validated + persisted as a clean `PricingFileMeta[]`.
+ *   - if the client omitted `files` (legacy guest entries, third-party
+ *     callers), the field is dropped entirely so we don't leave a stale
+ *     array on an updated cart row. The engine continues to read the
+ *     aggregate `pageCount`/`effectivePageCount` path for rows without
+ *     `files`, so back-compat is preserved.
+ *
+ * Returns the value as-is when it isn't a plain object (preserves the
+ * existing "pass-through" behavior for legacy / null / scalar inputs).
+ * The return type is intentionally `any` so this slots into Prisma's
+ * `InputJsonValue` slots without forcing every call site to cast.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyPricingFilesToMetadata(incoming: unknown): any {
+    if (incoming === null || incoming === undefined) return incoming;
+    if (typeof incoming !== "object") return incoming;
+    const base = { ...(incoming as Record<string, unknown>) };
+    const sanitized: PricingFileMeta[] | undefined = sanitizePricingFiles(
+        (incoming as { files?: unknown }).files,
+    );
+    if (sanitized && sanitized.length > 0) {
+        base.files = sanitized;
+    } else {
+        // Drop a malformed/empty `files` so we never persist `files: []`
+        // or a half-typed array — cleaner than leaving raw input on the row.
+        delete base.files;
+    }
+    return base;
+}
 
 function normalizeDesignUrls(value: unknown): string[] {
     if (!value) return [];
@@ -385,7 +423,13 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
             throw new UnauthorizedError("User not authenticated");
         }
 
-        const { productId, variantId, quantity = 1, customDesignUrl, customText, hasAddon, addons, metadata } = req.body;
+        const { productId, variantId, quantity = 1, customDesignUrl, customText, hasAddon, addons } = req.body;
+        // Sanitize metadata.files (Phase 0) before any pricing / persistence
+        // step that consumes the blob. `applyPricingFilesToMetadata` is a
+        // no-op for legacy clients that don't supply `files`.
+        const metadata = req.body.metadata !== undefined
+            ? applyPricingFilesToMetadata(req.body.metadata)
+            : undefined;
 
         if (!productId) {
             throw new ValidationError("Product ID is required");
@@ -682,7 +726,13 @@ export const updateCartItem = async (req: Request, res: Response, next: NextFunc
         }
 
         const itemId = getParamAsString(req.params.itemId, "Item ID");
-        const { quantity, customDesignUrl, customText, addons, metadata } = req.body;
+        const { quantity, customDesignUrl, customText, addons } = req.body;
+        // Phase 0 — sanitize incoming metadata.files before persistence so a
+        // direct edit (e.g. addon toggle on the cart page) cannot inject a
+        // malformed `files` array. No-op when the client omits the field.
+        const metadata = req.body.metadata !== undefined
+            ? applyPricingFilesToMetadata(req.body.metadata)
+            : undefined;
 
         if (!quantity || quantity < 1) {
             throw new ValidationError("Quantity must be at least 1");
