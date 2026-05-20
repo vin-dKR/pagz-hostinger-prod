@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info, RotateCw, Ban } from "lucide-react";
+import { Upload, AlertTriangle, X, Image as ImageIcon, FileText, Loader2, Info, RotateCw } from "lucide-react";
 import { uploadOneFile, deleteOrderFile } from "@/lib/api/uploads";
 import { isAbortError } from "@/lib/api/ftp";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
@@ -508,17 +508,6 @@ export default function ProductDocumentUpload({
         uploadSingleFileWithProgress(fd);
     };
 
-    /** Cancel the in-flight serial batch and any remaining queued files. */
-    const handleCancelAll = () => {
-        batchAbortControllerRef.current?.abort();
-        // Abort whichever per-file request is in flight; the loop's catch
-        // path will mark it `cancelled`. Remaining queued files are flipped
-        // by the loop body's batch-abort check.
-        uploadAbortControllersRef.current.forEach((ctrl) => {
-            try { ctrl.abort(); } catch { /* no-op */ }
-        });
-    };
-
     const handleRemove = async (fileId: string) => {
         const fileToRemove = uploadedFilesS3?.find((fd) => fd.id === fileId);
         if (!fileToRemove) return;
@@ -657,26 +646,16 @@ export default function ProductDocumentUpload({
                             flash 100% before any bytes moved, so no % or
                             bar is shown anywhere. */}
                         {hasUploadsInFlight && (
-                            <div className="flex items-center justify-between gap-3 px-1 text-xs text-blue-700">
-                                <span className="truncate">
-                                    Uploading…
-                                    {currentlyUploading && (
-                                        <>
-                                            <span className="text-gray-500"> · </span>
-                                            <span className="font-medium truncate">
-                                                {currentlyUploading.file.name}
-                                            </span>
-                                        </>
-                                    )}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={handleCancelAll}
-                                    className="shrink-0 inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-700 bg-white border border-red-200 rounded hover:bg-red-50 cursor-pointer"
-                                >
-                                    <Ban size={12} />
-                                    Cancel
-                                </button>
+                            <div className="px-1 text-xs text-blue-700 truncate">
+                                Uploading…
+                                {currentlyUploading && (
+                                    <>
+                                        <span className="text-gray-500"> · </span>
+                                        <span className="font-medium truncate">
+                                            {currentlyUploading.file.name}
+                                        </span>
+                                    </>
+                                )}
                             </div>
                         )}
 

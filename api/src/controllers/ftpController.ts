@@ -148,23 +148,34 @@ function capRemoteFileName(name: string): string {
 
 export const uploadFileToFTP = async (req: Request, res: Response, next: NextFunction) => {
     let tempFilePath: string | null = null;
-    // Tracked across the request lifetime so the abort handler can clean
-    // up an orphan FTP file when the client cancels mid-stream (e.g. user
-    // hits "Cancel" after we've already pushed to FTP but before we've
-    // flushed the response).
+    // Tracked across the request lifetime so we can clean up an orphan
+    // FTP file when the client cancels mid-stream.
+    //
+    // Three cases:
+    //   (a) abort BEFORE uploadToFTP resolves — close fires with no
+    //       remote path. We set `clientAborted = true`; the post-upload
+    //       check runs cleanup once the path is known.
+    //   (b) abort AFTER uploadToFTP resolves but BEFORE sendSuccess —
+    //       close fires with a known path. We delete immediately.
+    //   (c) abort AFTER sendSuccess — `responseSent` is true, we skip.
     let uploadedRemotePath: string | null = null;
     let responseSent = false;
+    let clientAborted = false;
+
+    const runOrphanCleanup = (path: string, source: string) => {
+        deleteFromFTP(path).then(
+            () => console.warn(`[FTP] aborted upload cleanup ok (${source}): ${path}`),
+            (err) => console.error(`[FTP] aborted upload cleanup failed (${source}): ${path}`, err),
+        );
+    };
 
     req.on("close", () => {
-        if (responseSent || !uploadedRemotePath) return;
-        const orphanPath = uploadedRemotePath;
-        // Fire-and-forget — the response is already gone, so we can only
-        // log. Use a separate try/catch wrapper because Node will swallow
-        // unhandled-rejection warnings here otherwise.
-        deleteFromFTP(orphanPath).then(
-            () => console.warn(`[FTP] aborted upload cleanup ok: ${orphanPath}`),
-            (err) => console.error(`[FTP] aborted upload cleanup failed: ${orphanPath}`, err),
-        );
+        if (responseSent) return;
+        clientAborted = true;
+        if (uploadedRemotePath) {
+            runOrphanCleanup(uploadedRemotePath, "close-handler");
+        }
+        // Else: post-upload check picks it up once the path is known.
     });
 
     try {
@@ -202,6 +213,15 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
             tempFilePath = null;
         }
 
+        // If the client aborted while uploadToFTP was running, the
+        // close-handler had no path to delete. Now that we have it,
+        // do the cleanup and bail out without trying to send the
+        // response (socket is already gone).
+        if (clientAborted) {
+            runOrphanCleanup(uploadedRemotePath, "post-upload");
+            return;
+        }
+
         // Construct the public URL
         const publicUrl = `${FTP_PUBLIC_URL_BASE}/${uploadedRemotePath}`;
 
@@ -228,6 +248,9 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
                 console.error("Failed to cleanup temp file:", cleanupError);
             }
         }
+        // If the client already disconnected, don't bother forwarding
+        // to the error handler — there's nothing to send to.
+        if (clientAborted) return;
         responseSent = true;
         next(translateUploadError(error));
     }
