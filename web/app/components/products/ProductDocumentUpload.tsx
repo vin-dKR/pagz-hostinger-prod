@@ -532,14 +532,19 @@ export default function ProductDocumentUpload({
             uploadAbortControllersRef.current.delete(fileId);
         }
 
-        // If file is already uploaded to S3, delete it
+        // If file is already uploaded, delete it from FTP. The wrapper
+        // returns `{ success: false, error }` on backend failure instead
+        // of throwing, so check explicitly — the previous try/catch would
+        // never fire and the success toast lied.
         if (fileToRemove.uploadStatus === 'uploaded' && fileToRemove.s3Key) {
-            try {
-                await deleteOrderFile(fileToRemove.s3Key);
+            const res = await deleteOrderFile(fileToRemove.s3Key);
+            if (res.success) {
                 toastSuccess('File removed from storage');
-            } catch (err) {
-                console.error('Failed to delete file from S3:', err);
-                // Continue with removal even if S3 delete fails
+            } else {
+                console.error('[uploads] FTP delete failed:', res.error, 'path:', fileToRemove.s3Key);
+                toastError(res.error || 'Failed to delete file from storage');
+                setRemovingFileId(null);
+                return; // keep row visible so user can retry
             }
         }
 

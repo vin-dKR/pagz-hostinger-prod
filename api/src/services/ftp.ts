@@ -696,7 +696,9 @@ export async function deleteFromFTP(remoteFilePath: string): Promise<void> {
 
         let lastError: unknown = null;
         let onlyNotFoundErrors = true;
+        const triedPaths: string[] = [];
         for (const candidate of candidates) {
+            triedPaths.push(candidate);
             try {
                 await client.remove(candidate);
                 return;
@@ -710,9 +712,18 @@ export async function deleteFromFTP(remoteFilePath: string): Promise<void> {
             }
         }
 
-        // Deleting an already-missing file is effectively idempotent success.
+        // 550 not-found across all candidates is suspicious — it usually
+        // means the stored path doesn't match how the file was actually
+        // uploaded (different working dir, missing prefix, etc.). Log
+        // loudly so prod debugging is possible, but still throw so the
+        // client can surface a real error instead of a silent lie.
         if (onlyNotFoundErrors && candidates.length > 0) {
-            return;
+            console.warn(
+                `[FTP] delete: file not found at any candidate path. input=${remoteFilePath} tried=${JSON.stringify(triedPaths)} cwd=${currentDir}`,
+            );
+            throw new Error(
+                `FTP file not found at any of: ${triedPaths.join(", ")}`,
+            );
         }
 
         throw lastError instanceof Error ? lastError : new Error("Unable to delete FTP file");
