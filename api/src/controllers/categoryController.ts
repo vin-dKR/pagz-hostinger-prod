@@ -730,6 +730,9 @@ export const createCategoryPricingRule = async (
             quantityMultiplier,
             fileMultiplier,
             copyMultiplier,
+            // Phase 3 — per-file evaluation flag (Phase 2 added the column
+            // + engine branch; this passes the admin-form toggle through).
+            perFileEvaluation,
             minQuantity,
             maxQuantity,
             isActive,
@@ -758,6 +761,7 @@ export const createCategoryPricingRule = async (
                 quantityMultiplier: quantityMultiplier ?? false,
                 fileMultiplier: fileMultiplier ?? false,
                 copyMultiplier: copyMultiplier ?? false,
+                perFileEvaluation: perFileEvaluation ?? false,
                 minQuantity,
                 maxQuantity,
                 isActive: isActive ?? true,
@@ -790,6 +794,8 @@ export const updateCategoryPricingRule = async (
             quantityMultiplier,
             fileMultiplier,
             copyMultiplier,
+            // Phase 3 — per-file evaluation flag.
+            perFileEvaluation,
             minQuantity,
             maxQuantity,
             isActive,
@@ -817,6 +823,7 @@ export const updateCategoryPricingRule = async (
                 ...(quantityMultiplier !== undefined && { quantityMultiplier }),
                 ...(fileMultiplier !== undefined && { fileMultiplier }),
                 ...(copyMultiplier !== undefined && { copyMultiplier }),
+                ...(perFileEvaluation !== undefined && { perFileEvaluation }),
                 ...(minQuantity !== undefined && { minQuantity }),
                 ...(maxQuantity !== undefined && { maxQuantity }),
                 ...(isActive !== undefined && { isActive }),
