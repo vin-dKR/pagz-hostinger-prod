@@ -3,6 +3,8 @@
  * Handles temporary storage of purchase data during deferred authentication flow
  */
 
+import type { FileMeta } from '@/lib/api/cart';
+
 const PENDING_PURCHASE_KEY = 'pendingPurchaseData';
 const PENDING_PURCHASE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_FILE_SIZE_FOR_BASE64 = 5 * 1024 * 1024; // 5MB per file
@@ -61,6 +63,11 @@ export interface PendingPurchaseData {
         effectivePageCount?: number;
         originalPageCount?: number;
         hasHalfPageAdjustment?: boolean;
+        /** Phase 0 — per-file `{ url, pageCount }`. Optional; legacy
+         *  guest entries written before this rollout lack the field and
+         *  are drained as aggregate-only. Carried through to the
+         *  authenticated `/cart` POST after login. */
+        files?: FileMeta[];
     };
     currentPrice?: number;
     totalPrice?: number;

@@ -18,7 +18,9 @@ import {
     fetchAddonRuleMap,
     fetchAddonSpecMap,
     normalizeAddonIds,
+    sanitizePricingFiles,
     type AddonLineItemInput,
+    type PricingFileMeta,
 } from "./addon-pricing.js";
 
 // Prisma transaction client — every interactive transaction callback gets one
@@ -83,9 +85,23 @@ export async function buildOrderItemsFromPending(
         const customDesignUrl = item.customDesignUrl as unknown;
         const customText = item.customText as string | null | undefined;
         const metadata = item.metadata as
-            | (AddonLineItemInput["metadata"] & { priceBreakdown?: Array<{ label?: string; value?: number }>; selectedAddons?: unknown })
+            | (AddonLineItemInput["metadata"] & {
+                  priceBreakdown?: Array<{ label?: string; value?: number }>;
+                  selectedAddons?: unknown;
+              })
             | null
             | undefined;
+
+        // Phase 0 — re-sanitize `metadata.files` as we copy the cart's
+        // pending-payment items into the order. Cart writes already sanitise
+        // on the way in, but PendingPayment.items can carry whatever the
+        // checkout page POSTed verbatim; running through the sanitizer here
+        // guarantees `OrderItem.metadata.files` is a clean
+        // `PricingFileMeta[]` regardless of source. Undefined when the row
+        // genuinely has no per-file metadata — engine falls back to aggregate.
+        const sanitizedFiles: PricingFileMeta[] | undefined = metadata
+            ? sanitizePricingFiles((metadata as { files?: unknown }).files)
+            : undefined;
         if (!productId || !quantity || Number(quantity) < 1) {
             throw new ValidationError("Invalid order item");
         }
@@ -147,6 +163,22 @@ export async function buildOrderItemsFromPending(
                 : [];
         const selectedAddons = normalizeAddonIds(rawAddons);
 
+        // Preserve the rest of the metadata blob untouched (priceBreakdown,
+        // selectedAddons, half-page snapshots, specifications, template info,
+        // ...) and overlay the sanitised `files`. We only delete the key
+        // when both the input lacked `files` AND there's nothing to write,
+        // so legacy entries flow through with no spurious empty array.
+        let outboundMetadata: AddonLineItemInput["metadata"] | undefined = metadata || undefined;
+        if (outboundMetadata && (sanitizedFiles || "files" in (outboundMetadata as object))) {
+            const next = { ...(outboundMetadata as Record<string, unknown>) };
+            if (sanitizedFiles && sanitizedFiles.length > 0) {
+                next.files = sanitizedFiles;
+            } else {
+                delete next.files;
+            }
+            outboundMetadata = next as AddonLineItemInput["metadata"];
+        }
+
         orderItems.push({
             productId: productId as string,
             variantId: variantId || null,
@@ -156,7 +188,7 @@ export async function buildOrderItemsFromPending(
             customText: customText || null,
             hasAddon: selectedAddons.length > 0,
             addons: selectedAddons,
-            metadata: metadata || undefined,
+            metadata: outboundMetadata,
             fileCount: normalizedUrls.length,
         });
     }

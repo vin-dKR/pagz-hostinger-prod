@@ -14,7 +14,9 @@ import {
     fetchAddonRuleMap,
     fetchAddonSpecMap,
     normalizeAddonIds,
+    sanitizePricingFiles,
     type AddonPricingRule,
+    type PricingFileMeta,
 } from "../utils/addon-pricing.js";
 import { computeCategoryCartShortfalls, type CategoryLineContribution } from "../utils/category-min-cart-value.js";
 
@@ -162,7 +164,27 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             const copies = (metadata as any)?.copies || 1;
 
             let effectiveQuantity = quantity;
-            let updatedMetadata = metadata || {};
+            // Phase 0 — sanitize any incoming `metadata.files` before we
+            // start mutating `updatedMetadata`, so the cleaned array
+            // survives the half-page spreads below and lands on
+            // OrderItem.metadata.files. Direct order-create paths
+            // (admin manual, free-order checkout) thus carry per-file
+            // metadata through identically to the cart/pay route.
+            const sanitizedOrderFiles: PricingFileMeta[] | undefined =
+                sanitizePricingFiles((metadata as { files?: unknown } | null | undefined)?.files);
+            // Typed `any` so the value stays compatible with Prisma's
+            // `InputJsonValue` slot the original code relied on.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            let updatedMetadata: any = metadata
+                ? { ...(metadata as Record<string, unknown>) }
+                : {};
+            if (sanitizedOrderFiles && sanitizedOrderFiles.length > 0) {
+                updatedMetadata.files = sanitizedOrderFiles;
+            } else if (updatedMetadata && "files" in updatedMetadata) {
+                // Drop malformed `files` (empty array or unknown shape) so
+                // we never persist `files: []` on a fresh OrderItem row.
+                delete updatedMetadata.files;
+            }
 
             // If the product's base pricing rule has fileMultiplier, base price
             // scales with the uploaded file count instead of pages/quantity.
@@ -239,8 +261,12 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
                         (entry: { label?: string } | null | undefined) =>
                             !(entry?.label && String(entry.label).startsWith(halfPageLabelPrefix))
                     );
+                    // Spread `updatedMetadata` (not `metadata`) so the
+                    // sanitised `files` array set above is preserved through
+                    // the half-page rewrite. Spreading from raw `metadata`
+                    // here would drop Phase 0 per-file metadata silently.
                     updatedMetadata = {
-                        ...(metadata as any || {}),
+                        ...updatedMetadata,
                         effectivePageCount,
                         originalPageCount: pageCount,
                         hasHalfPageAdjustment: true,
@@ -1345,7 +1371,7 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
             const orderItems = [];
             const orderIdString = id as string;
             for (const item of items) {
-                const { productId, variantId, quantity, customDesignUrl, customText } = item;
+                const { productId, variantId, quantity, customDesignUrl, customText, metadata } = item;
 
                 const product = productMap.get(productId);
 
@@ -1361,6 +1387,26 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
                     }
                 }
 
+                // Phase 0 — admin order-edit constructs items from scratch.
+                // Carry `metadata` through (incl. sanitised `files`) so an
+                // admin who replaces an order's items doesn't silently drop
+                // per-file pricing metadata persisted by the original cart.
+                // Typed `any` to slot directly into Prisma's `InputJsonValue`
+                // (matches the destructured `metadata: any` flow elsewhere
+                // in this file).
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                let outboundMetadata: any;
+                if (metadata && typeof metadata === "object") {
+                    const cloned: Record<string, unknown> = { ...(metadata as Record<string, unknown>) };
+                    const files = sanitizePricingFiles((metadata as { files?: unknown }).files);
+                    if (files && files.length > 0) {
+                        cloned.files = files;
+                    } else {
+                        delete cloned.files;
+                    }
+                    outboundMetadata = cloned;
+                }
+
                 orderItems.push({
                     orderId: orderIdString,
                     productId,
@@ -1369,6 +1415,7 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
                     price: itemPrice,
                     customDesignUrl: customDesignUrl ? (Array.isArray(customDesignUrl) ? customDesignUrl : [customDesignUrl]) : [],
                     customText: customText || null,
+                    ...(outboundMetadata !== undefined && { metadata: outboundMetadata }),
                 });
             }
 

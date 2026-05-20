@@ -40,22 +40,81 @@ export interface AddonPricingRule {
     isActive?: boolean;
 }
 
+/**
+ * Per-uploaded-file metadata captured at add-to-cart time. Persisted on
+ * `CartItem.metadata.files` and copied through to `OrderItem.metadata.files`.
+ *
+ * Phase 0 only writes / propagates this — the engine continues to read
+ * aggregate `pageCount` / `effectivePageCount`. Phase 2 will add the
+ * per-file evaluation branch that consumes this array.
+ *
+ * `url` matches the corresponding entry in `customDesignUrl` (relative FTP
+ * path). Engine cross-checks on mismatch and falls back to aggregate.
+ */
+export interface PricingFileMeta {
+    url: string;
+    pageCount: number;
+}
+
+/**
+ * Shape of `CartItem.metadata` / `OrderItem.metadata` as consumed by the
+ * pricing engine. Intentionally a superset of the fields the engine reads
+ * today — `files` is additive and optional. Old rows without `files` keep
+ * working: the engine falls through to the aggregate `pageCount` path.
+ */
+export interface PricingLineMetadata {
+    pageCount?: number | null;
+    copies?: number | null;
+    /** Half-page-reduced page count, when a "Both Sides"-style option
+     *  is selected. Authoritative for addon page-range matching. */
+    effectivePageCount?: number | null;
+    /** NEW (Phase 0). Per-file `{ url, pageCount }` array. Optional —
+     *  rows written before Phase 0 lack this and the engine falls back
+     *  to the aggregate path. */
+    files?: PricingFileMeta[];
+}
+
 export interface AddonLineItemInput {
     quantity: number;
     addons: string[];
-    metadata?:
-        | {
-              pageCount?: number | null;
-              copies?: number | null;
-              /** Half-page-reduced page count, when a "Both Sides"-style option
-               *  is selected. Authoritative for addon page-range matching. */
-              effectivePageCount?: number | null;
-          }
-        | null
-        | undefined;
+    metadata?: PricingLineMetadata | null | undefined;
     /** Count of uploaded files on the cart/order item; used by fileMultiplier rules. */
     fileCount?: number;
 }
+
+/**
+ * Validate + normalize an untrusted `metadata.files` input into a clean
+ * `PricingFileMeta[]`. Returns `undefined` when the input is missing,
+ * empty, or contains no recognisable entries — callers can spread the
+ * result conditionally so we never persist an empty array.
+ *
+ * Drops entries that:
+ *   - aren't objects with a string `url` of non-zero length, or
+ *   - have a non-finite / negative `pageCount`.
+ *
+ * Page counts are floored to non-negative integers; `url` is trimmed.
+ * Caps the array at 100 entries — paranoid bound against malformed input
+ * (a single cart line will never legitimately reference more files).
+ */
+export const sanitizePricingFiles = (
+    raw: unknown,
+): PricingFileMeta[] | undefined => {
+    if (!Array.isArray(raw) || raw.length === 0) return undefined;
+    const MAX_FILES = 100;
+    const out: PricingFileMeta[] = [];
+    for (const entry of raw.slice(0, MAX_FILES)) {
+        if (!entry || typeof entry !== "object") continue;
+        const e = entry as { url?: unknown; pageCount?: unknown };
+        const url = typeof e.url === "string" ? e.url.trim() : "";
+        if (!url) continue;
+        const pageCountNum = Number(e.pageCount);
+        const pageCount = Number.isFinite(pageCountNum) && pageCountNum >= 0
+            ? Math.floor(pageCountNum)
+            : 0;
+        out.push({ url, pageCount });
+    }
+    return out.length > 0 ? out : undefined;
+};
 
 const toNumber = (value: unknown): number => {
     if (value === null || value === undefined) return 0;

@@ -4,6 +4,23 @@
 
 import { get, post, put, del, ApiResponse } from '../api-client';
 
+/**
+ * Per-uploaded-file metadata captured at add-to-cart time (Phase 0 of the
+ * per-file addon pricing rollout — see
+ * `prompts/per-file-addon-pricing-architecture.md` §3.1).
+ *
+ * `url` matches the corresponding entry in `customDesignUrl` (relative FTP
+ * path); `pageCount` is the raw page count counted client-side at upload
+ * (pdfjs). Server re-verifies in Phase 4.
+ *
+ * Exported as a shared shape so the services page, pending-purchase guest
+ * payload, post-login merge, and cart API client all use the same type.
+ */
+export interface FileMeta {
+    url: string;
+    pageCount: number;
+}
+
 export type RuleType =
     | "BASE_PRICE"
     | "SPECIFICATION_COMBINATION"
@@ -63,6 +80,9 @@ export interface CartItem {
         effectivePageCount?: number;
         originalPageCount?: number;
         hasHalfPageAdjustment?: boolean;
+        /** Phase 0 — per-file metadata. Optional; rows written before this
+         *  rollout lack the field and the engine falls back to aggregate. */
+        files?: FileMeta[];
     } | null;
     createdAt: string;
     updatedAt: string;
@@ -124,6 +144,22 @@ export interface AddToCartData {
         templatePreviewImage?: string;
         templateFormData?: Record<string, any>;
         templateFormImages?: string[];
+        /** Phase 0 — per-file `{ url, pageCount }` captured at add-to-cart
+         *  time. Server persists into `CartItem.metadata.files` (sanitised).
+         *  Omit when no files are attached. */
+        files?: FileMeta[];
+        /** User-selected spec values (slug → option value). Server uses
+         *  this to re-derive half-page authoritatively. */
+        specifications?: Record<string, any>;
+        /** Half-page snapshot fields — display-only on cart UI; server
+         *  re-derives from `specifications` for pricing. */
+        effectivePageCount?: number;
+        originalPageCount?: number;
+        hasHalfPageAdjustment?: boolean;
+        /** Password info for protected PDFs. */
+        fileHasPassword?: boolean;
+        filePassword?: string;
+        filePasswords?: string[];
     };
 }
 
