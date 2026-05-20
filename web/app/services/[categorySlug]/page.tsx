@@ -27,6 +27,7 @@ import {
     clearDependentSpecifications,
 } from '@/lib/utils/specification-dependencies';
 import { addToCart, type FileMeta } from '@/lib/api/cart';
+import { buildAddonLabelMap } from '@/lib/utils/addon-label';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
 import { ProductData, BreadcrumbItem } from '@/types';
@@ -592,12 +593,14 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                 : '';
             breakdown.push({ label: `Base Price${baseSuffix}`, value: data.baseSubtotal });
         }
+        // Disambiguate addons that share the same `name` (e.g. two
+        // wiro-binding tiers in different page ranges) by appending
+        // the tier range to the label.
+        const labelMap = buildAddonLabelMap(data.addons);
         for (const addon of data.addons) {
-            // `addon.breakdown` carries the per-file split for
-            // `perFileEvaluation` rules (Phase 3). The price card
-            // collapses it for single-entry breakdowns automatically.
+            const baseLabel = labelMap.get(addon.ruleId) ?? addon.name;
             breakdown.push({
-                label: `Addon: ${addon.name}`,
+                label: `Addon: ${baseLabel}`,
                 value: addon.total,
                 breakdown: addon.breakdown,
             });

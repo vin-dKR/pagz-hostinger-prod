@@ -54,6 +54,10 @@ export interface CartItemAddonPricing {
      *  per-file rules. UI renders uniformly without branching on the
      *  rule shape. See `AddonBreakdownEntry`. */
     breakdown: AddonBreakdownEntry[];
+    /** Rule's page range — used by the UI to disambiguate two addons
+     *  that share the same spec-derived `name` (e.g. two "wiro binding"
+     *  tiers in different page ranges). */
+    range?: { min: number | null; max: number | null };
 }
 
 export interface CartItemPricing {
@@ -353,6 +357,9 @@ export interface CalculatePricingAddon {
     total: number;
     /** Phase 2 — always populated. See `AddonBreakdownEntry`. */
     breakdown: AddonBreakdownEntry[];
+    /** Rule page-range tier — UI uses it to disambiguate addons that
+     *  share the same `name` but cover different tiers. */
+    range?: { min: number | null; max: number | null };
 }
 
 export interface CalculatePricingResponse {

@@ -1778,7 +1778,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                         the edit form. */}
                                                                     {(rule as any).perFileEvaluation && (
                                                                         <div
-                                                                            className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                                                                            className="mt-1 inline-flex items-center gap-1 whitespace-nowrap rounded bg-indigo-50 text-indigo-700 border border-indigo-200 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
                                                                             title="Addon evaluated separately for each uploaded file (per-file evaluation)"
                                                                         >
                                                                             Per file

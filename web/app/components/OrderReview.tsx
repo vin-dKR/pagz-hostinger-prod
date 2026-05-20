@@ -5,6 +5,7 @@ import { CartItem } from "@/lib/api/cart";
 import { FileText } from "lucide-react";
 import { getPublicS3Url } from "@/lib/utils/s3";
 import { AddonBreakdownRows } from "./AddonBreakdownRows";
+import { buildAddonLabelMap } from "@/lib/utils/addon-label";
 
 interface OrderReviewProps {
     items: CartItem[];
@@ -102,12 +103,14 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                         <span className="font-medium">₹{finalAddonTotal.toFixed(2)}</span>
                                     </div> 
                                 )}
-                                {item.pricing?.addons && item.pricing.addons.length > 0 && (
+                                {item.pricing?.addons && item.pricing.addons.length > 0 && (() => {
+                                    const labels = buildAddonLabelMap(item.pricing.addons);
+                                    return (
                                     <div className="mt-1 pl-2 border-l-2 border-purple-200">
                                         {item.pricing.addons.map((addon) => (
                                             <div key={addon.ruleId} className="mb-1 last:mb-0">
                                                 <div className="text-xs text-purple-700">
-                                                    {addon.name}: ₹{toNumber(addon.total).toFixed(2)}
+                                                    {labels.get(addon.ruleId) ?? addon.name}: ₹{toNumber(addon.total).toFixed(2)}
                                                 </div>
                                                 {/* Phase 3 — per-file sub-rows
                                                     surface for `perFileEvaluation`
@@ -123,7 +126,8 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                             </div>
                                         ))}
                                     </div>
-                                )}
+                                    );
+                                })()}
                                 <div className="flex justify-between text-sm font-hkgb font-bold text-gray-900 mt-1 pt-1 border-t border-gray-200">
                                     <span>Total:</span>
                                     <span>₹{finalTotal.toFixed(2)}</span>

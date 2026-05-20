@@ -9,6 +9,7 @@ import { getPublicS3Url, isImageFile, getFilenameFromS3Key } from "@/lib/utils/s
 import { UploadedFileTile } from "./UploadedFileTile";
 import { validateFiles } from "@/lib/utils/file-validation";
 import { AddonBreakdownRows } from "./AddonBreakdownRows";
+import { buildAddonLabelMap } from "@/lib/utils/addon-label";
 
 /**
  * Read base/addon/total from the server-computed `item.pricing` block
@@ -456,12 +457,14 @@ export default function CartItem({
                         runs here anymore. Phase 3 expands a per-file
                         sub-row under each addon when the rule has
                         `perFileEvaluation` on and 2+ files were uploaded. */}
-                    {item.pricing?.addons && item.pricing.addons.length > 0 && (
+                    {item.pricing?.addons && item.pricing.addons.length > 0 && (() => {
+                        const labels = buildAddonLabelMap(item.pricing.addons);
+                        return (
                         <ul className="mt-1.5 space-y-1">
                             {item.pricing.addons.map((addon) => (
                                 <li key={addon.ruleId} className="text-[11px] text-gray-500">
                                     <div>
-                                        <span className="text-gray-600">{addon.name}</span>{" "}
+                                        <span className="text-gray-600">{labels.get(addon.ruleId) ?? addon.name}</span>{" "}
                                         <span className="font-medium text-gray-700">
                                             ₹{toNumber(addon.total).toFixed(2)}
                                         </span>
@@ -475,7 +478,8 @@ export default function CartItem({
                                 </li>
                             ))}
                         </ul>
-                    )}
+                        );
+                    })()}
                 </div>
             </div>
         </div>

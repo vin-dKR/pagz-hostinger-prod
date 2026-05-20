@@ -29,6 +29,7 @@ import { getCategoryBySlug, getCategoryAddons, type Category, type CategoryAddon
 import BillingSummary from "./BillingSummary";
 import { useCalculatePricing } from "@/lib/hooks/use-calculate-pricing";
 import { AddonBreakdownRows } from "./AddonBreakdownRows";
+import { buildAddonLabelMap } from "@/lib/utils/addon-label";
 import type { AddonBreakdownEntry } from "@/lib/api/cart";
 
 interface GuestCartProps {
@@ -235,6 +236,34 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
     }>(() => {
         const live = pricingHook.data;
         if (live) {
+            // Defensive guard: if the api total is dramatically lower than
+            // the price the user saw at add-to-cart time (e.g. < 10% of
+            // the cached total), something is off — a stale spec ID, an
+            // admin rule that changed mid-session, or a payload mismatch.
+            // Fall back to the cached total and log so we can diagnose
+            // instead of silently showing the wrong number.
+            const cached = Number(pending?.totalPrice || pending?.currentPrice || 0);
+            if (cached > 0 && live.total > 0 && live.total < cached * 0.1) {
+                console.warn(
+                    "[GuestCart] live pricing < 10% of cached — using cached.",
+                    {
+                        live: { total: live.total, base: live.baseSubtotal, addons: live.addonsSubtotal, addonCount: live.addons.length },
+                        cached,
+                        payload: {
+                            specs: pending?.specifications,
+                            addonIds: pending?.selectedAddons,
+                            fileCount: pending?.files?.length,
+                            pageCount: pending?.pageCount,
+                        },
+                    },
+                );
+                return {
+                    baseTotal: cached,
+                    addonTotal: 0,
+                    total: cached,
+                    addons: [] as PriceBreakdownAddon[],
+                };
+            }
             return {
                 baseTotal: live.baseSubtotal,
                 addonTotal: live.addonsSubtotal,
@@ -455,12 +484,14 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                                 (Phase 1). When pricing is still in flight on
                                 first render, surface just the addon labels so
                                 the row doesn't pop in once the request lands. */}
-                            {priceBreakdown.addons.length > 0 ? (
+                            {priceBreakdown.addons.length > 0 ? (() => {
+                                const labels = buildAddonLabelMap(priceBreakdown.addons);
+                                return (
                                 <ul className="mt-1.5 space-y-1">
                                     {priceBreakdown.addons.map((addon) => (
                                         <li key={addon.ruleId} className="text-[11px] text-gray-500">
                                             <div>
-                                                <span className="text-gray-600">{addon.name}</span>
+                                                <span className="text-gray-600">{labels.get(addon.ruleId) ?? addon.name}</span>
                                                 {addon.total > 0 && (
                                                     <span className="font-medium text-gray-700"> {formatPrice(addon.total)}</span>
                                                 )}
@@ -475,7 +506,8 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                                         </li>
                                     ))}
                                 </ul>
-                            ) : fallbackAddonNames.length > 0 ? (
+                                );
+                            })() : fallbackAddonNames.length > 0 ? (
                                 <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
                                     {fallbackAddonNames.map((name, idx) => (
                                         <li key={`${name}-${idx}`} className="text-[11px] text-gray-500">
