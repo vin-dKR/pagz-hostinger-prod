@@ -27,8 +27,7 @@ import { redirectGuestToLoginForCheckout } from "@/lib/utils/guest-cart";
 import { getProduct, type Product } from "@/lib/api/products";
 import { getCategoryBySlug, getCategoryAddons, type Category, type CategoryAddon } from "@/lib/api/categories";
 import BillingSummary from "./BillingSummary";
-import type { AddonRule } from "@/lib/api/cart";
-import { computeAddonLineTotal, getAddonLabel } from "@/lib/utils/addon-pricing";
+import { useCalculatePricing } from "@/lib/hooks/use-calculate-pricing";
 
 interface GuestCartProps {
     onEmpty?: () => void;
@@ -180,56 +179,91 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
         return (pending.files || []).map(fileChipFromPending);
     }, [pending]);
 
-    // Resolve the selected addon ids from the pending data, then look up the
-    // full rule from the category addons list so we can show label + price.
-    // Preserve the *real* multiplier flags from the rule — hard-coding
-    // quantityMultiplier=false used to silently zero out per-page addons
-    // (e.g. ₹0.50 × pages lamination), so guests saw ₹0.00 even after
-    // selecting the addon. addon-pricing.computeAddonLineTotal needs the
-    // accurate flags to mirror server-side cart math.
-    const resolvedAddons = useMemo<AddonRule[]>(() => {
-        if (!pending) return [];
+    // Live pricing via the public /cart/calculate-pricing endpoint —
+    // Phase 1 of per-file addon pricing. The api computes the addon and
+    // base totals from the rules currently live for this category, so a
+    // guest gets the same number an authenticated user sees in their cart
+    // (and an admin rule tweak between guest-add and login surfaces in
+    // the post-login merge).
+    const pricingFiles = useMemo(() => {
+        if (!pending) return undefined;
+        const files = (pending.files || [])
+            .filter((f) => typeof f.s3Key === "string" && f.s3Key && f.pageCount > 0)
+            .map((f) => ({ url: f.s3Key as string, pageCount: f.pageCount }));
+        return files.length > 0 ? files : undefined;
+    }, [pending]);
+
+    const pricingHook = useCalculatePricing(
+        {
+            categoryId: category?.id ?? "",
+            selectedSpecifications: (pending?.specifications ?? {}) as Record<string, string>,
+            selectedAddons: (pending?.selectedAddons || pending?.metadata?.selectedAddons || []),
+            files: pricingFiles,
+            copies: pending?.copies && pending.copies > 0 ? pending.copies : 1,
+        },
+        { enabled: pending?.type === "service" && Boolean(category?.id) },
+    );
+
+    // Server-authoritative price with a graceful fallback to the cached
+    // total saved at add-to-cart time (handles initial render / offline).
+    const priceBreakdown = useMemo(() => {
+        const live = pricingHook.data;
+        if (live) {
+            return {
+                baseTotal: live.baseSubtotal,
+                addonTotal: live.addonsSubtotal,
+                total: live.total,
+                addons: live.addons,
+            };
+        }
+        if (pending) {
+            const breakdown = pending.metadata?.priceBreakdown;
+            if (breakdown && breakdown.length > 0) {
+                const base = breakdown.find((x) => x.label.toLowerCase().startsWith("base"))?.value ?? 0;
+                const addons = breakdown
+                    .filter((x) => !x.label.toLowerCase().startsWith("base"))
+                    .reduce((sum, x) => sum + Number(x.value || 0), 0);
+                return {
+                    baseTotal: Number(base) || 0,
+                    addonTotal: Number(addons) || 0,
+                    total: (Number(base) || 0) + (Number(addons) || 0),
+                    addons: [] as Array<{ ruleId: string; name: string; total: number }>,
+                };
+            }
+            const total = Number(pending.totalPrice || pending.currentPrice || 0);
+            return {
+                baseTotal: total,
+                addonTotal: 0,
+                total,
+                addons: [] as Array<{ ruleId: string; name: string; total: number }>,
+            };
+        }
+        return {
+            baseTotal: 0,
+            addonTotal: 0,
+            total: 0,
+            addons: [] as Array<{ ruleId: string; name: string; total: number }>,
+        };
+    }, [pricingHook.data, pending]);
+
+    // Fallback labels — when the hook hasn't returned yet but we have stored
+    // selectedAddons + category addon rules cached, surface the names so the
+    // row doesn't pop in once pricing lands.
+    const fallbackAddonNames = useMemo(() => {
+        if (!pending) return [] as string[];
         const ids = pending.selectedAddons || pending.metadata?.selectedAddons || [];
         if (ids.length === 0) return [];
         const byId = new Map(categoryAddons.map((a) => [a.id, a]));
         return ids
             .map((id) => byId.get(id))
             .filter((a): a is CategoryAddon => !!a)
-            .map<AddonRule>((a) => ({
-                id: a.id,
-                categoryId: a.categoryId,
-                ruleType: "ADDON",
-                specificationValues: a.specificationValues,
-                priceModifier: a.priceModifier,
-                basePrice: null,
-                quantityMultiplier: a.quantityMultiplier ?? false,
-                fileMultiplier: a.fileMultiplier ?? false,
-                minQuantity: a.minQuantity,
-                maxQuantity: a.maxQuantity,
-            }));
+            .map((a) => {
+                const specs = (a.specificationValues || {}) as Record<string, unknown>;
+                const entries = Object.entries(specs);
+                if (entries.length === 0) return "Addon";
+                return entries.map(([k, v]) => `${k}: ${String(v)}`).join(", ");
+            });
     }, [pending, categoryAddons]);
-
-    // Derive a price breakdown from the pending metadata (set by the service
-    // page). Falls back to pending.totalPrice / currentPrice when missing.
-    const priceBreakdown = useMemo(() => {
-        if (!pending) return { baseTotal: 0, addonTotal: 0, total: 0 };
-        const breakdown = pending.metadata?.priceBreakdown;
-        if (breakdown && breakdown.length > 0) {
-            const base = breakdown.find((x) => x.label.toLowerCase().startsWith("base"))?.value ?? 0;
-            const addons = breakdown
-                .filter((x) => !x.label.toLowerCase().startsWith("base"))
-                .reduce((sum, x) => sum + Number(x.value || 0), 0);
-            return {
-                baseTotal: Number(base) || 0,
-                addonTotal: Number(addons) || 0,
-                total: (Number(base) || 0) + (Number(addons) || 0),
-            };
-        }
-        const total = Number(pending.totalPrice || pending.currentPrice || 0);
-        return { baseTotal: total, addonTotal: 0, total };
-    }, [pending]);
-
-    const quantity = pending?.quantity || 1;
 
     // Wait for hydration so we don't flash "empty cart" before sessionStorage is read.
     if (!hydrated) return null;
@@ -391,31 +425,30 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                                 </div>
                             </div>
 
-                            {/* Per-addon list */}
-                            {resolvedAddons.length > 0 && (
+                            {/* Per-addon list — prefer server-computed totals
+                                (Phase 1). When pricing is still in flight on
+                                first render, surface just the addon labels so
+                                the row doesn't pop in once the request lands. */}
+                            {priceBreakdown.addons.length > 0 ? (
                                 <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                                    {resolvedAddons.map((addon, idx) => {
-                                        // Mirror server addon math via getEffectivePages.
-                                        const addonTotal = computeAddonLineTotal(addon, {
-                                            quantity,
-                                            metadata: {
-                                                pageCount: pending.pageCount,
-                                                copies: pending.copies,
-                                                effectivePageCount: pending.metadata?.effectivePageCount,
-                                            } as any,
-                                            fileCount: (pending.files || []).length,
-                                        });
-                                        return (
-                                            <li key={addon.id} className="text-[11px] text-gray-500">
-                                                <span className="text-gray-600">{getAddonLabel(addon, idx)}</span>
-                                                {addonTotal > 0 && (
-                                                    <span className="font-medium text-gray-700"> {formatPrice(addonTotal)}</span>
-                                                )}
-                                            </li>
-                                        );
-                                    })}
+                                    {priceBreakdown.addons.map((addon) => (
+                                        <li key={addon.ruleId} className="text-[11px] text-gray-500">
+                                            <span className="text-gray-600">{addon.name}</span>
+                                            {addon.total > 0 && (
+                                                <span className="font-medium text-gray-700"> {formatPrice(addon.total)}</span>
+                                            )}
+                                        </li>
+                                    ))}
                                 </ul>
-                            )}
+                            ) : fallbackAddonNames.length > 0 ? (
+                                <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                                    {fallbackAddonNames.map((name, idx) => (
+                                        <li key={`${name}-${idx}`} className="text-[11px] text-gray-500">
+                                            <span className="text-gray-600">{name}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : null}
                         </div>
                     </div>
                 </div>
