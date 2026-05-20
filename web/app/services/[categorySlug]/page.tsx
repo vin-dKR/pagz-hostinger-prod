@@ -1989,18 +1989,46 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                     [spec.slug]: value,
                                                 };
 
-                                                // Determine if any addon rule matches this selection with current specs.
-                                                // String-normalise comparison to match the memo above.
+                                                // String-normalise so '1' === 1 etc.
                                                 const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
-                                                // Mirror the addon-id memo: total pages = raw upload
-                                                // volume (pageCount × copies, or quantity × copies in
-                                                // bulk mode). Half-page reduction NOT applied — addon
-                                                // ranges gate on the customer-uploaded volume.
+
+                                                // Half-page detection for the PROPOSED spec set.
+                                                // Mirrors api/src/utils/half-page-calculation.ts:detectHalfPageOption.
+                                                const proposedHasHalfPage = (() => {
+                                                    if (!category) return false;
+                                                    for (const [slug, val] of Object.entries(nextSpecs)) {
+                                                        const s = category.specifications.find((cs) => cs.slug === slug);
+                                                        if (!s) continue;
+                                                        const opt = s.options.find((o) => o.value === String(val));
+                                                        if (opt?.metadata?.isHalfPage) return true;
+                                                    }
+                                                    return false;
+                                                })();
+                                                const reduce = (n: number) => proposedHasHalfPage ? Math.ceil(n / 2) : n;
+
                                                 const safeCopies = copies > 0 ? copies : 1;
-                                                const totalPages = pageCount > 0
-                                                    ? pageCount * safeCopies
-                                                    : (isCopiesMode ? quantity * safeCopies : quantity);
-                                                const rangeBasis = totalPages > 0 ? totalPages : null;
+
+                                                // Per-file effective sheets (post half-page).
+                                                // Falls back to a single virtual file when no per-file
+                                                // metadata is available (legacy + bulk mode).
+                                                const perFileSheets: number[] = uploadedFileDetails.length > 0
+                                                    ? uploadedFileDetails.map((fd) => reduce(fd.pageCount || 0)).filter((n) => n > 0)
+                                                    : (pageCount > 0
+                                                        ? [reduce(pageCount)]
+                                                        : (isCopiesMode ? [quantity] : [quantity]));
+
+                                                const aggregateSheets = perFileSheets.reduce((sum, n) => sum + n, 0);
+                                                // Aggregate basis = total sheets × copies (legacy semantic).
+                                                const aggregateBasis = aggregateSheets > 0 ? aggregateSheets * safeCopies : null;
+
+                                                const inRange = (n: number | null, min: number | null, max: number | null): boolean => {
+                                                    if (min == null && max == null) return true;
+                                                    if (n == null) return false;
+                                                    if (min != null && n < min) return false;
+                                                    if (max != null && n > max) return false;
+                                                    return true;
+                                                };
+
                                                 const matchingAddonRules = availableAddons.filter((rule) => {
                                                     const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
                                                     for (const [slug, val] of Object.entries(ruleSpecs)) {
@@ -2008,19 +2036,37 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                     }
 
                                                     const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
-                                                    if (hasPageRange) {
-                                                        if (rangeBasis == null) return false;
-                                                        if (rule.minQuantity != null && rangeBasis < rule.minQuantity) return false;
-                                                        if (rule.maxQuantity != null && rangeBasis > rule.maxQuantity) return false;
+                                                    if (!hasPageRange) return true;
+
+                                                    if (rule.perFileEvaluation) {
+                                                        // Per-file rules: match if ANY file's effective sheets hit the tier.
+                                                        return perFileSheets.some((sheets) =>
+                                                            inRange(sheets, rule.minQuantity ?? null, rule.maxQuantity ?? null),
+                                                        );
                                                     }
-                                                    return true;
+
+                                                    // copyMultiplier rules gate on per-copy sheets (not × copies).
+                                                    if (rule.copyMultiplier) {
+                                                        const perCopy = aggregateSheets > 0 ? aggregateSheets : null;
+                                                        return inRange(perCopy, rule.minQuantity ?? null, rule.maxQuantity ?? null);
+                                                    }
+
+                                                    // Aggregate: total effective sheets × copies.
+                                                    return inRange(aggregateBasis, rule.minQuantity ?? null, rule.maxQuantity ?? null);
                                                 });
 
                                                 if (matchingAddonRules.length === 0) {
                                                     const optionLabel =
                                                         availableOptions.find((opt) => opt.value === value)?.label || value;
-                                                    const pagesNote = rangeBasis != null
-                                                        ? ` (current pages: ${rangeBasis} = ${pageCount > 0 ? pageCount : quantity} × ${safeCopies})`
+                                                    // Build a transparent pages note. Show effective values
+                                                    // when half-page applies so the user understands the
+                                                    // engine's view, plus per-file breakdown when available.
+                                                    const perFileNote = perFileSheets.length > 1
+                                                        ? ` per-file: ${perFileSheets.join(' + ')}`
+                                                        : '';
+                                                    const halfNote = proposedHasHalfPage ? ' after half-page reduction' : '';
+                                                    const pagesNote = aggregateBasis != null
+                                                        ? ` (current pages${halfNote}: ${aggregateBasis} = ${aggregateSheets} × ${safeCopies}${perFileNote})`
                                                         : "";
                                                     setSpecWarning(
                                                         spec.slug,

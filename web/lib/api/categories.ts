@@ -132,6 +132,9 @@ export interface CategoryAddon {
     fileMultiplier?: boolean;
     /** One charge per physical copy. Range checks per-copy pages. */
     copyMultiplier?: boolean;
+    /** Evaluate the addon separately for each uploaded file, then sum.
+     *  When true, range checks run per file against each file's own page count. */
+    perFileEvaluation?: boolean;
     minQuantity: number | null;
     maxQuantity: number | null;
     isActive: boolean;
