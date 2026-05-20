@@ -8,6 +8,7 @@ import { deriveHalfPageFromSelectedSpecs } from "../utils/half-page-from-specs.j
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
 import {
     collectAddonIds,
+    computeAddonBreakdown,
     computeAddonLineTotal,
     computeAddonsSubtotal,
     computeLineAddonsTotal,
@@ -2532,9 +2533,37 @@ export const getOrderInvoicePDF = async (req: Request, res: Response, next: Next
                         const addonName = Object.entries(specValues)
                             .map(([key, value]) => `${key}: ${value}`)
                             .join(', ') || 'Addon';
+                        // Phase 3 — per-file price breakdown (one entry per
+                        // uploaded file for `perFileEvaluation` addons; one
+                        // synthetic aggregate entry otherwise). Computed
+                        // server-side via the shared engine so the PDF
+                        // numbers match cart/order totals exactly.
+                        const breakdownEntries = computeAddonBreakdown(addon, line);
+                        // Only surface sub-rows when the rule actually
+                        // priced per file (length > 1). Single-entry
+                        // aggregate breakdowns collapse to the parent
+                        // line — matches the storefront UX.
+                        const subRows =
+                            breakdownEntries.length > 1
+                                ? breakdownEntries
+                                      .filter((entry) => entry.fileUrl)
+                                      .map((entry) => {
+                                          const url = entry.fileUrl as string;
+                                          const lastSlash = url.lastIndexOf('/');
+                                          const basename = lastSlash >= 0
+                                              ? url.slice(lastSlash + 1)
+                                              : url;
+                                          return {
+                                              label: basename || url,
+                                              pageCount: entry.pageCount,
+                                              price: entry.price,
+                                          };
+                                      })
+                                : undefined;
                         return {
                             name: addonName,
                             price: computeAddonLineTotal(addon, line),
+                            breakdown: subRows,
                         };
                     }) : undefined,
                 };
