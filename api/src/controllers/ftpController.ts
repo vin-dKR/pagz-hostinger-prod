@@ -151,15 +151,14 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
     // Tracked across the request lifetime so we can clean up an orphan
     // FTP file when the client cancels mid-stream.
     //
-    // Three cases:
-    //   (a) abort BEFORE uploadToFTP resolves — close fires with no
-    //       remote path. We set `clientAborted = true`; the post-upload
-    //       check runs cleanup once the path is known.
-    //   (b) abort AFTER uploadToFTP resolves but BEFORE sendSuccess —
-    //       close fires with a known path. We delete immediately.
-    //   (c) abort AFTER sendSuccess — `responseSent` is true, we skip.
+    // Use `res.on('close')` + `res.writableEnded` to detect
+    // "client disconnected before response was sent". `req.on('close')`
+    // is unreliable here — Node also emits it after normal completion
+    // and HTTP keep-alive timing, so guarding only with a `responseSent`
+    // flag races with the happy path and could mark non-aborted
+    // requests as aborted (which left 1.5MB uploads hanging because
+    // sendSuccess was skipped).
     let uploadedRemotePath: string | null = null;
-    let responseSent = false;
     let clientAborted = false;
 
     const runOrphanCleanup = (path: string, source: string) => {
@@ -169,8 +168,11 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
         );
     };
 
-    req.on("close", () => {
-        if (responseSent) return;
+    res.on("close", () => {
+        // `writableEnded` is true iff res.end() was called — i.e. the
+        // happy path already wrote the response. Anything else is an
+        // early client disconnect.
+        if (res.writableEnded) return;
         clientAborted = true;
         if (uploadedRemotePath) {
             runOrphanCleanup(uploadedRemotePath, "close-handler");
@@ -225,7 +227,6 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
         // Construct the public URL
         const publicUrl = `${FTP_PUBLIC_URL_BASE}/${uploadedRemotePath}`;
 
-        responseSent = true;
         return sendSuccess(
             res,
             {
@@ -251,7 +252,6 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
         // If the client already disconnected, don't bother forwarding
         // to the error handler — there's nothing to send to.
         if (clientAborted) return;
-        responseSent = true;
         next(translateUploadError(error));
     }
 };
