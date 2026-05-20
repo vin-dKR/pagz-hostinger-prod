@@ -565,27 +565,15 @@ export default function ProductDocumentUpload({
         setRemovingFileId(null);
     };
 
-    // ── Derived upload-progress stats (issue #58) ─────────────────────────────
-    // Per-row bars are the source of truth for % progress (each row shows
-    // its own real byte-count from xhr.upload.onprogress). Header just
-    // tracks current-of-total counts for at-a-glance status — no fake %.
+    // ── Derived upload state ──────────────────────────────────────────────────
+    // No % progress shown anywhere — the XHR `upload.onprogress` events
+    // were unreliable in prod (would flash 100% before any bytes moved).
+    // Header just says "Uploading…" while any row is pending/in-flight.
     const files = uploadedFilesS3 ?? [];
-    const inFlightFiles = files.filter(
-        (fd) => fd.uploadStatus === 'pending' || fd.uploadStatus === 'uploading'
+    const hasUploadsInFlight = files.some(
+        (fd) => fd.uploadStatus === 'pending' || fd.uploadStatus === 'uploading',
     );
-    const hasUploadsInFlight = inFlightFiles.length > 0;
     const currentlyUploading = files.find((fd) => fd.uploadStatus === 'uploading');
-    // Among files participating in *this* upload session (excluding ones
-    // already uploaded before the current batch started), how many are done?
-    // We approximate by counting uploaded vs the (uploaded + inFlight) total
-    // — error rows are skipped so a failed upload doesn't make the count
-    // jump.
-    const sessionTotal = files.filter(
-        (fd) => fd.uploadStatus === 'pending' ||
-                fd.uploadStatus === 'uploading' ||
-                fd.uploadStatus === 'uploaded'
-    ).length;
-    const sessionDone = files.filter((fd) => fd.uploadStatus === 'uploaded').length;
 
     return (
         <div className={className}>
@@ -614,9 +602,7 @@ export default function ProductDocumentUpload({
                         {(isProcessing || hasUploadsInFlight) ? (
                             <>
                                 <Loader2 size={18} className="animate-spin" />
-                                {hasUploadsInFlight
-                                    ? `Uploading ${Math.min(sessionDone + 1, sessionTotal)}/${sessionTotal}…`
-                                    : 'Processing...'}
+                                {hasUploadsInFlight ? 'Uploading…' : 'Processing...'}
                             </>
                         ) : (
                             <>
@@ -665,16 +651,15 @@ export default function ProductDocumentUpload({
                 {/* File List */}
                 {uploadedFilesS3 && uploadedFilesS3.length > 0 && (
                     <div className="space-y-3">
-                        {/* Compact session header: current file name + cancel-all.
-                            Per-row bars below show the real % for each file —
-                            no duplicate aggregate bar (issue #58 follow-up). */}
+                        {/* Session header: plain "Uploading…" + cancel-all.
+                            Per-row labels show each file's status. The XHR
+                            progress events were unreliable on prod and would
+                            flash 100% before any bytes moved, so no % or
+                            bar is shown anywhere. */}
                         {hasUploadsInFlight && (
                             <div className="flex items-center justify-between gap-3 px-1 text-xs text-blue-700">
                                 <span className="truncate">
-                                    Uploading{' '}
-                                    <span className="font-medium">
-                                        {Math.min(sessionDone + 1, sessionTotal)} of {sessionTotal}
-                                    </span>
+                                    Uploading…
                                     {currentlyUploading && (
                                         <>
                                             <span className="text-gray-500"> · </span>
@@ -698,7 +683,6 @@ export default function ProductDocumentUpload({
                         <div className="space-y-2">
                             {uploadedFilesS3?.map((fileDetail) => {
                                 const status = fileDetail.uploadStatus;
-                                const pct = fileDetail.uploadProgress ?? 0;
                                 const isCancelled = status === 'error' && fileDetail.uploadError === 'cancelled';
                                 const isFailed = status === 'error';
                                 return (
@@ -730,10 +714,7 @@ export default function ProductDocumentUpload({
                                                         <span className="text-gray-500">• Queued</span>
                                                     )}
                                                     {status === 'uploading' && (
-                                                        <span className="text-blue-600 flex items-center gap-1">
-                                                            <Loader2 size={12} className="animate-spin" />
-                                                            {pct}%
-                                                        </span>
+                                                        <span className="text-blue-600">Uploading…</span>
                                                     )}
                                                     {status === 'uploaded' && (
                                                         <span className="text-green-600">✓ Uploaded</span>
@@ -747,17 +728,6 @@ export default function ProductDocumentUpload({
                                                         </span>
                                                     )}
                                                 </p>
-
-                                                {(status === 'pending' || status === 'uploading') && (
-                                                    <div className="mt-1.5 w-full bg-gray-200 rounded-full h-1 overflow-hidden">
-                                                        <div
-                                                            className="bg-blue-600 h-1 rounded-full transition-all duration-200"
-                                                            style={{
-                                                                width: status === 'uploading' ? `${pct}%` : '0%',
-                                                            }}
-                                                        />
-                                                    </div>
-                                                )}
                                             </div>
                                         </div>
 
