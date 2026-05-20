@@ -1,11 +1,17 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 import { Receipt, Loader2 } from 'lucide-react';
+import { AddonBreakdownRows } from '@/app/components/AddonBreakdownRows';
+import type { AddonBreakdownEntry } from '@/lib/api/cart';
 
 interface PriceBreakdownItem {
     label: string;
     value: number;
     description?: string;
+    /** Phase 3 of per-file addon pricing — per-file sub-rows surfaced
+     *  underneath this row when populated (perFileEvaluation rules with
+     *  2+ files). Only consumed for addon rows; ignored otherwise. */
+    breakdown?: AddonBreakdownEntry[];
 }
 
 interface PriceBreakdownProps {
@@ -20,6 +26,12 @@ interface PriceBreakdownProps {
     hasHalfPageAdjustment?: boolean; // Whether half-page adjustment was applied
     calculatingPrice?: boolean; // Whether price is being calculated
     className?: string;
+    /** Optional resolver mapping a file URL → display filename. Wired by
+     *  the services page from its in-flight upload state so per-file
+     *  addon breakdown sub-rows show the user's filename instead of an
+     *  opaque FTP url basename. Falls back to the URL basename when
+     *  missing. */
+    resolveFilename?: (fileUrl: string) => string | undefined;
 }
 
 export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
@@ -34,6 +46,7 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
     hasHalfPageAdjustment = false,
     calculatingPrice = false,
     className,
+    resolveFilename,
 }) => {
     const showDetailedCalculation = basePrice !== undefined && basePrice > 0;
     const calculatedQuantity = pageCount && copies ? pageCount * copies : quantity;
@@ -136,20 +149,33 @@ export const PriceBreakdown: React.FC<PriceBreakdownProps> = ({
                     </div>
                 )}
 
-                {/* Addon lines (if any) */}
+                {/* Addon lines (if any) — `breakdown` (Phase 3) expands a
+                    per-file sub-row under each addon when `perFileEvaluation`
+                    is on and 2+ files are uploaded. Single-entry breakdowns
+                    collapse back to the parent row. */}
                 {addonItems.length > 0 && (
-                    <div className="pb-3 border-t border-gray-100 pt-3 space-y-1">
+                    <div className="pb-3 border-t border-gray-100 pt-3 space-y-1.5">
                         {addonItems.map((item, idx) => (
-                            <div key={idx} className="flex justify-between items-center text-xs">
-                                <div className="text-gray-700">
-                                    {item.label}
-                                    {item.description && (
-                                        <span className="text-gray-500"> – {item.description}</span>
-                                    )}
+                            <div key={idx} className="space-y-0.5">
+                                <div className="flex justify-between items-center text-xs">
+                                    <div className="text-gray-700">
+                                        {item.label}
+                                        {item.description && (
+                                            <span className="text-gray-500"> – {item.description}</span>
+                                        )}
+                                    </div>
+                                    <div className="font-medium text-gray-900">
+                                        {currency}{Number(item.value || 0).toFixed(2)}
+                                    </div>
                                 </div>
-                                <div className="font-medium text-gray-900">
-                                    {currency}{Number(item.value || 0).toFixed(2)}
-                                </div>
+                                {item.breakdown && item.breakdown.length > 1 && (
+                                    <AddonBreakdownRows
+                                        breakdown={item.breakdown}
+                                        resolveFilename={resolveFilename}
+                                        currency={currency}
+                                        variant="card"
+                                    />
+                                )}
                             </div>
                         ))}
                     </div>

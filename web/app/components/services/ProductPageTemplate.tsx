@@ -137,7 +137,14 @@ interface ProductPageTemplateProps {
     onFileRemove: () => void;
     onFileSelectWithQuantity?: (files: File[], pageCount: number, fileDetails?: FileDetail[]) => void;
     onQuantityChange?: (quantity: number) => void;
-    priceItems: Array<{ label: string; value: number; description?: string }>;
+    priceItems: Array<{
+        label: string;
+        value: number;
+        description?: string;
+        /** Phase 3 — per-file price breakdown for `perFileEvaluation`
+         *  addon rows. PriceBreakdown collapses sub-rows when length ≤ 1. */
+        breakdown?: import('@/lib/api/cart').AddonBreakdownEntry[];
+    }>;
     totalPrice: number;
     basePricePerUnit?: number; // Base price per page/unit for detailed breakdown
     onAddToCart: () => void;
@@ -175,6 +182,11 @@ interface ProductPageTemplateProps {
     pageControllerCurrentPageCount?: number;
     pageControllerError?: string | null;
     hasPageControllerRules?: boolean;
+    /** Phase 3 — resolves an FTP url to the user's uploaded filename so
+     *  the per-file addon breakdown rows show real names instead of
+     *  opaque url basenames. Wired by the services page from its
+     *  `uploadedFileDetails` state. */
+    resolveFilename?: (fileUrl: string) => string | undefined;
 }
 
 export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
@@ -223,6 +235,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
     pageControllerCurrentPageCount = 0,
     pageControllerError = null,
     hasPageControllerRules = false,
+    resolveFilename,
 }) => {
     const router = useRouter();
     const outOfStock = isOutOfStock || (stock !== null && stock !== undefined && stock <= 0);
@@ -495,6 +508,7 @@ export const ProductPageTemplate: React.FC<ProductPageTemplateProps> = ({
                                     copies={copies}
                                     quantity={quantity}
                                     calculatingPrice={calculatingPrice}
+                                    resolveFilename={resolveFilename}
                                 />
 
                                 {/* Stock Status */}
