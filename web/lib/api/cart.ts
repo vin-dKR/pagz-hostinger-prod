@@ -42,12 +42,25 @@ export interface AddonRule {
     maxQuantity?: number | null;
 }
 
+export interface CartItemAddonPricing {
+    ruleId: string;
+    /** Pre-formatted "key: value, …" label built from the rule's
+     *  `specificationValues`. Mirrors the legacy client-side `getAddonLabel`. */
+    name: string;
+    total: number;
+}
+
 export interface CartItemPricing {
     unitBasePrice: number;
     unitAddonPrice: number;
     baseTotal: number;
     addonTotal: number;
     total: number;
+    /** Per-addon totals (one entry per addon rule that survived spec-group
+     *  dominance). Added in Phase 1 of the per-file addon pricing rollout
+     *  so the UI never reimplements the engine math. Empty for items
+     *  without addons. */
+    addons?: CartItemAddonPricing[];
 }
 
 export interface CartItem {
@@ -285,5 +298,58 @@ export async function verifyCartFiles(
         return { success: true, data: { valid: [], invalid: [] } };
     }
     return post<VerifyCartFilesResponse>('/cart/verify-files', { paths: clean });
+}
+
+// ─── Calculate-pricing (Phase 1 of per-file addon pricing) ───────────────────
+// Spec: `prompts/per-file-addon-pricing-architecture.md` §2 Phase 1.
+// Public endpoint — works for guests on `/services/<slug>`. The api is the
+// single source of truth for pricing; web/admin never reimplement the math.
+
+export interface CalculatePricingFileInput {
+    /** Relative FTP path or full https URL — the same string stored in
+     *  `CartItem.customDesignUrl[i]` and `metadata.files[i].url`. */
+    url: string;
+    /** Raw page count counted client-side at upload (pdfjs). Must be > 0. */
+    pageCount: number;
+}
+
+export interface CalculatePricingRequest {
+    categoryId: string;
+    selectedSpecifications: Record<string, string>;
+    /** Pricing-rule ids of type ADDON. Unknown ids are silently dropped on
+     *  the server (rule may have been deleted mid-session). */
+    selectedAddons: string[];
+    files?: CalculatePricingFileInput[];
+    copies: number;
+    /** Optional explicit half-page flag. When omitted the server derives
+     *  it from `selectedSpecifications` (an option flagged `isHalfPage`). */
+    side?: 'one' | 'both';
+}
+
+export interface CalculatePricingAddon {
+    ruleId: string;
+    name: string;
+    total: number;
+}
+
+export interface CalculatePricingResponse {
+    baseSubtotal: number;
+    addonsSubtotal: number;
+    total: number;
+    addons: CalculatePricingAddon[];
+    pageCount: number;
+    effectivePageCount?: number;
+    hasHalfPageAdjustment: boolean;
+}
+
+/**
+ * Ask the API to compute base + addon totals for a service configuration.
+ * Used by the services page live price card, cart preview, and checkout
+ * summary. Public — works for guest sessions.
+ */
+export async function calculatePricing(
+    input: CalculatePricingRequest,
+): Promise<ApiResponse<CalculatePricingResponse>> {
+    return post<CalculatePricingResponse>('/cart/calculate-pricing', input);
 }
 
