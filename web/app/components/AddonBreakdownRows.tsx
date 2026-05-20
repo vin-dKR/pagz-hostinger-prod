@@ -60,6 +60,14 @@ export function AddonBreakdownRows({
     // the parent row — no sub-rows to render.
     if (!breakdown || breakdown.length <= 1) return null;
 
+    // Hide entries that scored ₹0 — those are files outside this rule's
+    // range tier. Showing them adds noise (e.g. two binding tiers each
+    // matching a different file but rendering the other one at ₹0 makes
+    // the UI look broken even though the math is correct).
+    const visible = breakdown.filter((e) => e.fileUrl && Number(e.price || 0) > 0);
+    if (visible.length === 0) return null;
+    if (visible.length === 1) return null; // single-priced file already shown in parent total
+
     const baseRowCls =
         variant === "card"
             ? "flex justify-between items-center text-[11px] text-gray-600 pl-4"
@@ -74,7 +82,7 @@ export function AddonBreakdownRows({
                     : "mt-0.5 space-y-0.5")
             }
         >
-            {breakdown.map((entry, idx) => {
+            {visible.map((entry, idx) => {
                 if (!entry.fileUrl) return null;
                 const name = safeFilename(entry.fileUrl, resolveFilename);
                 const pageHint = entry.pageCount > 0

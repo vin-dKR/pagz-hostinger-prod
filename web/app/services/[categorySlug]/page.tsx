@@ -721,6 +721,120 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         setSpecWarnings((prev) => ({ ...prev, [specSlug]: message }));
     };
 
+    /**
+     * Eligibility check: returns the set of addon rules that match the
+     * proposed `nextSpecs` given current files + copies + half-page state.
+     * Used both at spec-pick time (inline `onChange` warning) and by the
+     * file-change watcher below that clears now-invalid selections.
+     *
+     * Mirrors the engine in api/src/utils/addon-pricing.ts (range gating +
+     * perFileEvaluation / copyMultiplier dominance) but operates on the
+     * client's `availableAddons` list so the user gets instant feedback.
+     */
+    const getMatchingAddonRules = useCallback((nextSpecs: Record<string, any>): CategoryAddon[] => {
+        if (!availableAddons || availableAddons.length === 0) return [];
+        const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
+
+        const proposedHasHalfPage = (() => {
+            if (!category) return false;
+            for (const [slug, val] of Object.entries(nextSpecs)) {
+                const s = category.specifications.find((cs) => cs.slug === slug);
+                if (!s) continue;
+                const opt = s.options.find((o) => o.value === String(val));
+                if (opt?.metadata?.isHalfPage) return true;
+            }
+            return false;
+        })();
+        const reduce = (n: number) => proposedHasHalfPage ? Math.ceil(n / 2) : n;
+
+        const safeCopies = copies > 0 ? copies : 1;
+        const perFileSheets: number[] = uploadedFileDetails.length > 0
+            ? uploadedFileDetails.map((fd) => reduce(fd.pageCount || 0)).filter((n) => n > 0)
+            : (pageCount > 0
+                ? [reduce(pageCount)]
+                : (isCopiesMode ? [quantity] : [quantity]));
+        const aggregateSheets = perFileSheets.reduce((sum, n) => sum + n, 0);
+        const aggregateBasis = aggregateSheets > 0 ? aggregateSheets * safeCopies : null;
+
+        const inRange = (n: number | null, min: number | null, max: number | null): boolean => {
+            if (min == null && max == null) return true;
+            if (n == null) return false;
+            if (min != null && n < min) return false;
+            if (max != null && n > max) return false;
+            return true;
+        };
+
+        return availableAddons.filter((rule) => {
+            const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
+            for (const [slug, val] of Object.entries(ruleSpecs)) {
+                if (normalize(nextSpecs[slug]) !== normalize(val)) return false;
+            }
+            const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
+            if (!hasPageRange) return true;
+
+            if (rule.perFileEvaluation) {
+                return perFileSheets.some((sheets) =>
+                    inRange(sheets, rule.minQuantity ?? null, rule.maxQuantity ?? null),
+                );
+            }
+            if (rule.copyMultiplier) {
+                const perCopy = aggregateSheets > 0 ? aggregateSheets : null;
+                return inRange(perCopy, rule.minQuantity ?? null, rule.maxQuantity ?? null);
+            }
+            return inRange(aggregateBasis, rule.minQuantity ?? null, rule.maxQuantity ?? null);
+        });
+    }, [availableAddons, category, copies, pageCount, quantity, isCopiesMode, uploadedFileDetails]);
+
+    // ── File-change watcher: revalidate selected addon specs ────────────
+    // When the user changes uploaded files / copies / pageCount, a
+    // previously-eligible addon selection (e.g. "binding = spiral" while
+    // 100 pages were uploaded) may no longer have any matching rule
+    // (e.g. now they uploaded 3000 pages and no tier covers that).
+    // Clear those selections and toast the user so the cart doesn't
+    // carry orphan addon rows. Only watches file-related state — spec
+    // changes are handled at click time by the dropdown onChange.
+    useEffect(() => {
+        if (!category || availableAddons.length === 0) return;
+        if (!Object.keys(selectedSpecifications).length) return;
+
+        const optionalSpecs = category.specifications.filter((s) => !s.isRequired);
+        if (optionalSpecs.length === 0) return;
+
+        const toClear: Array<{ slug: string; label: string }> = [];
+        for (const s of optionalSpecs) {
+            const value = selectedSpecifications[s.slug];
+            if (!value || value === 'none' || value === '') continue;
+            const matches = getMatchingAddonRules(selectedSpecifications);
+            // Per-spec filter: a rule matches THIS spec if it references
+            // the spec slug. If at least one such rule survives, the
+            // selection stays. If none, clear.
+            const survives = matches.some((rule) => {
+                const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
+                return String(ruleSpecs[s.slug] ?? '') === String(value);
+            });
+            if (!survives) {
+                const optLabel = s.options.find((o) => o.value === String(value))?.label || String(value);
+                toClear.push({ slug: s.slug, label: `${s.name}: ${optLabel}` });
+            }
+        }
+
+        if (toClear.length > 0) {
+            setSelectedSpecifications((prev) => {
+                const next = { ...prev };
+                for (const { slug } of toClear) delete next[slug];
+                return next;
+            });
+            for (const { label } of toClear) {
+                toastWarning(`${label} is no longer available for the current page count — cleared.`);
+            }
+        }
+        // Intentionally NOT including `selectedSpecifications` in deps —
+        // we only want this to fire when file-related state changes, not
+        // when the user picks specs (the dropdown onChange already
+        // handles that case at click time).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [uploadedFileDetails, pageCount, copies, category, availableAddons, getMatchingAddonRules]);
+
 
     // Prepare product data for ProductPageTemplate
     const productData: Partial<ProductData> = useMemo(() => {
@@ -1989,90 +2103,15 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                                                     [spec.slug]: value,
                                                 };
 
-                                                // String-normalise so '1' === 1 etc.
-                                                const normalize = (v: unknown) => (v === null || v === undefined ? "" : String(v));
-
-                                                // Half-page detection for the PROPOSED spec set.
-                                                // Mirrors api/src/utils/half-page-calculation.ts:detectHalfPageOption.
-                                                const proposedHasHalfPage = (() => {
-                                                    if (!category) return false;
-                                                    for (const [slug, val] of Object.entries(nextSpecs)) {
-                                                        const s = category.specifications.find((cs) => cs.slug === slug);
-                                                        if (!s) continue;
-                                                        const opt = s.options.find((o) => o.value === String(val));
-                                                        if (opt?.metadata?.isHalfPage) return true;
-                                                    }
-                                                    return false;
-                                                })();
-                                                const reduce = (n: number) => proposedHasHalfPage ? Math.ceil(n / 2) : n;
-
-                                                const safeCopies = copies > 0 ? copies : 1;
-
-                                                // Per-file effective sheets (post half-page).
-                                                // Falls back to a single virtual file when no per-file
-                                                // metadata is available (legacy + bulk mode).
-                                                const perFileSheets: number[] = uploadedFileDetails.length > 0
-                                                    ? uploadedFileDetails.map((fd) => reduce(fd.pageCount || 0)).filter((n) => n > 0)
-                                                    : (pageCount > 0
-                                                        ? [reduce(pageCount)]
-                                                        : (isCopiesMode ? [quantity] : [quantity]));
-
-                                                const aggregateSheets = perFileSheets.reduce((sum, n) => sum + n, 0);
-                                                // Aggregate basis = total sheets × copies (legacy semantic).
-                                                const aggregateBasis = aggregateSheets > 0 ? aggregateSheets * safeCopies : null;
-
-                                                const inRange = (n: number | null, min: number | null, max: number | null): boolean => {
-                                                    if (min == null && max == null) return true;
-                                                    if (n == null) return false;
-                                                    if (min != null && n < min) return false;
-                                                    if (max != null && n > max) return false;
-                                                    return true;
-                                                };
-
-                                                const matchingAddonRules = availableAddons.filter((rule) => {
-                                                    const ruleSpecs = (rule.specificationValues || {}) as Record<string, any>;
-                                                    for (const [slug, val] of Object.entries(ruleSpecs)) {
-                                                        if (normalize(nextSpecs[slug]) !== normalize(val)) return false;
-                                                    }
-
-                                                    const hasPageRange = rule.minQuantity != null || rule.maxQuantity != null;
-                                                    if (!hasPageRange) return true;
-
-                                                    if (rule.perFileEvaluation) {
-                                                        // Per-file rules: match if ANY file's effective sheets hit the tier.
-                                                        return perFileSheets.some((sheets) =>
-                                                            inRange(sheets, rule.minQuantity ?? null, rule.maxQuantity ?? null),
-                                                        );
-                                                    }
-
-                                                    // copyMultiplier rules gate on per-copy sheets (not × copies).
-                                                    if (rule.copyMultiplier) {
-                                                        const perCopy = aggregateSheets > 0 ? aggregateSheets : null;
-                                                        return inRange(perCopy, rule.minQuantity ?? null, rule.maxQuantity ?? null);
-                                                    }
-
-                                                    // Aggregate: total effective sheets × copies.
-                                                    return inRange(aggregateBasis, rule.minQuantity ?? null, rule.maxQuantity ?? null);
-                                                });
+                                                const matchingAddonRules = getMatchingAddonRules(nextSpecs);
 
                                                 if (matchingAddonRules.length === 0) {
                                                     const optionLabel =
                                                         availableOptions.find((opt) => opt.value === value)?.label || value;
-                                                    // Build a transparent pages note. Show effective values
-                                                    // when half-page applies so the user understands the
-                                                    // engine's view, plus per-file breakdown when available.
-                                                    const perFileNote = perFileSheets.length > 1
-                                                        ? ` per-file: ${perFileSheets.join(' + ')}`
-                                                        : '';
-                                                    const halfNote = proposedHasHalfPage ? ' after half-page reduction' : '';
-                                                    const pagesNote = aggregateBasis != null
-                                                        ? ` (current pages${halfNote}: ${aggregateBasis} = ${aggregateSheets} × ${safeCopies}${perFileNote})`
-                                                        : "";
                                                     setSpecWarning(
                                                         spec.slug,
-                                                        `Pricing for “${optionLabel}” is not configured yet${pagesNote}. Please choose another option or contact support.`
+                                                        `Pricing for “${optionLabel}” is not configured for the current page count. Please change pages / files or choose another option.`
                                                     );
-                                                    // Reset dropdown back to default
                                                     handleSpecificationChange(spec.slug, '');
                                                     return;
                                                 }
