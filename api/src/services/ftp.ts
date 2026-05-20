@@ -712,18 +712,18 @@ export async function deleteFromFTP(remoteFilePath: string): Promise<void> {
             }
         }
 
-        // 550 not-found across all candidates is suspicious — it usually
-        // means the stored path doesn't match how the file was actually
-        // uploaded (different working dir, missing prefix, etc.). Log
-        // loudly so prod debugging is possible, but still throw so the
-        // client can surface a real error instead of a silent lie.
+        // 550 not-found across all candidates: treat as idempotent
+        // success — the deletion goal (file gone) is satisfied. This
+        // also covers the common UX case where the user clicks remove
+        // on a row whose file was already wiped by a prior session,
+        // sweep, or aborted-upload cleanup. We still log loudly so prod
+        // can investigate stored-path/CWD mismatches if they ever start
+        // happening en masse.
         if (onlyNotFoundErrors && candidates.length > 0) {
             console.warn(
-                `[FTP] delete: file not found at any candidate path. input=${remoteFilePath} tried=${JSON.stringify(triedPaths)} cwd=${currentDir}`,
+                `[FTP] delete: file already absent; treating as success. input=${remoteFilePath} tried=${JSON.stringify(triedPaths)} cwd=${currentDir}`,
             );
-            throw new Error(
-                `FTP file not found at any of: ${triedPaths.join(", ")}`,
-            );
+            return;
         }
 
         throw lastError instanceof Error ? lastError : new Error("Unable to delete FTP file");
