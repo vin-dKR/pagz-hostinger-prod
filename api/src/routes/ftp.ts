@@ -7,7 +7,6 @@ import {
     deleteFTPFile,
 } from "../controllers/ftpController.js";
 import { uploadFTPFile, rejectEmptyFiles } from "../middleware/upload-ftp.js";
-import { customerAuth } from "../middleware/auth.js";
 
 const router: IRouter = Router();
 
@@ -28,11 +27,14 @@ router.post(
     uploadMultipleFilesToFTP,
 );
 
-// Delete file from FTP — customer-authed so a public client can't wipe
-// arbitrary paths off the bucket. The client URL-encodes slashes inside
-// `filePath` (e.g. "orders%2Fabc.pdf") so the single-segment :filePath
-// match still captures the full relative path; Express auto-decodes
-// req.params back to the literal path.
-router.delete("/delete/:filePath", customerAuth, deleteFTPFile);
+// Delete file from FTP. Public to match the public upload routes above —
+// the services page lets guests configure + upload before login, so the
+// matching cleanup path can't require auth. The controller enforces a
+// folder allowlist (orders/, reviews/, etc.) to limit blast radius.
+// The client URL-encodes slashes inside `filePath` (e.g.
+// "orders%2Fabc.pdf") so the single-segment :filePath match still
+// captures the full relative path; Express auto-decodes req.params
+// back to the literal path.
+router.delete("/delete/:filePath", deleteFTPFile);
 
 export default router;

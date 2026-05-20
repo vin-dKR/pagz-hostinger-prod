@@ -148,7 +148,25 @@ function capRemoteFileName(name: string): string {
 
 export const uploadFileToFTP = async (req: Request, res: Response, next: NextFunction) => {
     let tempFilePath: string | null = null;
-    
+    // Tracked across the request lifetime so the abort handler can clean
+    // up an orphan FTP file when the client cancels mid-stream (e.g. user
+    // hits "Cancel" after we've already pushed to FTP but before we've
+    // flushed the response).
+    let uploadedRemotePath: string | null = null;
+    let responseSent = false;
+
+    req.on("close", () => {
+        if (responseSent || !uploadedRemotePath) return;
+        const orphanPath = uploadedRemotePath;
+        // Fire-and-forget — the response is already gone, so we can only
+        // log. Use a separate try/catch wrapper because Node will swallow
+        // unhandled-rejection warnings here otherwise.
+        deleteFromFTP(orphanPath).then(
+            () => console.warn(`[FTP] aborted upload cleanup ok: ${orphanPath}`),
+            (err) => console.error(`[FTP] aborted upload cleanup failed: ${orphanPath}`, err),
+        );
+    });
+
     try {
         if (!req.file) {
             throw new ValidationError("No file uploaded");
@@ -172,11 +190,11 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
         // Save file temporarily to disk
         const tempFileName = `${randomUUID()}${safeExt}`;
         tempFilePath = path.join(FTP_TEMP_DIR, tempFileName);
-        
+
         fs.writeFileSync(tempFilePath, req.file.buffer);
 
         // Upload to FTP
-        const remotePath = await uploadToFTP(tempFilePath, remoteFileName, remoteSubDir);
+        uploadedRemotePath = await uploadToFTP(tempFilePath, remoteFileName, remoteSubDir);
 
         // Clean up temp file
         if (fs.existsSync(tempFilePath)) {
@@ -185,12 +203,13 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
         }
 
         // Construct the public URL
-        const publicUrl = `${FTP_PUBLIC_URL_BASE}/${remotePath}`;
+        const publicUrl = `${FTP_PUBLIC_URL_BASE}/${uploadedRemotePath}`;
 
+        responseSent = true;
         return sendSuccess(
             res,
             {
-                remotePath,
+                remotePath: uploadedRemotePath,
                 remoteFileName,
                 publicUrl,
                 size: req.file.size,
@@ -209,6 +228,7 @@ export const uploadFileToFTP = async (req: Request, res: Response, next: NextFun
                 console.error("Failed to cleanup temp file:", cleanupError);
             }
         }
+        responseSent = true;
         next(translateUploadError(error));
     }
 };
@@ -398,19 +418,47 @@ export const listFTP = async (req: Request, res: Response, next: NextFunction) =
 };
 
 /**
+ * Folders that the public DELETE endpoint is allowed to touch. Matches
+ * the FTP_FOLDERS the public upload endpoints can write to, so the
+ * cleanup surface area equals the upload surface area.
+ */
+const DELETE_ALLOWED_FOLDERS = ["orders", "reviews", "templates", "uploads"];
+
+function isDeletePathAllowed(rawPath: string): boolean {
+    // Strip leading `public_html/` and leading slashes the same way
+    // normalizeRemoteDeletePath does, then check the first segment.
+    const path = rawPath
+        .replace(/^\/+/, "")
+        .replace(/^public_html\//, "");
+    if (path.includes("..")) return false;
+    const firstSegment = path.split("/")[0] ?? "";
+    return firstSegment.length > 0 && DELETE_ALLOWED_FOLDERS.includes(firstSegment);
+}
+
+/**
  * Delete file from FTP
  * DELETE /api/v1/ftp/delete/:filePath
+ *
+ * Public — matches the public upload routes. Restricted to the upload
+ * folders (orders/, reviews/, etc.) so an attacker can't wipe arbitrary
+ * paths under public_html. Path traversal (`..`) blocked.
  */
 export const deleteFTPFile = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const filePath = req.params.filePath as string;
-        
+
         if (!filePath) {
             throw new ValidationError("File path is required");
         }
 
+        if (!isDeletePathAllowed(filePath)) {
+            throw new ValidationError(
+                `Delete not allowed for this path. Allowed folders: ${DELETE_ALLOWED_FOLDERS.join(", ")}`,
+            );
+        }
+
         await deleteFromFTP(filePath);
-        
+
         return sendSuccess(
             res,
             null,
