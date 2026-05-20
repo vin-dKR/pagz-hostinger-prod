@@ -19,6 +19,7 @@ import {
     type PricingFileMeta,
 } from "../utils/addon-pricing.js";
 import { computeCategoryCartShortfalls } from "../utils/category-min-cart-value.js";
+import { processHalfPageCalculation } from "../utils/half-page-calculation.js";
 
 /**
  * Shape of the `addons` include used for cart reads. Centralised so the cart
@@ -310,6 +311,11 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
             // even when the print is duplexed onto 250 sheets.
             let addonUnitPrice = 0;
             let addonTotal = 0;
+            // Phase 1 (per-file addon pricing) — surface per-addon totals so
+            // the cart UI can render the addon row breakdown without
+            // recomputing client-side. Each entry corresponds to one addon
+            // rule that survived spec-group dominance.
+            const addonLineDetails: Array<{ ruleId: string; name: string; total: number }> = [];
 
             if (item.addons && item.addons.length > 0) {
                 const lineFileCount = normalizeDesignUrls(item.customDesignUrl).length;
@@ -341,7 +347,18 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                 for (const addon of itemAddons) {
                     addonUnitPrice += getAddonUnitPrice(addon);
                     if (!survivingIds.has(addon.id)) continue;
-                    addonTotal += computeAddonLineTotal(addon, pricingLine);
+                    const addonLineTotal = computeAddonLineTotal(addon, pricingLine);
+                    addonTotal += addonLineTotal;
+                    const specs = (addon.specificationValues || {}) as Record<string, unknown>;
+                    const entries = Object.entries(specs);
+                    const name = entries.length > 0
+                        ? entries.map(([k, v]) => `${k}: ${String(v)}`).join(", ")
+                        : "Addon";
+                    addonLineDetails.push({
+                        ruleId: addon.id,
+                        name,
+                        total: Number(addonLineTotal.toFixed(2)),
+                    });
                 }
             }
 
@@ -395,6 +412,10 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                     baseTotal,
                     addonTotal,
                     total,
+                    // Phase 1 — per-addon totals so the cart UI can render
+                    // its breakdown row without re-running the engine. Empty
+                    // when the item has no addons.
+                    addons: addonLineDetails,
                 },
             };
         }));
@@ -1086,6 +1107,307 @@ export const clearCart = async (req: Request, res: Response, next: NextFunction)
         }
 
         return sendSuccess(res, null, "Cart cleared successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Calculate-pricing endpoint (Phase 1 of per-file addon pricing) ──────────
+// Spec: prompts/per-file-addon-pricing-architecture.md §2 Phase 1.
+//
+// Public, no auth — matches the public upload/verify surface used during the
+// guest service-configuration flow. Web/admin call this whenever they need a
+// price; no addon math is allowed to live in the client.
+//
+// The math is delegated to `utils/addon-pricing.ts` so this controller stays a
+// thin orchestration layer (load category + rules → resolve base → run engine
+// → return totals). Adding Phase 2's per-file branch later means touching only
+// the engine, not this controller.
+
+export interface CalculatePricingFileInput {
+    url: string;
+    pageCount: number;
+}
+
+export interface CalculatePricingRequestBody {
+    categoryId?: string;
+    selectedSpecifications?: Record<string, string>;
+    selectedAddons?: string[];
+    files?: CalculatePricingFileInput[];
+    copies?: number;
+    side?: "one" | "both";
+}
+
+export interface CalculatePricingAddonResponse {
+    ruleId: string;
+    name: string;
+    total: number;
+}
+
+export interface CalculatePricingResponse {
+    baseSubtotal: number;
+    addonsSubtotal: number;
+    total: number;
+    addons: CalculatePricingAddonResponse[];
+    /** Total raw pages from `files[].pageCount`. Mirrored on the response so
+     *  the client can show "12 pages × 2 copies" detail without re-summing. */
+    pageCount: number;
+    /** Post-half-page reduction (per copy). Returned for UI display only —
+     *  pricing is already applied on the server. */
+    effectivePageCount?: number;
+    hasHalfPageAdjustment: boolean;
+}
+
+/**
+ * Build a human label for an addon rule. Mirrors the client-side
+ * `getAddonLabel`: prefer the rule's `specificationValues` ("paper: A4,
+ * binding: spiral"); fall back to "Addon".
+ */
+const buildAddonName = (
+    specs: Record<string, unknown> | null | undefined,
+): string => {
+    if (!specs || typeof specs !== "object") return "Addon";
+    const entries = Object.entries(specs);
+    if (entries.length === 0) return "Addon";
+    return entries.map(([k, v]) => `${k}: ${String(v)}`).join(", ");
+};
+
+const sanitizeCalculatePricingFiles = (
+    raw: unknown,
+): CalculatePricingFileInput[] => {
+    if (!Array.isArray(raw)) return [];
+    const out: CalculatePricingFileInput[] = [];
+    const MAX_FILES = 100;
+    for (const entry of raw.slice(0, MAX_FILES)) {
+        if (!entry || typeof entry !== "object") continue;
+        const e = entry as { url?: unknown; pageCount?: unknown };
+        const url = typeof e.url === "string" ? e.url.trim() : "";
+        if (!url) continue;
+        const pageCount = Number(e.pageCount);
+        if (!Number.isFinite(pageCount) || pageCount <= 0) {
+            throw new ValidationError(
+                "files[i].pageCount must be a positive number",
+            );
+        }
+        out.push({ url, pageCount: Math.floor(pageCount) });
+    }
+    return out;
+};
+
+/**
+ * POST /api/v1/cart/calculate-pricing
+ *
+ * Single source of truth for the live price card on `/services/<slug>`, the
+ * cart preview, and the checkout summary. Public so guest sessions get the
+ * same number as authenticated ones.
+ */
+export const calculatePricing = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) => {
+    try {
+        const body = (req.body ?? {}) as CalculatePricingRequestBody;
+
+        const categoryId = typeof body.categoryId === "string"
+            ? body.categoryId.trim()
+            : "";
+        if (!categoryId) {
+            throw new ValidationError("categoryId is required");
+        }
+
+        const selectedSpecifications: Record<string, string> = {};
+        if (body.selectedSpecifications && typeof body.selectedSpecifications === "object") {
+            for (const [k, v] of Object.entries(body.selectedSpecifications)) {
+                if (typeof k !== "string" || k.length === 0) continue;
+                selectedSpecifications[k] = v === null || v === undefined ? "" : String(v);
+            }
+        }
+
+        const copiesRaw = Number(body.copies);
+        const copies = Number.isFinite(copiesRaw) && copiesRaw >= 1
+            ? Math.floor(copiesRaw)
+            : 1;
+        if (body.copies !== undefined && (!Number.isFinite(copiesRaw) || copiesRaw < 1)) {
+            throw new ValidationError("copies must be >= 1");
+        }
+
+        const files = sanitizeCalculatePricingFiles(body.files);
+        const pageCount = files.reduce((sum, f) => sum + f.pageCount, 0);
+        const fileCount = files.length;
+
+        const requestedAddonIds = normalizeAddonIds(body.selectedAddons);
+
+        // Load the category + active rules in a single query. Rules drive both
+        // base and addon math — keeping it to one DB roundtrip per request.
+        const category = await prisma.category.findUnique({
+            where: { id: categoryId, isActive: true },
+            include: {
+                pricingRules: {
+                    where: { isActive: true },
+                    orderBy: { priority: "desc" },
+                },
+                specifications: {
+                    include: {
+                        options: { where: { isActive: true } },
+                    },
+                },
+            },
+        });
+
+        if (!category) {
+            throw new NotFoundError("Category not found");
+        }
+
+        // Half-page reduction — derive effective per-copy pages from the spec
+        // map. Reused engine helper so the math is identical to
+        // calculate-price + cart/order controllers.
+        const halfPage = processHalfPageCalculation(
+            selectedSpecifications,
+            category.specifications.map((s) => ({
+                slug: s.slug,
+                options: s.options.map((o) => ({
+                    value: o.value,
+                    label: o.label,
+                    metadata: o.metadata,
+                })),
+            })),
+            pageCount > 0 ? pageCount : null,
+            pageCount > 0 ? pageCount * copies : 1,
+            copies,
+        );
+
+        // `side` is supplied for forward-compat (Phase 2 may bypass the spec
+        // lookup); when present + "both" we ALSO trigger the half-page path
+        // even when no spec option is flagged. Conservative: only flips the
+        // flag, doesn't override per-page math when the spec already won.
+        const explicitHalfPage = body.side === "both";
+        const hasHalfPage = halfPage.hasHalfPageOption || (explicitHalfPage && pageCount > 0);
+        const effectivePageCount = hasHalfPage && pageCount > 0
+            ? Math.ceil(pageCount / 2)
+            : pageCount;
+
+        // ── Base subtotal ────────────────────────────────────────────────────
+        // Spec-match BASE_PRICE / SPECIFICATION_COMBINATION rules to compute
+        // baseSubtotal. Mirrors the existing logic in
+        // `categoryController.calculateCategoryPricePublic` but stays focused
+        // on the contract this endpoint exposes (no breakdown rows, no
+        // tier-rule emissions).
+        let baseSubtotal = 0;
+        const matchingBaseRules = category.pricingRules.filter((rule) => {
+            if (rule.ruleType !== "BASE_PRICE" && rule.ruleType !== "SPECIFICATION_COMBINATION") {
+                return false;
+            }
+            const specs = (rule.specificationValues || {}) as Record<string, unknown>;
+            for (const [k, v] of Object.entries(specs)) {
+                if (String(selectedSpecifications[k] ?? "") !== String(v ?? "")) return false;
+            }
+            return true;
+        });
+
+        const baseRule = matchingBaseRules[0];
+        if (baseRule) {
+            const basePrice = baseRule.basePrice ? Number(baseRule.basePrice) : 0;
+            const baseUsesFileMultiplier = Boolean(
+                (baseRule as { fileMultiplier?: boolean }).fileMultiplier,
+            );
+            const safeFileCount = Math.max(1, fileCount);
+            const totalEffectivePages = effectivePageCount * copies;
+
+            if (baseUsesFileMultiplier) {
+                baseSubtotal = basePrice * safeFileCount;
+            } else if (baseRule.quantityMultiplier && totalEffectivePages > 0) {
+                baseSubtotal = basePrice * totalEffectivePages;
+            } else {
+                baseSubtotal = basePrice;
+            }
+        }
+
+        // ── Addons ───────────────────────────────────────────────────────────
+        // Filter the client-supplied addon ids down to live addon rules on
+        // this category. Unknown ids (admin deleted mid-session) are ignored
+        // rather than 4xx'd so a stale guest payload doesn't break checkout.
+        const addonRulesById = new Map(
+            category.pricingRules
+                .filter((r) => r.ruleType === "ADDON")
+                .map((r) => [r.id, r]),
+        );
+
+        const activeAddonInputs: Array<{
+            rule: AddonPricingRule;
+            specs: Record<string, unknown> | null;
+            name: string;
+        }> = [];
+
+        for (const id of requestedAddonIds) {
+            const rule = addonRulesById.get(id);
+            if (!rule) continue;
+            activeAddonInputs.push({
+                rule: {
+                    id: rule.id,
+                    basePrice: rule.basePrice,
+                    priceModifier: rule.priceModifier,
+                    quantityMultiplier: rule.quantityMultiplier,
+                    fileMultiplier: Boolean((rule as { fileMultiplier?: boolean }).fileMultiplier),
+                    copyMultiplier: Boolean((rule as { copyMultiplier?: boolean }).copyMultiplier),
+                    minQuantity: rule.minQuantity,
+                    maxQuantity: rule.maxQuantity,
+                    isActive: rule.isActive,
+                },
+                specs: (rule.specificationValues as Record<string, unknown> | null) ?? null,
+                name: buildAddonName(rule.specificationValues as Record<string, unknown> | null),
+            });
+        }
+
+        // Spec-group dominance pre-pass — drops same-spec tier rules that
+        // would otherwise double-charge alongside a copyMultiplier sibling.
+        // Same engine helper the cart + order controllers run.
+        const surviving = resolveActiveAddons(
+            activeAddonInputs.map(({ rule, specs }) => ({ rule, specs })),
+        );
+        const survivingIds = new Set(surviving.map((r) => r.id));
+
+        const lineMetadata = {
+            pageCount: pageCount > 0 ? pageCount : null,
+            copies,
+            effectivePageCount: hasHalfPage && effectivePageCount > 0
+                ? effectivePageCount
+                : null,
+            files: files.length > 0 ? files : undefined,
+        };
+
+        const addonsResponse: CalculatePricingAddonResponse[] = [];
+        let addonsSubtotal = 0;
+        for (const entry of activeAddonInputs) {
+            if (!survivingIds.has(entry.rule.id)) continue;
+            const total = computeAddonLineTotal(entry.rule, {
+                quantity: pageCount > 0 ? pageCount * copies : 1,
+                addons: [entry.rule.id],
+                metadata: lineMetadata,
+                fileCount,
+            });
+            if (total <= 0) continue;
+            addonsSubtotal += total;
+            addonsResponse.push({
+                ruleId: entry.rule.id,
+                name: entry.name,
+                total: Number(total.toFixed(2)),
+            });
+        }
+
+        const responseBody: CalculatePricingResponse = {
+            baseSubtotal: Number(baseSubtotal.toFixed(2)),
+            addonsSubtotal: Number(addonsSubtotal.toFixed(2)),
+            total: Number((baseSubtotal + addonsSubtotal).toFixed(2)),
+            addons: addonsResponse,
+            pageCount,
+            effectivePageCount: hasHalfPage && effectivePageCount > 0
+                ? effectivePageCount
+                : undefined,
+            hasHalfPageAdjustment: hasHalfPage,
+        };
+
+        return sendSuccess(res, responseBody);
     } catch (error) {
         next(error);
     }
