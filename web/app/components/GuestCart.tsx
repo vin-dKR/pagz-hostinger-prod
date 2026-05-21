@@ -29,6 +29,7 @@ import { getCategoryBySlug, getCategoryAddons, type Category, type CategoryAddon
 import BillingSummary from "./BillingSummary";
 import { useCalculatePricing } from "@/lib/hooks/use-calculate-pricing";
 import { AddonBreakdownRows } from "./AddonBreakdownRows";
+import { buildAddonLabelMap } from "@/lib/utils/addon-label";
 import type { AddonBreakdownEntry } from "@/lib/api/cart";
 
 interface GuestCartProps {
@@ -235,6 +236,60 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
     }>(() => {
         const live = pricingHook.data;
         if (live) {
+            // Defensive guard: if the api total is dramatically lower than
+            // the price the user saw at add-to-cart time (e.g. < 10% of
+            // the cached total), something is off — a stale spec ID, an
+            // admin rule that changed mid-session, or a payload mismatch.
+            const cached = Number(pending?.totalPrice || pending?.currentPrice || 0);
+            if (cached > 0 && live.total > 0 && live.total < cached * 0.1) {
+                console.warn(
+                    "[GuestCart] live pricing < 10% of cached — using cached.",
+                    {
+                        live: { total: live.total, base: live.baseSubtotal, addons: live.addonsSubtotal, addonCount: live.addons.length },
+                        cached,
+                        payload: {
+                            specs: pending?.specifications,
+                            addonIds: pending?.selectedAddons,
+                            fileCount: pending?.files?.length,
+                            pageCount: pending?.pageCount,
+                        },
+                    },
+                );
+                return {
+                    baseTotal: cached,
+                    addonTotal: 0,
+                    total: cached,
+                    addons: [] as PriceBreakdownAddon[],
+                };
+            }
+
+            // Diagnostic: customer had selected N addons, api returned 0.
+            // Surfaces stale rule IDs or post-add-to-cart spec drift.
+            // Logs the full payload so the next prod report has the data
+            // we need to find the underlying mismatch.
+            const expectedAddonCount = pending?.selectedAddons?.length ?? 0;
+            if (expectedAddonCount > 0 && live.addons.length === 0) {
+                console.warn(
+                    "[GuestCart] expected addons but api returned none.",
+                    {
+                        live: {
+                            total: live.total,
+                            base: live.baseSubtotal,
+                            addonsSubtotal: live.addonsSubtotal,
+                            hasHalfPageAdjustment: live.hasHalfPageAdjustment,
+                            effectivePageCount: live.effectivePageCount,
+                        },
+                        payload: {
+                            categoryId: category?.id,
+                            specs: pending?.specifications,
+                            addonIds: pending?.selectedAddons,
+                            fileCount: pending?.files?.length,
+                            pageCount: pending?.pageCount,
+                            copies: pending?.copies,
+                        },
+                    },
+                );
+            }
             return {
                 baseTotal: live.baseSubtotal,
                 addonTotal: live.addonsSubtotal,
@@ -452,15 +507,22 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                             </div>
 
                             {/* Per-addon list — prefer server-computed totals
-                                (Phase 1). When pricing is still in flight on
-                                first render, surface just the addon labels so
-                                the row doesn't pop in once the request lands. */}
-                            {priceBreakdown.addons.length > 0 ? (
+                                (Phase 1). Fallback only renders while the
+                                api call is in flight (initial load); once the
+                                api has responded we trust its view, including
+                                an empty addon list. Otherwise stale
+                                `pending.selectedAddons` ids would show
+                                duplicate "paper-sizes: a4, …" labels with no
+                                prices, which looks worse than rendering
+                                nothing. */}
+                            {priceBreakdown.addons.length > 0 ? (() => {
+                                const labels = buildAddonLabelMap(priceBreakdown.addons);
+                                return (
                                 <ul className="mt-1.5 space-y-1">
                                     {priceBreakdown.addons.map((addon) => (
                                         <li key={addon.ruleId} className="text-[11px] text-gray-500">
                                             <div>
-                                                <span className="text-gray-600">{addon.name}</span>
+                                                <span className="text-gray-600">{labels.get(addon.ruleId) ?? addon.name}</span>
                                                 {addon.total > 0 && (
                                                     <span className="font-medium text-gray-700"> {formatPrice(addon.total)}</span>
                                                 )}
@@ -475,15 +537,26 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                                         </li>
                                     ))}
                                 </ul>
-                            ) : fallbackAddonNames.length > 0 ? (
+                                );
+                            })() : pricingHook.isFetched && (pending.selectedAddons?.length ?? 0) > 0 ? (
+                                <p className="mt-1.5 text-[11px] text-amber-600">
+                                    None of your selected addons fit the current page count.
+                                    Update files or re-add the item.
+                                </p>
+                            ) : pricingHook.isLoading && fallbackAddonNames.length > 0 ? (() => {
+                                // Dedupe while loading so a single name only
+                                // renders once even if multiple addon ids share it.
+                                const unique = Array.from(new Set(fallbackAddonNames));
+                                return (
                                 <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                                    {fallbackAddonNames.map((name, idx) => (
-                                        <li key={`${name}-${idx}`} className="text-[11px] text-gray-500">
-                                            <span className="text-gray-600">{name}</span>
+                                    {unique.map((name, idx) => (
+                                        <li key={`${name}-${idx}`} className="text-[11px] text-gray-400 italic">
+                                            <span>{name}</span>
                                         </li>
                                     ))}
                                 </ul>
-                            ) : null}
+                                );
+                            })() : null}
                         </div>
                     </div>
                 </div>

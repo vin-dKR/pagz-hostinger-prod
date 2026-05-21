@@ -326,6 +326,7 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                 name: string;
                 total: number;
                 breakdown: AddonBreakdownEntry[];
+                range?: { min: number | null; max: number | null };
             }> = [];
 
             if (item.addons && item.addons.length > 0) {
@@ -385,6 +386,10 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                         name,
                         total: Number(addonLineTotal.toFixed(2)),
                         breakdown: computeAddonBreakdown(addon, pricingLine),
+                        range: {
+                            min: addon.minQuantity ?? null,
+                            max: addon.maxQuantity ?? null,
+                        },
                     });
                 }
             }
@@ -1174,6 +1179,10 @@ export interface CalculatePricingAddonResponse {
      *  aggregate entry with `fileUrl: null` otherwise) so the client
      *  can render uniformly without branching on the rule shape. */
     breakdown: AddonBreakdownEntry[];
+    /** Rule's page-range tier so UI can disambiguate two addons that
+     *  share the same spec-derived `name` but cover different ranges
+     *  (e.g. two `wiro binding` tiers for different page counts). */
+    range?: { min: number | null; max: number | null };
 }
 
 export interface CalculatePricingResponse {
@@ -1438,6 +1447,10 @@ export const calculatePricing = async (
                 name: entry.name,
                 total: Number(total.toFixed(2)),
                 breakdown: computeAddonBreakdown(entry.rule, lineInput),
+                range: {
+                    min: entry.rule.minQuantity ?? null,
+                    max: entry.rule.maxQuantity ?? null,
+                },
             });
         }
 
