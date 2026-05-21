@@ -351,11 +351,9 @@ export const computeAddonLineTotal = (
         }
         // Back-compat: rule has the flag but the line predates Phase 0
         // (no metadata.files persisted). Fall through to the aggregate
-        // path and surface the row to ops.
-        console.warn(
-            "[pricing] perFileEvaluation rule applied to line without files; falling back to aggregate",
-            { addonId: addon.id }
-        );
+        // path silently — callers can surface the fallback once per
+        // request via `warnPerFileFallback` (avoids N duplicate warnings
+        // when a line carries several addon rules with the flag set).
     }
 
     const unit = getAddonUnitPrice(addon);
@@ -649,6 +647,63 @@ export const fetchAddonSpecMap = async (
             rule.id,
             (rule.specificationValues as Record<string, unknown> | null) ?? null,
         ])
+    );
+};
+
+/**
+ * Detect lines that will silently fall back from the per-file branch to
+ * the aggregate path because the line has no `metadata.files` array,
+ * even though at least one of its addon rules is `perFileEvaluation=true`.
+ *
+ * Returns the deduped list of rule ids that triggered the fallback (empty
+ * when nothing falls back). Pure — does NOT log; callers decide whether
+ * to emit a warning and with what context. Keeps the engine itself
+ * silent so we don't get N near-identical warnings when a single line
+ * carries several flagged rules (one of the root causes of #77).
+ */
+export const collectPerFileFallbackRuleIds = (
+    line: AddonLineItemInput,
+    addonMap: Map<string, AddonPricingRule>,
+): string[] => {
+    if (!line.addons || line.addons.length === 0) return [];
+    const files = line.metadata?.files;
+    if (files && files.length > 0) return [];
+    const seen = new Set<string>();
+    for (const id of line.addons) {
+        const rule = addonMap.get(id);
+        if (rule?.perFileEvaluation) seen.add(id);
+    }
+    return Array.from(seen);
+};
+
+/**
+ * Caller-side companion to {@link collectPerFileFallbackRuleIds}: scans
+ * a batch of lines, emits ONE consolidated `console.warn` per call when
+ * any line had a `perFileEvaluation` rule that fell back to the
+ * aggregate path. No-op when nothing fell back.
+ *
+ * Context (e.g. `cartItemId`, `merchantOrderId`, `categoryId`) is
+ * appended to the log so ops can correlate the warning back to a
+ * specific request. Pre-#77 this warning fired inside
+ * `computeAddonLineTotal` and produced 14+ identical lines per request;
+ * we now collapse it into one summary line at the call-site boundary.
+ */
+export const warnPerFileFallback = (
+    lines: AddonLineItemInput[],
+    addonMap: Map<string, AddonPricingRule>,
+    context: Record<string, unknown> = {},
+): void => {
+    const ruleIds = new Set<string>();
+    for (const line of lines) {
+        for (const id of collectPerFileFallbackRuleIds(line, addonMap)) {
+            ruleIds.add(id);
+        }
+    }
+    if (ruleIds.size === 0) return;
+    const ids = Array.from(ruleIds);
+    console.warn(
+        `[pricing] ${ids.length} perFileEvaluation rule(s) applied without files; falling back to aggregate`,
+        { addonIds: ids, ...context },
     );
 };
 
