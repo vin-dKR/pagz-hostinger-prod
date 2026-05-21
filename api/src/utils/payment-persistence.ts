@@ -49,6 +49,25 @@ export interface NormalizedOrderItem {
 }
 
 /**
+ * Forensic snapshot of a price-drift event (issue #74). Populated when the
+ * recomputed gross total at persist time disagrees with the gateway-charged
+ * `pendingPayment.amount` beyond a small rounding tolerance.
+ *
+ * Persistence still uses the customer-paid amount (locked at create-order
+ * time) — this struct is purely audit data for the `AMOUNT_MISMATCH`
+ * PaymentEvent row, so ops can see the exact components of the drift
+ * without re-running the engine.
+ */
+export interface AmountMismatchSnapshot {
+    paidAmount: number;
+    recomputedTotal: number;
+    subtotal: number;
+    addonsSubtotal: number;
+    discountAmount: number;
+    shippingCharges: number;
+}
+
+/**
  * Gateway-side info from a successful verify call or `payment.captured` /
  * `order.paid` webhook. Both paths land in `persistOrderFromPending` so the
  * Payment row holds the same shape regardless of who triggered it.
@@ -248,10 +267,29 @@ export async function resolveCouponDiscount(
 }
 
 /**
+ * Tolerance window for deciding whether the recomputed grand-total matches
+ * what the gateway actually charged. Anything inside this band is treated as
+ * a rounding artefact (Razorpay quantises to paise, our math runs in
+ * floating-point rupees, coupon percentages divide imperfectly, etc.).
+ * Anything beyond this is a real drift and gets audited via
+ * `AMOUNT_MISMATCH`.
+ */
+const AMOUNT_MISMATCH_TOLERANCE_INR = 1;
+
+/**
  * The actual persistence step: Order + OrderItems + Payment (+ optional
  * CouponUsage) created inside a single Prisma transaction. PendingPayment is
  * marked COMPLETED in the same tx so any failure rolls everything back —
  * eliminates the "Order created, Payment missing" half-write scenario.
+ *
+ * Phase 5 (issue #74) — the customer-facing total is locked to
+ * `pendingPayment.amount` (what Razorpay was instructed to charge). The
+ * server still recomputes subtotal/addonsSubtotal for breakdown columns and
+ * refund display, but the recompute is NEVER allowed to silently overwrite
+ * the customer's paid total. When the two diverge beyond a ₹1 rounding
+ * tolerance we emit an `AMOUNT_MISMATCH` PaymentEvent so ops can investigate
+ * the pricing drift after the fact — without putting the customer at risk
+ * of being under-charged or over-charged on the order record.
  *
  * Caller is expected to handle the P2002 race separately via
  * `persistOrderWithRaceGuard`.
@@ -263,15 +301,21 @@ export async function persistOrderFromPending(
         userId: string;
         addressId: string;
         items: unknown;
+        amount: unknown;
         couponCode: string | null;
         shippingCharges: unknown;
         customerComment: string | null;
     },
     gateway: GatewayPaymentInfo,
     statusComment: string,
-): Promise<{ orderId: string }> {
+): Promise<{ orderId: string; mismatch?: AmountMismatchSnapshot }> {
     const items = pendingPayment.items as unknown[];
     const shippingCharges = Number(pendingPayment.shippingCharges || 0);
+    // Authoritative customer-facing amount — this is the value we passed to
+    // Razorpay's create-order call, the value the customer saw on the
+    // Razorpay checkout sheet, and the value Razorpay actually charged.
+    // Persistence is locked to it.
+    const paidAmount = Number(pendingPayment.amount || 0);
 
     // Address verification — guards against the corner case where a user
     // deletes their address between cart-create and webhook-arrive.
@@ -307,7 +351,26 @@ export async function persistOrderFromPending(
     );
 
     // Clamp at 0 — discounts must never produce a negative total.
-    const total = Math.max(0, grossSubtotal - discountAmount + shippingCharges);
+    const recomputedTotal = Math.max(0, grossSubtotal - discountAmount + shippingCharges);
+
+    // ── Phase 5 lock: the order's `total` and the Payment's `amount` are
+    // always the gateway-charged value. The recompute above stays for
+    // forensic comparison (and for the per-item `subtotal` / `addonsSubtotal`
+    // / `discountAmount` breakdown columns, which are display-only and
+    // never the customer-facing total).
+    const total = paidAmount > 0 ? paidAmount : recomputedTotal;
+
+    let mismatch: AmountMismatchSnapshot | undefined;
+    if (paidAmount > 0 && Math.abs(recomputedTotal - paidAmount) > AMOUNT_MISMATCH_TOLERANCE_INR) {
+        mismatch = {
+            paidAmount,
+            recomputedTotal,
+            subtotal,
+            addonsSubtotal,
+            discountAmount,
+            shippingCharges,
+        };
+    }
 
     const order = await tx.order.create({
         data: {
@@ -354,7 +417,11 @@ export async function persistOrderFromPending(
         data: {
             orderId: order.id,
             userId: pendingPayment.userId,
-            amount: order.total,
+            // Locked to the gateway-charged amount, NOT `order.total` — they
+            // are the same value today (we set `total = paidAmount` above)
+            // but spelling it out here documents the invariant: the Payment
+            // row is the canonical "what the customer paid" record.
+            amount: total,
             discountAmount: discountAmount > 0 ? discountAmount : null,
             gatewayOrderId: pendingPayment.merchantOrderId,
             gatewayTransactionId: gateway.razorpayPaymentId,
@@ -389,7 +456,7 @@ export async function persistOrderFromPending(
         data: { status: "COMPLETED" },
     });
 
-    return { orderId: order.id };
+    return { orderId: order.id, mismatch };
 }
 
 /**
@@ -398,12 +465,19 @@ export async function persistOrderFromPending(
  * constraint (P2002). The retry resolves to the order the other path created
  * — verify and webhook then both return the same orderId, so the caller
  * surfaces success either way.
+ *
+ * When the persistence step detects an amount drift between the recomputed
+ * gross total and the gateway-charged amount, the snapshot is bubbled up via
+ * `mismatch` so the caller can log an `AMOUNT_MISMATCH` PaymentEvent (issue
+ * #74). Persistence has already locked `Order.total` / `Payment.amount` to
+ * the gateway-charged value at this point — the mismatch is purely audit
+ * signal for ops.
  */
 export async function persistOrderWithRaceGuard(
     pendingPayment: Parameters<typeof persistOrderFromPending>[1],
     gateway: GatewayPaymentInfo,
     statusComment: string,
-): Promise<{ orderId: string; raced: boolean }> {
+): Promise<{ orderId: string; raced: boolean; mismatch?: AmountMismatchSnapshot }> {
     try {
         const result = await prisma.$transaction(
             (tx) => persistOrderFromPending(tx, pendingPayment, gateway, statusComment),
