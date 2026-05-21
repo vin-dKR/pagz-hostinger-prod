@@ -10,7 +10,25 @@ import {
     recordPaymentEvent,
     hashPayload,
     type GatewayPaymentInfo,
+    type AmountMismatchSnapshot,
 } from "../utils/payment-persistence.js";
+
+/**
+ * Serialise an `AmountMismatchSnapshot` into a short, log-friendly string.
+ * The payload is small enough to fit in `PaymentEvent.errorMessage` (TEXT)
+ * so ops can grep for `AMOUNT_MISMATCH` rows and read the breakdown without
+ * joining another table.
+ */
+const formatAmountMismatch = (m: AmountMismatchSnapshot): string => {
+    return [
+        `paid=${m.paidAmount.toFixed(2)}`,
+        `recomputed=${m.recomputedTotal.toFixed(2)}`,
+        `subtotal=${m.subtotal.toFixed(2)}`,
+        `addons=${m.addonsSubtotal.toFixed(2)}`,
+        `discount=${m.discountAmount.toFixed(2)}`,
+        `shipping=${m.shippingCharges.toFixed(2)}`,
+    ].join(" ");
+};
 
 type RazorpayCreateOrderResponse = {
     id?: string;
@@ -35,6 +53,135 @@ interface RazorpayPaymentEntity {
     upi?: { vpa?: string };
     card?: { network?: string; type?: string; last4?: string; issuer?: string };
     notes?: { merchantOrderId?: string };
+}
+
+/**
+ * Normalise a `customDesignUrl` value (string | string[] | unknown) to a
+ * deduped, trimmed string[]. Returned in stable order — caller-side
+ * comparisons can rely on identical input producing identical output.
+ */
+function normalizeDesignUrlsLocal(value: unknown): string[] {
+    if (!value) return [];
+    const raw: string[] = Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === "string")
+        : typeof value === "string"
+            ? [value]
+            : [];
+    const seen = new Set<string>();
+    for (const entry of raw) {
+        const trimmed = entry.trim();
+        if (trimmed) seen.add(trimmed);
+    }
+    return Array.from(seen);
+}
+
+/**
+ * Per-uploaded-file pricing metadata as stored in
+ * `CartItem.metadata.files`. The shape is intentionally narrow — we only
+ * need `url` and `pageCount` here; the engine sanitises anything else.
+ */
+interface CartFileMetaEntry {
+    url: string;
+    pageCount: number;
+}
+
+/**
+ * Phase 0 / issue #74 — backfill missing `metadata.files` on the payload
+ * we're about to freeze into `PendingPayment.items` by looking up the
+ * user's CartItem rows and copying their persisted `files` array over.
+ *
+ * Why: between cart-write and create-order-from-cart, an intermediate
+ * web-side path (cart sweep, file re-upload, addon toggle, manual
+ * `updateCartItem` calls) can submit a `metadata` blob that overwrites
+ * the row's metadata WITHOUT including the per-file `files` array — old
+ * `getCart` responses are spread back through `updatedMetadata` and a
+ * missing key never gets restored client-side. The result is a cart row
+ * whose preview total ran with `metadata.files` (computed live by
+ * `getCart`) but whose payload to `/create-order-from-cart` arrives
+ * without it. Persist-time then takes the `perFileEvaluation` aggregate
+ * fallback and mis-prices the addon (issue #74).
+ *
+ * Server-side enrichment closes the loop: whatever the client sent, the
+ * pending payment carries the cart's own `metadata.files` array if the
+ * cart row has one. Per-item match is by `(productId, customDesignUrl set)`
+ * — exact URL set match guarantees we don't paste a different cart row's
+ * files onto an item the user just hand-edited.
+ *
+ * No-op when:
+ *   - the item already has `metadata.files` (client knew about them).
+ *   - no matching CartItem row exists (buyNow flow, deleted row, etc.).
+ *   - the matching CartItem also lacks `metadata.files`.
+ */
+async function enrichItemsWithCartFiles(
+    items: unknown[],
+    userId: string,
+): Promise<unknown[]> {
+    // Pull every CartItem the user owns once; we'll match in memory.
+    const cartItems = await prisma.cartItem.findMany({
+        where: { cart: { userId } },
+        select: {
+            productId: true,
+            customDesignUrl: true,
+            metadata: true,
+        },
+    });
+    if (cartItems.length === 0) return items;
+
+    // Index by (productId + sorted customDesignUrl set) for O(1) lookup.
+    const index = new Map<string, CartFileMetaEntry[] | null>();
+    for (const ci of cartItems) {
+        const urls = normalizeDesignUrlsLocal(ci.customDesignUrl).sort();
+        if (urls.length === 0) continue;
+        const key = `${ci.productId}::${urls.join("|")}`;
+        const metaFiles = (ci.metadata as { files?: unknown } | null | undefined)?.files;
+        if (!Array.isArray(metaFiles) || metaFiles.length === 0) {
+            index.set(key, null);
+            continue;
+        }
+        // Defensive: clone, validate the shape, drop garbage entries.
+        const sanitized: CartFileMetaEntry[] = [];
+        for (const entry of metaFiles) {
+            if (!entry || typeof entry !== "object") continue;
+            const e = entry as { url?: unknown; pageCount?: unknown };
+            const url = typeof e.url === "string" ? e.url.trim() : "";
+            const pageCount = Number(e.pageCount);
+            if (!url || !Number.isFinite(pageCount) || pageCount < 0) continue;
+            sanitized.push({ url, pageCount: Math.floor(pageCount) });
+        }
+        index.set(key, sanitized.length > 0 ? sanitized : null);
+    }
+
+    return items.map((item) => {
+        const it = item as {
+            productId?: unknown;
+            customDesignUrl?: unknown;
+            metadata?: unknown;
+        };
+        const productId = typeof it.productId === "string" ? it.productId : "";
+        if (!productId) return item;
+
+        // Already has files — trust the client, don't second-guess.
+        const existing = (it.metadata as { files?: unknown } | null | undefined)?.files;
+        if (Array.isArray(existing) && existing.length > 0) return item;
+
+        const urls = normalizeDesignUrlsLocal(it.customDesignUrl).sort();
+        if (urls.length === 0) return item;
+        const key = `${productId}::${urls.join("|")}`;
+        const recovered = index.get(key);
+        if (!recovered || recovered.length === 0) return item;
+
+        // Stamp the recovered files onto a shallow clone — never mutate
+        // the caller's object so this helper stays referentially safe.
+        const meta = (it.metadata && typeof it.metadata === "object")
+            ? { ...(it.metadata as Record<string, unknown>) }
+            : {};
+        meta.files = recovered;
+        console.warn(
+            "[create-order] backfilled metadata.files from cart row",
+            { productId, urlsCount: urls.length, recoveredCount: recovered.length },
+        );
+        return { ...(item as Record<string, unknown>), metadata: meta };
+    });
 }
 
 /**
@@ -177,12 +324,25 @@ export const createRazorpayOrderFromCart = async (req: Request, res: Response, n
         // we don't leave orphan rows on rejection.
         await assertOrderFilesValid(items, merchantOrderId);
 
+        // Issue #74 — backfill `metadata.files` from the user's cart rows
+        // when the request payload is missing it. Closes a class of
+        // checkout-side mapping bugs (cart sweep, addon toggle, etc.)
+        // that strip `files` from the payload while the cart row in DB
+        // still has the authoritative per-file metadata. Without this,
+        // perFileEvaluation addons silently fall back to the aggregate
+        // path at persist time and the order total drifts from what the
+        // customer paid.
+        const enrichedItems = await enrichItemsWithCartFiles(
+            items as unknown[],
+            req.user.id,
+        );
+
         await prisma.pendingPayment.create({
             data: {
                 merchantOrderId,
                 userId: req.user.id,
                 addressId,
-                items: JSON.parse(JSON.stringify(items)),
+                items: JSON.parse(JSON.stringify(enrichedItems)),
                 amount: Number(amount),
                 couponCode: couponCode || null,
                 shippingCharges: shippingCharges ? Number(shippingCharges) : null,
@@ -351,12 +511,13 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
             },
         };
 
-        const { orderId, raced } = await persistOrderWithRaceGuard(
+        const { orderId, raced, mismatch } = await persistOrderWithRaceGuard(
             {
                 merchantOrderId: pendingPayment.merchantOrderId,
                 userId: pendingPayment.userId,
                 addressId: pendingPayment.addressId,
                 items: pendingPayment.items,
+                amount: pendingPayment.amount,
                 couponCode: pendingPayment.couponCode,
                 shippingCharges: pendingPayment.shippingCharges,
                 customerComment: pendingPayment.customerComment ?? null,
@@ -373,6 +534,23 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
             status: "SUCCESS",
             correlationId,
         });
+
+        // Phase 5 audit (issue #74) — if the recomputed total drifted from
+        // what the customer was actually charged, log the breakdown so ops
+        // can chase the pricing bug without it ever affecting persisted
+        // amounts (Order.total + Payment.amount are already locked to the
+        // gateway-charged value inside persistOrderFromPending).
+        if (mismatch && !raced) {
+            await recordPaymentEvent({
+                merchantOrderId,
+                gatewayOrderId: razorpayOrderId,
+                source: "verify",
+                code: "AMOUNT_MISMATCH",
+                status: "SUCCESS",
+                correlationId,
+                errorMessage: formatAmountMismatch(mismatch),
+            });
+        }
 
         return sendSuccess(res, {
             verified: true,
@@ -585,12 +763,13 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
             },
         };
 
-        const { orderId, raced } = await persistOrderWithRaceGuard(
+        const { orderId, raced, mismatch } = await persistOrderWithRaceGuard(
             {
                 merchantOrderId: pendingPayment.merchantOrderId,
                 userId: pendingPayment.userId,
                 addressId: pendingPayment.addressId,
                 items: pendingPayment.items,
+                amount: pendingPayment.amount,
                 couponCode: pendingPayment.couponCode,
                 shippingCharges: pendingPayment.shippingCharges,
                 customerComment: pendingPayment.customerComment ?? null,
@@ -609,6 +788,22 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
             correlationId,
             errorMessage: orderId,
         });
+
+        // Phase 5 audit (issue #74) — see verifyRazorpayPayment for the
+        // rationale. Mirrored here so the webhook path emits the same
+        // signal when it is the surface that actually persisted the order.
+        if (mismatch && !raced) {
+            await recordPaymentEvent({
+                merchantOrderId,
+                gatewayOrderId: razorpayOrderId ?? null,
+                source: "webhook",
+                code: "AMOUNT_MISMATCH",
+                status: "SUCCESS",
+                payloadHash,
+                correlationId,
+                errorMessage: formatAmountMismatch(mismatch),
+            });
+        }
 
         return sendSuccess(res, { received: true }, "Webhook acknowledged");
     } catch (error) {
