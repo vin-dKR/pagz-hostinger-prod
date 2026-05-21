@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { imageLoader } from "@/lib/utils/image-loader";
 import { getPublicS3Url, isImageFile, getFilenameFromS3Key } from "@/lib/utils/s3";
+import { downloadPublicFile } from "@/lib/utils/file-download";
 import { use, useState, useEffect } from "react";
 import {
     Package,
@@ -724,16 +725,28 @@ function OrderDetailsPageContent({
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                                             {item.customDesignUrl.map((fileUrl, idx) => {
                                                                 const publicUrl = getPublicS3Url(fileUrl);
+                                                                const fileName = getFilenameFromS3Key(fileUrl);
+                                                                // Force a programmatic download via fetch+blob so the
+                                                                // click doesn't get routed through Next.js's `/orders/[id]`
+                                                                // page (issue #76). Keep the `<a href>` intact so
+                                                                // right-click "Save link as" and middle-click "Open in
+                                                                // new tab" still expose the absolute public URL.
                                                                 return (
                                                                     <a
                                                                         key={idx}
                                                                         href={publicUrl}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
+                                                                        download={fileName}
+                                                                        onClick={(e) => {
+                                                                            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                                                                            e.preventDefault();
+                                                                            void downloadPublicFile(fileUrl, fileName);
+                                                                        }}
                                                                         className="block min-w-0"
                                                                     >
                                                                         <UploadedFileTile
-                                                                            name={getFilenameFromS3Key(fileUrl)}
+                                                                            name={fileName}
                                                                             url={publicUrl}
                                                                         />
                                                                     </a>
