@@ -16,6 +16,7 @@ import {
     normalizeAddonIds,
     resolveActiveAddons,
     sanitizePricingFiles,
+    warnPerFileFallback,
     type AddonBreakdownEntry,
     type AddonPricingRule,
     type PricingFileMeta,
@@ -371,6 +372,17 @@ export const getCart = async (req: Request, res: Response, next: NextFunction) =
                     itemAddons.map((rule) => ({ rule, specs: rule.specificationValues ?? null }))
                 );
                 const survivingIds = new Set(surviving.map((r) => r.id));
+
+                // Single summary warn per cart item when any addon rule
+                // forces the perFileEvaluation aggregate fallback because
+                // the line predates Phase 0 (no `metadata.files` row).
+                // Issue #77 — replaces N near-identical warnings emitted
+                // from inside `computeAddonLineTotal`.
+                warnPerFileFallback(
+                    [pricingLine],
+                    new Map(itemAddons.map((rule) => [rule.id, rule])),
+                    { cartItemId: item.id, productId: item.productId },
+                );
                 for (const addon of itemAddons) {
                     addonUnitPrice += getAddonUnitPrice(addon);
                     if (!survivingIds.has(addon.id)) continue;
@@ -1428,6 +1440,20 @@ export const calculatePricing = async (
             files: files.length > 0 ? files : undefined,
             side: sideForMeta,
         };
+
+        // Single summary warn per pricing request — surfaces the
+        // perFileEvaluation aggregate fallback once even though the
+        // engine itself runs once per addon. Issue #77.
+        warnPerFileFallback(
+            [{
+                quantity: pageCount > 0 ? pageCount * copies : 1,
+                addons: activeAddonInputs.map((e) => e.rule.id),
+                metadata: lineMetadata,
+                fileCount,
+            }],
+            new Map(activeAddonInputs.map((e) => [e.rule.id, e.rule])),
+            { categoryId, source: "calculatePricing" },
+        );
 
         const addonsResponse: CalculatePricingAddonResponse[] = [];
         let addonsSubtotal = 0;

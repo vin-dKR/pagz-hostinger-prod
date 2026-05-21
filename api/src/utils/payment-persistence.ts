@@ -19,6 +19,7 @@ import {
     fetchAddonSpecMap,
     normalizeAddonIds,
     sanitizePricingFiles,
+    warnPerFileFallback,
     type AddonLineItemInput,
     type PricingFileMeta,
 } from "./addon-pricing.js";
@@ -288,6 +289,13 @@ export async function persistOrderFromPending(
         fetchAddonRuleMap(addonIds),
         fetchAddonSpecMap(addonIds),
     ]);
+    // One summary warn per pending payment when any order item triggers
+    // the perFileEvaluation aggregate fallback (legacy rows persisted
+    // before Phase 0 lack `metadata.files`). Issue #77.
+    warnPerFileFallback(orderItems, addonMap, {
+        merchantOrderId: pendingPayment.merchantOrderId,
+        userId: pendingPayment.userId,
+    });
     const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMap, addonSpecMap);
     const grossSubtotal = subtotal + addonsSubtotal;
 
