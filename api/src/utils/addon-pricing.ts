@@ -719,3 +719,85 @@ export const normalizeAddonIds = (raw: unknown): string[] => {
     }
     return Array.from(seen);
 };
+
+/**
+ * UI-friendly per-addon detail row returned by `buildAddonLineDetails`.
+ *
+ * Shape mirrors the cart endpoint's `CartItemAddonPricing` so storefront
+ * and admin can share rendering primitives (e.g. `AddonBreakdownRows`,
+ * `buildAddonLabelMap`). The order/admin surface relies on it for
+ * "actually-charged" pricing so the legacy `OrderItem.addons[].priceModifier`
+ * (which is the rule's raw unit price, not the contribution to this line)
+ * never has to leak into the UI again.
+ */
+export interface AddonLineDetail {
+    ruleId: string;
+    /** Pre-formatted "key: value, …" label built from the rule's
+     *  `specificationValues`. Falls back to "Addon" when the rule has no
+     *  spec dimensions (rare — usually flat-fee addons). */
+    name: string;
+    /** Final price contributed by this rule to the line (already rounded
+     *  to 2dp). Zero when the rule didn't fire — callers typically filter
+     *  these out before rendering. */
+    total: number;
+    /** Per-file breakdown from `computeAddonBreakdown` so UIs can render
+     *  Phase 3 sub-rows uniformly across cart + order + admin. */
+    breakdown: AddonBreakdownEntry[];
+    /** Rule's page range — used by the UI to disambiguate two addons that
+     *  share the same spec-derived `name` (mirrors `buildAddonLabelMap`). */
+    range: { min: number | null; max: number | null };
+}
+
+/**
+ * Internal: turn a rule's `specificationValues` blob into the "key: value,
+ * …" label used everywhere (cart row, order review, invoice, admin item).
+ */
+const formatAddonName = (specificationValues: unknown): string => {
+    if (!specificationValues || typeof specificationValues !== "object") return "Addon";
+    const entries = Object.entries(specificationValues as Record<string, unknown>);
+    if (entries.length === 0) return "Addon";
+    return entries.map(([k, v]) => `${k}: ${String(v)}`).join(", ");
+};
+
+/**
+ * Build the cart-style per-addon detail rows for a single line item.
+ *
+ * Applies spec-group dominance via `resolveActiveAddons`, computes each
+ * surviving rule's contribution with `computeAddonLineTotal`, and packages
+ * the breakdown for UI consumption. Single source of truth — used by the
+ * cart controller (live preview) and the order/admin endpoints (replay
+ * against persisted `OrderItem.metadata`) so all surfaces see identical
+ * numbers without reimplementing the engine.
+ *
+ * Rules whose tier doesn't match the line (e.g. binding "201-300 pages"
+ * attached to a 150-page line) compute as `total = 0`. They're still
+ * returned so callers can choose to render diagnostic info if needed;
+ * UI components typically filter `total > 0` before rendering.
+ */
+export const buildAddonLineDetails = <
+    R extends AddonPricingRule & { specificationValues?: unknown }
+>(
+    rules: R[],
+    line: AddonLineItemInput,
+): AddonLineDetail[] => {
+    if (rules.length === 0) return [];
+    const surviving = resolveActiveAddons(
+        rules.map((rule) => ({
+            rule,
+            specs: (rule.specificationValues as Record<string, unknown> | null) ?? null,
+        }))
+    );
+    return surviving.map((rule) => {
+        const total = computeAddonLineTotal(rule, line);
+        return {
+            ruleId: rule.id,
+            name: formatAddonName(rule.specificationValues),
+            total: Number(total.toFixed(2)),
+            breakdown: computeAddonBreakdown(rule, line),
+            range: {
+                min: rule.minQuantity ?? null,
+                max: rule.maxQuantity ?? null,
+            },
+        };
+    });
+};

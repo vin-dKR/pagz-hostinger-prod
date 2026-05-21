@@ -46,6 +46,8 @@ import Image from 'next/image';
 import { imageLoader } from '@/lib/utils/image-loader';
 import { TemplateDisplay } from './TemplateDisplay';
 import { AdminFileTile } from './AdminFileTile';
+import { AddonBreakdownRows } from './AddonBreakdownRows';
+import { buildAddonLabelMap } from '@/lib/utils/addon-label';
 const { getInvoicePDFUrl } = await import('@/lib/api/invoice.service');
 
 
@@ -556,7 +558,11 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                 const fileCount = Math.max(rawUrls.length, publicUrls.length);
 
                                 const breakdown = meta?.priceBreakdown as Array<{ label: string; value: number }> | undefined;
-                                const addons = (item as any).addons as Array<any> | undefined;
+                                // Server-computed per-addon contributions (see issue #75).
+                                // Replaces the legacy iteration over `item.addons[]` with
+                                // raw `priceModifier` lookups — those values are the rule's
+                                // unit price, not what we actually charged for this line.
+                                const pricingAddons = item.pricing?.addons;
 
                                 // Display the effective (post-Both-Sides) quantity so admins
                                 // see what was actually printed, not the raw PDF page count.
@@ -734,74 +740,66 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                 </div>
                                             )}
 
-                                            {/* Addons (placed before breakdown per UX request — shows
-                                                what the customer added before the line-by-line totals). */}
-                                            {addons && addons.length > 0 && (
-                                                <div>
-                                                    <h4 className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
-                                                        Addons ({addons.length})
-                                                    </h4>
-                                                    <div className="rounded-lg border border-purple-200 bg-purple-50/40 overflow-hidden">
-                                                        <div className="divide-y divide-purple-100">
-                                                            {addons.map((addon, addonIdx) => {
-                                                                const rawPrice =
-                                                                    addon.priceModifier != null
-                                                                        ? Number(addon.priceModifier)
-                                                                        : addon.basePrice != null
-                                                                            ? Number(addon.basePrice)
-                                                                            : 0;
-                                                                const safeCopies = Number(copies || 1) > 0 ? Number(copies || 1) : 1;
-                                                                const perCopyPages = hasHalfPage && effectivePages
-                                                                    ? Number(effectivePages)
-                                                                    : Number(pageCount || 0) > 0
-                                                                        ? Number(pageCount)
-                                                                        : 0;
-                                                                // Half-page-aware total sheets, matches api util.
-                                                                const totalPagesAdmin = perCopyPages > 0
-                                                                    ? perCopyPages * safeCopies
-                                                                    : null;
-                                                                // Mirror computeAddonLineTotal's matrix.
-                                                                let multiplier = 1;
-                                                                const mathParts: string[] = [];
-                                                                if ((addon as any).copyMultiplier) {
-                                                                    const perBookMult = addon.quantityMultiplier && perCopyPages > 0
-                                                                        ? perCopyPages
-                                                                        : 1;
-                                                                    multiplier = perBookMult * safeCopies;
-                                                                    if (perBookMult > 1) mathParts.push(`${perBookMult} ${perBookMult === 1 ? 'page' : 'pages'}`);
-                                                                    mathParts.push(`${safeCopies} ${safeCopies === 1 ? 'copy' : 'copies'}`);
-                                                                } else if (addon.quantityMultiplier) {
-                                                                    multiplier = totalPagesAdmin ?? item.quantity;
-                                                                    if (multiplier > 1) mathParts.push(`${multiplier}`);
-                                                                }
-                                                                const total = rawPrice * multiplier;
-                                                                const specValues = (addon.specificationValues || {}) as Record<string, any>;
-                                                                const specDetails = Object.entries(specValues)
-                                                                    .map(([k, v]) => `${k}: ${v}`)
-                                                                    .join(', ') || `Addon ${addonIdx + 1}`;
-                                                                return (
+                                            {/* Addons — server-computed contributions to this
+                                                line (issue #75). Renders from `pricing.addons[]`
+                                                produced by `buildAddonLineDetails` on the api so
+                                                the numbers shown here are the same ones the
+                                                customer was charged, not the rule's raw
+                                                priceModifier. We filter `total <= 0` to drop
+                                                rules that didn't fire (e.g. binding tiers whose
+                                                page range doesn't match the uploaded file) and
+                                                disambiguate duplicate spec-names via the same
+                                                `buildAddonLabelMap` helper used in the cart
+                                                row + order review. */}
+                                            {(() => {
+                                                const pricedAddons = (pricingAddons ?? []).filter(
+                                                    (a) => Number(a.total || 0) > 0,
+                                                );
+                                                if (pricedAddons.length === 0) return null;
+                                                const labels = buildAddonLabelMap(pricedAddons);
+                                                // Resolve uploaded-file URLs back to their stored
+                                                // filenames so per-file sub-rows show "design.pdf"
+                                                // rather than the FTP basename.
+                                                const filenameByUrl = new Map<string, string>();
+                                                rawUrls.forEach((url) => {
+                                                    if (typeof url === 'string' && url) {
+                                                        filenameByUrl.set(url, getFilenameFromPath(url));
+                                                    }
+                                                });
+                                                const resolveFilename = (u: string) => filenameByUrl.get(u);
+                                                return (
+                                                    <div>
+                                                        <h4 className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+                                                            Addons ({pricedAddons.length})
+                                                        </h4>
+                                                        <div className="rounded-lg border border-purple-200 bg-purple-50/40 overflow-hidden">
+                                                            <div className="divide-y divide-purple-100">
+                                                                {pricedAddons.map((addon) => (
                                                                     <div
-                                                                        key={addonIdx}
-                                                                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-3 py-2.5 bg-white"
+                                                                        key={addon.ruleId}
+                                                                        className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 px-3 py-2.5 bg-white"
                                                                     >
                                                                         <div className="min-w-0">
-                                                                            <p className="text-sm font-medium text-purple-900">{specDetails}</p>
-                                                                            {mathParts.length > 0 && (
-                                                                                <p className="text-xs text-purple-500 mt-0.5">
-                                                                                    {formatCurrency(rawPrice)} × {mathParts.join(' × ')}
-                                                                                </p>
+                                                                            <p className="text-sm font-medium text-purple-900">
+                                                                                {labels.get(addon.ruleId) ?? addon.name}
+                                                                            </p>
+                                                                            {addon.breakdown && addon.breakdown.length > 1 && (
+                                                                                <AddonBreakdownRows
+                                                                                    breakdown={addon.breakdown}
+                                                                                    resolveFilename={resolveFilename}
+                                                                                />
                                                                             )}
                                                                         </div>
                                                                         <div className="text-sm font-semibold text-purple-900 shrink-0 sm:text-right">
-                                                                            {formatCurrency(total)}
+                                                                            {formatCurrency(addon.total)}
                                                                         </div>
                                                                     </div>
-                                                                );
-                                                            })}
+                                                                ))}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            )}
+                                                );
+                                            })()}
 
                                             {/* Price breakdown — explicit math. Replaces the
                                                 Unit/Qty/Total tiles that didn't visually
