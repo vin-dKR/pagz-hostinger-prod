@@ -7,6 +7,7 @@ import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../
 import { deriveHalfPageFromSelectedSpecs } from "../utils/half-page-from-specs.js";
 import { generateInvoicePDF } from "../services/pdfGenerator.js";
 import {
+    buildAddonLineDetails,
     collectAddonIds,
     computeAddonBreakdown,
     computeAddonLineTotal,
@@ -16,8 +17,10 @@ import {
     fetchAddonSpecMap,
     normalizeAddonIds,
     sanitizePricingFiles,
+    type AddonLineDetail,
     type AddonPricingRule,
     type PricingFileMeta,
+    type PricingLineMetadata,
 } from "../utils/addon-pricing.js";
 import { computeCategoryCartShortfalls, type CategoryLineContribution } from "../utils/category-min-cart-value.js";
 
@@ -1158,6 +1161,21 @@ export const getAdminOrder = async (req: Request, res: Response, next: NextFunct
                     ? [item.customDesignUrl]
                     : [];
 
+                // Compute per-addon contribution to this line via the
+                // shared engine. Replaces the legacy "show raw priceModifier"
+                // path in the admin UI — those numbers are the rule's unit
+                // price, not what we actually charged the customer.
+                // See addon-pricing.ts#buildAddonLineDetails for the
+                // algorithm (spec-group dominance + computeAddonLineTotal +
+                // computeAddonBreakdown). Empty array when the line has no
+                // addons attached.
+                const pricingAddons = buildOrderItemAddonDetails(item, fileUrls.length);
+
+                const baseEnriched = {
+                    ...item,
+                    pricing: { addons: pricingAddons },
+                };
+
                 if (fileUrls.length > 0) {
                     // For FTP-hosted files, construct public URLs directly (no presigning needed)
                     const publicUrls = fileUrls.map((fileUrl) => {
@@ -1166,12 +1184,12 @@ export const getAdminOrder = async (req: Request, res: Response, next: NextFunct
                     });
 
                     return {
-                        ...item,
+                        ...baseEnriched,
                         customDesignUrl: fileUrls,
                         customDesignPresignedUrls: publicUrls, // Public FTP URLs (replaces presigned S3 URLs)
                     };
                 }
-                return item;
+                return baseEnriched;
             }),
         };
 
@@ -1179,6 +1197,32 @@ export const getAdminOrder = async (req: Request, res: Response, next: NextFunct
     } catch (error) {
         next(error);
     }
+};
+
+/**
+ * Replay the pricing engine against a persisted OrderItem so the order
+ * detail surface can render the actually-charged addon amounts instead
+ * of the raw rule unit prices.
+ *
+ * Pulls the rules + metadata that the controller already loaded (no
+ * extra DB roundtrip) and feeds them to `buildAddonLineDetails`. Out-of-
+ * range rules naturally compute `total = 0`; callers filter them out
+ * before rendering so the UI mirrors the cart/checkout experience.
+ */
+const buildOrderItemAddonDetails = (
+    item: { addons?: unknown; quantity?: number; metadata?: unknown },
+    fileCount: number,
+): AddonLineDetail[] => {
+    const addons = Array.isArray(item.addons)
+        ? (item.addons as Array<AddonPricingRule & { specificationValues?: unknown }>)
+        : [];
+    if (addons.length === 0) return [];
+    return buildAddonLineDetails(addons, {
+        quantity: Number(item.quantity ?? 1),
+        addons: addons.map((a) => a.id),
+        metadata: (item.metadata as PricingLineMetadata | null | undefined) ?? null,
+        fileCount,
+    });
 };
 
 // Admin: Update order status

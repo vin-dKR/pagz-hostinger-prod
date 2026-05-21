@@ -104,10 +104,25 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                     </div> 
                                 )}
                                 {item.pricing?.addons && item.pricing.addons.length > 0 && (() => {
-                                    const labels = buildAddonLabelMap(item.pricing.addons);
+                                    // Drop addon rules that didn't fire for this
+                                    // line (e.g. binding tiers whose page range
+                                    // doesn't cover the uploaded file).
+                                    // `computeAddonLineTotal` returns 0 for
+                                    // those — surfacing them as ₹0.00 rows
+                                    // looks broken even though the math is
+                                    // correct. Mirrors PR #72's filter on the
+                                    // per-file `AddonBreakdownRows` sub-rows.
+                                    const pricedAddons = item.pricing.addons.filter(
+                                        (addon) => toNumber(addon.total) > 0,
+                                    );
+                                    if (pricedAddons.length === 0) return null;
+                                    // Label map built from the priced subset so
+                                    // duplicate-name disambiguation only runs
+                                    // across addons the user actually sees.
+                                    const labels = buildAddonLabelMap(pricedAddons);
                                     return (
                                     <div className="mt-1 pl-2 border-l-2 border-purple-200">
-                                        {item.pricing.addons.map((addon) => (
+                                        {pricedAddons.map((addon) => (
                                             <div key={addon.ruleId} className="mb-1 last:mb-0">
                                                 <div className="text-xs text-purple-700">
                                                     {labels.get(addon.ruleId) ?? addon.name}: ₹{toNumber(addon.total).toFixed(2)}
@@ -115,8 +130,11 @@ export default function OrderReview({ items }: OrderReviewProps) {
                                                 {/* Phase 3 — per-file sub-rows
                                                     surface for `perFileEvaluation`
                                                     addons when 2+ files were
-                                                    uploaded. Single-entry
-                                                    breakdowns collapse silently. */}
+                                                    uploaded. `AddonBreakdownRows`
+                                                    filters `price <= 0` entries
+                                                    internally and collapses to
+                                                    the parent row when only one
+                                                    priced file remains. */}
                                                 {addon.breakdown && addon.breakdown.length > 1 && (
                                                     <AddonBreakdownRows
                                                         breakdown={addon.breakdown}

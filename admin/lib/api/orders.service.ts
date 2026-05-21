@@ -14,6 +14,31 @@ export interface OrdersResponse {
         totalPages: number;
     };
 }
+/**
+ * Per-uploaded-file pricing entry returned by the server for `perFileEvaluation`
+ * addons. Mirrors `web/lib/api/cart.ts#AddonBreakdownEntry`.
+ */
+export interface AddonBreakdownEntry {
+    fileUrl: string | null;
+    pageCount: number;
+    effectivePages: number;
+    price: number;
+}
+
+/**
+ * Per-addon detail row computed by the api against the persisted
+ * OrderItem.metadata + addon rules. Replaces "show raw priceModifier" —
+ * `total` is the amount actually contributed to this line, with `breakdown`
+ * supplying optional per-file sub-rows for Phase 3 rules.
+ */
+export interface OrderItemAddonPricing {
+    ruleId: string;
+    name: string;
+    total: number;
+    breakdown: AddonBreakdownEntry[];
+    range?: { min: number | null; max: number | null };
+}
+
 export interface OrderItem {
     id?: string;
     productId: string;
@@ -33,10 +58,21 @@ export interface OrderItem {
         quantityMultiplier: boolean;
         fileMultiplier?: boolean;
         copyMultiplier?: boolean;
+        perFileEvaluation?: boolean;
         specificationValues?: Record<string, unknown> | null;
         minQuantity?: number | null;
         maxQuantity?: number | null;
     }> | null;
+    /**
+     * Server-computed addon contributions for this line (added in fix #75).
+     * Each entry's `total` is the actually-charged amount — not the rule's
+     * raw `priceModifier`. The admin UI renders from this list and filters
+     * out rules that didn't fire (`total <= 0`) so the customer's view of
+     * "addons that affected my total" matches what the admin sees.
+     */
+    pricing?: {
+        addons: OrderItemAddonPricing[];
+    } | null;
     product?: {
         id: string;
         name: string;
