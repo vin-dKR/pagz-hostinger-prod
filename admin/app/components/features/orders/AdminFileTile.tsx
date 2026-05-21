@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Download, FileText } from "lucide-react";
 import { isImageFile } from "@/lib/utils/fileUrl";
+import { downloadPublicFile } from "@/lib/utils/file-download";
 import { generatePdfThumbnailFromUrl, isPdfFile } from "@/lib/utils/pdf-thumbnail";
 import { imageLoader } from "@/lib/utils/image-loader";
 
@@ -45,6 +46,18 @@ export function AdminFileTile({ name, href }: AdminFileTileProps) {
             href={href || "#"}
             target="_blank"
             rel="noopener noreferrer"
+            download={name}
+            onClick={(e) => {
+                // Force a programmatic download so the click doesn't get
+                // routed through Next.js's `/orders/[id]` admin page on
+                // Hostinger (issue #76). Honor modifier keys / non-primary
+                // clicks so right-click "Save link as" + middle-click
+                // "Open in new tab" still use the real <a href>.
+                if (!href) return;
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                e.preventDefault();
+                void downloadPublicFile(href, name);
+            }}
             className="group flex items-center gap-3 p-2.5 bg-white border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50/40 transition-colors min-w-0"
             title={name}
         >
