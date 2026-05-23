@@ -174,6 +174,34 @@ function fileNameFromPath(pathOrUrl: string): string {
 }
 
 /**
+ * Reasons that REALLY mean "this file is no good — block the restore and
+ * surface a per-file banner row". Anything outside this set (notably
+ * `unreadable`, network errors, unknown reasons) is treated as transient:
+ * we trust the stored key, let it flow into the cart, and let the
+ * cart-page on-mount sweep (issue #56) and the checkout-page pre-payment
+ * guard re-verify with the proper auth + connection state.
+ *
+ * Why this split exists (issue #94):
+ *   The post-login restore path was failing closed on transient FTP
+ *   verify errors — Hostinger's FTP control channel intermittently
+ *   reports `unreadable` for files that are demonstrably present at the
+ *   right byte count moments later. The cart-restore banner then said
+ *   "Couldn't restore your previous cart" for a perfectly valid file
+ *   and the user was stuck. PR #90's two-pass retry server-side helped
+ *   but didn't eliminate the race. The right invariant is: only block
+ *   on deterministic failures (empty / missing); everything else is
+ *   noise the downstream guards already handle.
+ */
+const HARD_FAIL_VERIFY_REASONS: ReadonlySet<VerifyFileInvalidEntry['reason']> = new Set([
+    'empty',
+    'missing',
+]);
+
+function isHardFailReason(reason: VerifyFileInvalidEntry['reason']): boolean {
+    return HARD_FAIL_VERIFY_REASONS.has(reason);
+}
+
+/**
  * Resolve every guest-pending file to a server-side FTP key suitable for
  * `POST /cart`.
  *
@@ -190,10 +218,12 @@ function fileNameFromPath(pathOrUrl: string): string {
  *     payload and uploaded fresh. The earlier guard wouldn't reach this
  *     branch for empty restored blobs because of (1).
  *
- *  3. Any verify failure is surfaced as `PendingFileVerifyError` with
- *     the per-file reason so the banner can render filename + cause
- *     and the caller can decide whether to keep the pending entry
- *     (partial failure → user retries) or merge what we have.
+ *  3. ONLY `empty`/`missing` verify failures abort the restore and
+ *     surface a `PendingFileVerifyError`. Transient reasons
+ *     (`unreadable`, network, unknown) are treated as valid — the file
+ *     is trusted into the cart and the cart-page sweep + payment guard
+ *     act as the safety net. See `HARD_FAIL_VERIFY_REASONS` above for
+ *     the full rationale (issue #94).
  */
 async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise<string[]> {
     if (!pendingData.files || pendingData.files.length === 0) return [];
@@ -224,11 +254,13 @@ async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise
 
     const failures: Array<{ name: string; path: string; reason: VerifyFileInvalidEntry['reason'] }> = [];
     const validKeys: string[] = [];
+    let transientCount = 0;
 
     for (const file of filesWithKeys) {
         const key = file.s3Key!;
         const reason = invalidByKey.get(key);
-        if (reason) {
+        if (reason && isHardFailReason(reason)) {
+            // Real, deterministic failure — block the restore.
             failures.push({
                 name: file.name || fileNameFromPath(key),
                 path: key,
@@ -236,7 +268,25 @@ async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise
             });
             continue;
         }
+        if (reason) {
+            // Transient (`unreadable` / unknown). Trust the key into the
+            // cart so the user isn't blocked by a network blip — the
+            // cart-page sweep will re-verify once we're on /cart with the
+            // proper connection state.
+            transientCount++;
+            console.info(
+                `[pending-cart-intent] verify returned transient "${reason}" for ` +
+                `"${file.name || fileNameFromPath(key)}"; trusting key for restore (issue #94)`,
+            );
+        }
         validKeys.push(key);
+    }
+
+    if (transientCount > 0) {
+        console.info(
+            `[pending-cart-intent] restored ${transientCount} file(s) with transient verify ` +
+            `errors; cart-page sweep will re-check`,
+        );
     }
 
     // ── Step 2: upload the files that don't have a key yet ─────────────────

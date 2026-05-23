@@ -12,6 +12,11 @@
  * banner renders a per-file breakdown (filename + reason) instead of the
  * generic top-level message — those generic messages were the original
  * UX gripe in the bug report.
+ *
+ * When the only failures are transient (network / unreadable, issue #94),
+ * the banner switches to a softer "Verifying your files… (retrying)" copy
+ * because the cart-page sweep is about to re-verify them and the user
+ * shouldn't see a hard error for a transient blip.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -30,6 +35,13 @@ const MERGE_ERROR_KEY = "pendingMergeError";
 interface FileFailure {
     name: string;
     reason: VerifyFileInvalidEntry['reason'];
+}
+
+/** A failure is "hard" when the file is deterministically bad (empty /
+ *  missing). Transient failures (`unreadable` / unknown) get the softer
+ *  banner copy — see file docblock. */
+function isHardFailure(reason: VerifyFileInvalidEntry['reason']): boolean {
+    return reason === 'empty' || reason === 'missing';
 }
 
 interface MergeError {
@@ -119,6 +131,14 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
     if (!visible) return null;
 
     const hasFileDetail = fileFailures.length > 0;
+    // Issue #94 — distinguish "all-transient" from "some files are
+    // genuinely bad". The all-transient case gets a softer copy because
+    // the cart-page sweep is about to re-verify, and the user shouldn't
+    // be told their cart is broken when it's just a network blip.
+    const allTransient = hasFileDetail && fileFailures.every((f) => !isHardFailure(f.reason));
+    const heading = allTransient
+        ? "Verifying your files… (retrying)"
+        : "Couldn't restore your previous cart";
 
     return (
         <div className="mb-4 sm:mb-6 rounded-xl sm:rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
@@ -126,24 +146,32 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
                 <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
                     <p className="text-sm sm:text-base font-semibold text-amber-900 mb-1">
-                        Couldn't restore your previous cart
+                        {heading}
                     </p>
                     {hasFileDetail ? (
-                        <>
-                            <p className="text-xs sm:text-sm text-amber-800 mb-2">
-                                Some uploaded files couldn't be verified:
+                        allTransient ? (
+                            <p className="text-xs sm:text-sm text-amber-800 break-words">
+                                A network blip held things up. We'll re-check
+                                your files automatically — no action needed in
+                                most cases. You can also use Retry below.
                             </p>
-                            <ul className="text-xs sm:text-sm text-amber-800 list-disc pl-5 space-y-0.5 break-words">
-                                {fileFailures.map((f, idx) => (
-                                    <li key={`${f.name}-${idx}`}>
-                                        <span className="font-medium">{f.name}</span>
-                                        <span className="text-amber-700">
-                                            {" "}— {describeVerifyReason(f.reason)}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </>
+                        ) : (
+                            <>
+                                <p className="text-xs sm:text-sm text-amber-800 mb-2">
+                                    Some uploaded files couldn't be verified:
+                                </p>
+                                <ul className="text-xs sm:text-sm text-amber-800 list-disc pl-5 space-y-0.5 break-words">
+                                    {fileFailures.map((f, idx) => (
+                                        <li key={`${f.name}-${idx}`}>
+                                            <span className="font-medium">{f.name}</span>
+                                            <span className="text-amber-700">
+                                                {" "}— {describeVerifyReason(f.reason)}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </>
+                        )
                     ) : (
                         <p className="text-xs sm:text-sm text-amber-800 break-words">
                             {errorMessage}
