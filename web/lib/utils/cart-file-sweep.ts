@@ -61,6 +61,25 @@ export function getItemDesignPaths(item: SweepCartItem): string[] {
     return arr.map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
+/**
+ * Human-readable rationale per failure reason. Centralised so the cart-page
+ * toast, the checkout-page block, and the pending-cart restore banner all
+ * speak the same language about the same outcome — drift between these
+ * messages produced the issue #87 false positives where "empty" was shown
+ * for transient FTP errors that were really `unreadable`.
+ */
+export function describeVerifyReason(reason: VerifyFileInvalidEntry['reason']): string {
+    switch (reason) {
+        case 'empty':
+            return 'File is empty (0 bytes)';
+        case 'missing':
+            return 'File not found on server';
+        case 'unreadable':
+        default:
+            return 'Could not verify file (network); try again';
+    }
+}
+
 /** Compose the singular/plural-correct toast message. */
 export function formatInvalidFilesMessage(count: number): string {
     if (count <= 0) return '';
@@ -68,6 +87,34 @@ export function formatInvalidFilesMessage(count: number): string {
         return '1 file was empty or missing and has been removed. Please re-upload.';
     }
     return `${count} files were empty or missing and have been removed. Please re-upload.`;
+}
+
+/**
+ * Render a detailed, per-file error message for the restore banner.
+ * Always includes the filename (last URL segment) and the human-readable
+ * reason so the user can act — generic "couldn't restore" messages were
+ * the original UX gripe in issue #87.
+ */
+export function formatInvalidFilesDetail(
+    entries: ReadonlyArray<{ path: string; reason: VerifyFileInvalidEntry['reason'] }>,
+): string {
+    if (entries.length === 0) return '';
+    const lines = entries.map((e) => {
+        const name = extractFileName(e.path);
+        return `${name}: ${describeVerifyReason(e.reason)}`;
+    });
+    return lines.join('; ');
+}
+
+/** Best-effort filename extraction from either a full URL or relative path. */
+function extractFileName(pathOrUrl: string): string {
+    const trimmed = pathOrUrl.trim();
+    if (!trimmed) return 'file';
+    // Strip query/hash before pulling the last segment so URLs like
+    // `https://pagz.in/orders/abc.pdf?v=1` still render `abc.pdf`.
+    const cleaned = trimmed.split('?')[0]!.split('#')[0]!;
+    const segments = cleaned.split('/').filter(Boolean);
+    return segments[segments.length - 1] || cleaned;
 }
 
 /**

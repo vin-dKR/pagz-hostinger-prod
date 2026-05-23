@@ -469,6 +469,41 @@ export async function verifyFTPFile(remotePath: string): Promise<FtpFileVerifica
 }
 
 /**
+ * Map a single `probeFtpFile` result onto the public `FtpVerifyReason`.
+ * Kept as a named helper so the same classification rule is used by the
+ * single-pass loop AND the retry pass below — drift between the two
+ * would re-introduce the issue #87 false positives.
+ */
+function classifyProbeFailure(result: FtpFileVerification): FtpVerifyReason {
+    if (!result.exists) return "missing";
+    if (result.size === 0) return "empty";
+    return "unreadable";
+}
+
+/** Per-pass options for the verify pipeline. Internal. */
+interface VerifyPassOptions {
+    /** Retry these reasons in the second pass (issue #87 race protection):
+     *  `missing` covers freshly-uploaded files where the FTP write hadn't
+     *  flushed when the first probe ran; `unreadable` covers transient
+     *  control-channel errors. We never retry `empty` — a 0-byte file on
+     *  FTP doesn't become non-empty by trying again. */
+    retryReasons: ReadonlySet<FtpVerifyReason>;
+    /** Delay before the retry pass — short enough that callers don't
+     *  notice on the happy path, long enough that an FTP write that was
+     *  in-flight has time to land. */
+    retryDelayMs: number;
+}
+
+const DEFAULT_VERIFY_OPTIONS: VerifyPassOptions = {
+    retryReasons: new Set<FtpVerifyReason>(["missing", "unreadable"]),
+    retryDelayMs: 1_000,
+};
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * Batch-verify a list of file paths over a single FTP connection.
  *
  * Returns `{ valid, invalid }` where `valid` is the subset that exists
@@ -478,6 +513,14 @@ export async function verifyFTPFile(remotePath: string): Promise<FtpFileVerifica
  * Paths are de-duplicated before probing but the response preserves
  * one entry per unique input path. Mixed full-URL + relative-path
  * arrays are accepted.
+ *
+ * Two-pass with race protection (issue #87): any entry that comes back
+ * `missing` or `unreadable` on the first pass is re-probed after a
+ * short delay over a fresh FTP connection. Hostinger's FTP layer
+ * occasionally reports a just-written file as missing (the data-channel
+ * close races the directory metadata refresh) and the transient
+ * control-channel errors disappear on a reconnect — both manifested as
+ * cart-restore false positives before this retry landed.
  */
 export async function verifyFTPFiles(paths: string[]): Promise<FtpVerifyBatchResult> {
     const cleanedInputs: string[] = [];
@@ -495,29 +538,70 @@ export async function verifyFTPFiles(paths: string[]): Promise<FtpVerifyBatchRes
         return { valid: [], invalid: [] };
     }
 
-    return withFtpClient(async (client) => {
+    // Pass 1 — single connection, sequential probe of every input.
+    const firstPass = await withFtpClient(async (client) => {
         const valid: string[] = [];
         const invalid: FtpVerifyInvalidEntry[] = [];
-
-        // Sequential probing keeps the single FTP control channel sane —
-        // basic-ftp issues commands serially per client anyway, so
-        // parallelising with Promise.all would just queue them.
         for (const original of cleanedInputs) {
             const result = await probeFtpFile(client, original);
             if (result.exists && result.size > 0) {
                 valid.push(original);
                 continue;
             }
-            const reason: FtpVerifyReason = !result.exists
-                ? "missing"
-                : result.size === 0
-                    ? "empty"
-                    : "unreadable";
-            invalid.push({ path: original, reason });
+            invalid.push({ path: original, reason: classifyProbeFailure(result) });
         }
-
         return { valid, invalid };
     });
+
+    const retryable = firstPass.invalid.filter((entry) =>
+        DEFAULT_VERIFY_OPTIONS.retryReasons.has(entry.reason),
+    );
+    if (retryable.length === 0) {
+        return firstPass;
+    }
+
+    // Pass 2 — short backoff + fresh connection so we don't carry over a
+    // half-broken control channel from pass 1.
+    await sleep(DEFAULT_VERIFY_OPTIONS.retryDelayMs);
+    const retryByPath = new Map<string, FtpVerifyInvalidEntry>();
+    await withFtpClient(async (client) => {
+        for (const entry of retryable) {
+            const result = await probeFtpFile(client, entry.path);
+            if (result.exists && result.size > 0) {
+                // Recovered — leave it out of the retry map so the merge
+                // below will treat it as valid.
+                continue;
+            }
+            retryByPath.set(entry.path, {
+                path: entry.path,
+                reason: classifyProbeFailure(result),
+            });
+        }
+    });
+
+    // Merge: any retried path that now passes drops from `invalid` and
+    // appears in `valid`; everything else keeps its first-pass reason
+    // (or the refreshed reason from pass 2 if it changed).
+    const stillInvalidPaths = new Set(retryByPath.keys());
+    const recoveredPaths = new Set(
+        retryable
+            .map((entry) => entry.path)
+            .filter((path) => !stillInvalidPaths.has(path)),
+    );
+
+    const finalValid = [...firstPass.valid, ...recoveredPaths];
+    const finalInvalid: FtpVerifyInvalidEntry[] = firstPass.invalid
+        .filter((entry) => !recoveredPaths.has(entry.path))
+        .map((entry) => retryByPath.get(entry.path) ?? entry);
+
+    if (recoveredPaths.size > 0) {
+        console.info(
+            `[FTP] verify-files recovered ${recoveredPaths.size}/${retryable.length} ` +
+            `entries on second pass`,
+        );
+    }
+
+    return { valid: finalValid, invalid: finalInvalid };
 }
 
 /**

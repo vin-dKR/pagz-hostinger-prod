@@ -5,7 +5,13 @@
  *
  * Shown on /cart when an authenticated user still has a pending guest-cart
  * item in sessionStorage that failed to merge on login. Gives them a visible
- * error and a Retry button so they don't lose their selections silently.
+ * error and Retry / Discard buttons so they don't lose their selections
+ * silently.
+ *
+ * When the failure was caused by FTP file verification (issue #87) the
+ * banner renders a per-file breakdown (filename + reason) instead of the
+ * generic top-level message — those generic messages were the original
+ * UX gripe in the bug report.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -15,13 +21,23 @@ import {
     hasPendingPurchaseData,
 } from "@/lib/utils/pending-purchase";
 import { processPendingAddToCartIntent } from "@/lib/utils/pending-cart-intent";
+import { describeVerifyReason } from "@/lib/utils/cart-file-sweep";
+import type { VerifyFileInvalidEntry } from "@/lib/api/cart";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 
 const MERGE_ERROR_KEY = "pendingMergeError";
 
+interface FileFailure {
+    name: string;
+    reason: VerifyFileInvalidEntry['reason'];
+}
+
 interface MergeError {
     error: string;
     at: number;
+    /** Optional per-file failure detail (issue #87). When present the
+     *  banner renders filename + reason rows instead of just `error`. */
+    fileFailures?: FileFailure[];
 }
 
 function readMergeError(): MergeError | null {
@@ -35,15 +51,25 @@ function readMergeError(): MergeError | null {
     }
 }
 
+function writeMergeError(payload: MergeError): void {
+    try {
+        sessionStorage.setItem(MERGE_ERROR_KEY, JSON.stringify(payload));
+    } catch {
+        /* ignore */
+    }
+}
+
 export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void }) {
     const [visible, setVisible] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string>("");
+    const [fileFailures, setFileFailures] = useState<FileFailure[]>([]);
     const [retrying, setRetrying] = useState(false);
 
     useEffect(() => {
         if (!hasPendingPurchaseData()) return;
         const mergeError = readMergeError();
         setErrorMessage(mergeError?.error || "Your previous cart selections couldn't be restored.");
+        setFileFailures(mergeError?.fileFailures || []);
         setVisible(true);
     }, []);
 
@@ -62,15 +88,13 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
             }
             const msg = result.error || "Still couldn't restore cart.";
             setErrorMessage(msg);
+            setFileFailures(result.fileFailures || []);
             toastError(msg);
-            try {
-                sessionStorage.setItem(
-                    MERGE_ERROR_KEY,
-                    JSON.stringify({ error: msg, at: Date.now() })
-                );
-            } catch {
-                /* ignore */
-            }
+            writeMergeError({
+                error: msg,
+                at: Date.now(),
+                fileFailures: result.fileFailures,
+            });
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Failed to restore cart.";
             setErrorMessage(msg);
@@ -81,6 +105,8 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
     }, [onMerged]);
 
     const handleDismiss = useCallback(() => {
+        // Only this explicit action clears the pending entry (issue #87
+        // mandate: don't reset cart to empty until the user opts in).
         clearPendingPurchaseData();
         try {
             sessionStorage.removeItem(MERGE_ERROR_KEY);
@@ -92,6 +118,8 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
 
     if (!visible) return null;
 
+    const hasFileDetail = fileFailures.length > 0;
+
     return (
         <div className="mb-4 sm:mb-6 rounded-xl sm:rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
             <div className="flex items-start gap-3">
@@ -100,9 +128,27 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
                     <p className="text-sm sm:text-base font-semibold text-amber-900 mb-1">
                         Couldn't restore your previous cart
                     </p>
-                    <p className="text-xs sm:text-sm text-amber-800 break-words">
-                        {errorMessage}
-                    </p>
+                    {hasFileDetail ? (
+                        <>
+                            <p className="text-xs sm:text-sm text-amber-800 mb-2">
+                                Some uploaded files couldn't be verified:
+                            </p>
+                            <ul className="text-xs sm:text-sm text-amber-800 list-disc pl-5 space-y-0.5 break-words">
+                                {fileFailures.map((f, idx) => (
+                                    <li key={`${f.name}-${idx}`}>
+                                        <span className="font-medium">{f.name}</span>
+                                        <span className="text-amber-700">
+                                            {" "}— {describeVerifyReason(f.reason)}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </>
+                    ) : (
+                        <p className="text-xs sm:text-sm text-amber-800 break-words">
+                            {errorMessage}
+                        </p>
+                    )}
                     <div className="mt-3 flex flex-wrap gap-2">
                         <button
                             onClick={handleRetry}

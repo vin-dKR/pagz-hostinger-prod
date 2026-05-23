@@ -64,9 +64,17 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                             const errorMessage =
                                 result.error || "Failed to restore your cart item.";
                             try {
+                                // Persist per-file failure detail alongside the
+                                // top-level message so the banner can render
+                                // filename + reason instead of a generic
+                                // "couldn't restore" (issue #87).
                                 sessionStorage.setItem(
                                     MERGE_ERROR_KEY,
-                                    JSON.stringify({ error: errorMessage, at: Date.now() })
+                                    JSON.stringify({
+                                        error: errorMessage,
+                                        at: Date.now(),
+                                        fileFailures: result.fileFailures,
+                                    })
                                 );
                             } catch {
                                 /* ignore */
