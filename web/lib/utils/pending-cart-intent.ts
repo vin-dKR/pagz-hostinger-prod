@@ -1,4 +1,4 @@
-import { addToCart, type AddToCartData } from "@/lib/api/cart";
+import { addToCart, verifyCartFiles, type AddToCartData, type VerifyFileInvalidEntry } from "@/lib/api/cart";
 import { getCategoryAddons, getProductsBySpecifications } from "@/lib/api/categories";
 import { getProduct } from "@/lib/api/products";
 import { getAuthToken } from "@/lib/api-client";
@@ -9,7 +9,9 @@ import {
     restoreFilesFromPendingData,
     savePendingPurchaseData,
     type PendingPurchaseData,
+    type PendingPurchaseFile,
 } from "@/lib/utils/pending-purchase";
+import { describeVerifyReason } from "@/lib/utils/cart-file-sweep";
 
 export const ADD_TO_CART_INTENT = "add_to_cart" as const;
 const AUTH_WAIT_MAX_MS = 3000;
@@ -20,6 +22,11 @@ type PendingCartIntentResult = {
     handled: boolean;
     success: boolean;
     error?: string;
+    /** Per-file failure detail surfaced by the merge banner. Only set
+     *  when the failure was caused by FTP verify rejecting a file the
+     *  user had previously uploaded as a guest — distinct from
+     *  generic add-to-cart errors which surface via `error`. */
+    fileFailures?: Array<{ name: string; reason: VerifyFileInvalidEntry['reason'] }>;
 };
 
 type PendingCartMetadata = Record<string, any>;
@@ -123,40 +130,196 @@ function buildMetadata(pendingData: PendingPurchaseData): PendingCartMetadata | 
     return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
+/**
+ * Thrown by `ensureUploadedFileKeys` when one or more files the guest had
+ * previously uploaded came back invalid from FTP verify. Carries the
+ * structured per-file detail so the banner can render filename + reason
+ * instead of a generic "couldn't restore" string (issue #87).
+ *
+ * `partial` is set when SOME files were valid — the caller can choose to
+ * keep the pending entry around (Retry / Discard banner) so the user
+ * doesn't lose the rest of their selections.
+ */
+class PendingFileVerifyError extends Error {
+    readonly failures: Array<{
+        name: string;
+        path: string;
+        reason: VerifyFileInvalidEntry['reason'];
+    }>;
+    readonly validKeys: string[];
+
+    constructor(
+        failures: Array<{ name: string; path: string; reason: VerifyFileInvalidEntry['reason'] }>,
+        validKeys: string[],
+    ) {
+        const summary = failures
+            .map((f) => `${f.name}: ${describeVerifyReason(f.reason)}`)
+            .join('; ');
+        super(`Couldn't restore your previous file(s) — ${summary}`);
+        this.name = 'PendingFileVerifyError';
+        this.failures = failures;
+        this.validKeys = validKeys;
+    }
+}
+
+/** Public re-export so the banner code can downcast and pull `.failures`. */
+export { PendingFileVerifyError };
+
+function fileNameFromPath(pathOrUrl: string): string {
+    const trimmed = pathOrUrl.trim();
+    if (!trimmed) return 'file';
+    const cleaned = trimmed.split('?')[0]!.split('#')[0]!;
+    const segments = cleaned.split('/').filter(Boolean);
+    return segments[segments.length - 1] || cleaned;
+}
+
+/**
+ * Resolve every guest-pending file to a server-side FTP key suitable for
+ * `POST /cart`.
+ *
+ *  1. Files that already carry an `s3Key` (a relative FTP path stored
+ *     during the guest upload) are verified against the FTP server. A
+ *     fresh upload would re-send the restored 0-byte `File` blob — the
+ *     server's `rejectEmptyFiles` multer guard then rejects the whole
+ *     batch as "Empty file(s) detected", which was the user-visible
+ *     symptom in issue #87. We skip the re-upload entirely when the
+ *     existing key is valid on FTP.
+ *
+ *  2. Files without an `s3Key` (legacy entries or sessionStorage drops
+ *     that kept only base64/blobUrl) are restored from the cached
+ *     payload and uploaded fresh. The earlier guard wouldn't reach this
+ *     branch for empty restored blobs because of (1).
+ *
+ *  3. Any verify failure is surfaced as `PendingFileVerifyError` with
+ *     the per-file reason so the banner can render filename + cause
+ *     and the caller can decide whether to keep the pending entry
+ *     (partial failure → user retries) or merge what we have.
+ */
 async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise<string[]> {
     if (!pendingData.files || pendingData.files.length === 0) return [];
 
-    const filesWithoutKeys = pendingData.files.filter((file) => !file.s3Key);
-    if (filesWithoutKeys.length === 0) {
-        return pendingData.files.map((file) => file.s3Key).filter(Boolean) as string[];
-    }
+    const filesWithKeys: PendingPurchaseFile[] = pendingData.files.filter((f) => Boolean(f.s3Key));
+    const filesWithoutKeys: PendingPurchaseFile[] = pendingData.files.filter((f) => !f.s3Key);
 
-    const restoredFiles = await restoreFilesFromPendingData(filesWithoutKeys);
-    const uploadedKeys: string[] = [];
-
-    for (const file of restoredFiles) {
-        const response = await uploadOrderFilesToS3([file]);
-        const key = response.data?.files?.[0]?.key;
-        if (!response.success || !key) {
-            throw new Error(response.error || `Failed to upload ${file.name}`);
+    // ── Step 1: verify already-uploaded files still exist on FTP ───────────
+    let invalidByKey = new Map<string, VerifyFileInvalidEntry['reason']>();
+    if (filesWithKeys.length > 0) {
+        const paths = filesWithKeys.map((f) => f.s3Key!).filter(Boolean);
+        try {
+            const response = await verifyCartFiles(paths);
+            if (response.success && response.data) {
+                invalidByKey = new Map(
+                    response.data.invalid.map((entry) => [entry.path, entry.reason]),
+                );
+            }
+            // If verify itself failed (transport error etc.) we fall
+            // through and trust the stored keys. The server-side payment
+            // guard re-verifies before charging, so a transient verify
+            // outage cannot cause us to ship bad files into checkout —
+            // it would only delay the failure by one screen.
+        } catch (error) {
+            console.warn('[pending-cart-intent] file verify failed; trusting stored keys:', error);
         }
-        uploadedKeys.push(key);
     }
 
-    let uploadIndex = 0;
-    const updatedFiles = pendingData.files.map((file) => {
-        if (file.s3Key) return file;
-        const uploadedKey = uploadedKeys[uploadIndex];
-        uploadIndex += 1;
-        return { ...file, s3Key: uploadedKey };
-    });
+    const failures: Array<{ name: string; path: string; reason: VerifyFileInvalidEntry['reason'] }> = [];
+    const validKeys: string[] = [];
 
-    await savePendingPurchaseData({
-        ...pendingData,
-        files: updatedFiles,
-    });
+    for (const file of filesWithKeys) {
+        const key = file.s3Key!;
+        const reason = invalidByKey.get(key);
+        if (reason) {
+            failures.push({
+                name: file.name || fileNameFromPath(key),
+                path: key,
+                reason,
+            });
+            continue;
+        }
+        validKeys.push(key);
+    }
 
-    return updatedFiles.map((file) => file.s3Key).filter(Boolean) as string[];
+    // ── Step 2: upload the files that don't have a key yet ─────────────────
+    const newlyUploadedKeys: string[] = [];
+    if (filesWithoutKeys.length > 0) {
+        const restoredFiles = await restoreFilesFromPendingData(filesWithoutKeys);
+        for (let i = 0; i < restoredFiles.length; i++) {
+            const file = restoredFiles[i]!;
+            const meta = filesWithoutKeys[i]!;
+
+            // Defence-in-depth: never POST a 0-byte multipart body — the
+            // server's `rejectEmptyFiles` middleware would reject the
+            // whole batch and our error message would lose the filename
+            // context. We classify this as `missing` (file content not
+            // available locally to re-upload) so the banner says
+            // "File not found on server" — accurate from the user's POV.
+            if (!file || file.size === 0) {
+                failures.push({
+                    name: meta.name || file?.name || 'file',
+                    path: meta.s3Key || meta.name || 'file',
+                    reason: 'missing',
+                });
+                continue;
+            }
+
+            try {
+                const response = await uploadOrderFilesToS3([file]);
+                const key = response.data?.files?.[0]?.key;
+                if (!response.success || !key) {
+                    failures.push({
+                        name: meta.name || file.name,
+                        path: meta.s3Key || meta.name || file.name,
+                        reason: 'unreadable',
+                    });
+                    continue;
+                }
+                newlyUploadedKeys.push(key);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                console.warn(`[pending-cart-intent] re-upload of "${meta.name}" failed: ${message}`);
+                failures.push({
+                    name: meta.name || file.name,
+                    path: meta.s3Key || meta.name || file.name,
+                    reason: 'unreadable',
+                });
+            }
+        }
+    }
+
+    // ── Step 3: failure surface + persistence ──────────────────────────────
+    if (failures.length > 0) {
+        // Don't strip failures from the pending entry silently — the
+        // banner asks the user (Retry / Discard) and we want a fresh
+        // chance on retry. We DO mirror the newly-uploaded keys back to
+        // sessionStorage so a Retry doesn't double-upload.
+        if (newlyUploadedKeys.length > 0) {
+            let uploadIndex = 0;
+            const updatedFiles = pendingData.files.map<PendingPurchaseFile>((file) => {
+                if (file.s3Key) return file;
+                const key = newlyUploadedKeys[uploadIndex++];
+                return key ? { ...file, s3Key: key } : file;
+            });
+            try {
+                await savePendingPurchaseData({ ...pendingData, files: updatedFiles });
+            } catch (e) {
+                console.warn('[pending-cart-intent] failed to persist partial uploads:', e);
+            }
+        }
+        throw new PendingFileVerifyError(failures, [...validKeys, ...newlyUploadedKeys]);
+    }
+
+    // ── Step 4: success — persist any new keys and return the full list ────
+    if (newlyUploadedKeys.length > 0) {
+        let uploadIndex = 0;
+        const updatedFiles = pendingData.files.map<PendingPurchaseFile>((file) => {
+            if (file.s3Key) return file;
+            const key = newlyUploadedKeys[uploadIndex++];
+            return key ? { ...file, s3Key: key } : file;
+        });
+        await savePendingPurchaseData({ ...pendingData, files: updatedFiles });
+    }
+
+    return [...validKeys, ...newlyUploadedKeys];
 }
 
 /**
@@ -310,10 +473,30 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
         // Wait briefly for post-login token propagation (cookie write + app state sync).
         await waitForAuthToken();
 
-        let cartPayload =
-            pendingData.type === "service"
-                ? await buildServiceCartPayload(pendingData)
-                : await buildProductCartPayload(pendingData);
+        let cartPayload: AddToCartData;
+        try {
+            cartPayload =
+                pendingData.type === "service"
+                    ? await buildServiceCartPayload(pendingData)
+                    : await buildProductCartPayload(pendingData);
+        } catch (error) {
+            // File-verify failure: keep the pending entry in
+            // sessionStorage so the banner can offer Retry / Discard.
+            // We deliberately do NOT clearPendingPurchaseData here —
+            // that was the silent-empty-cart bug in issue #87.
+            if (error instanceof PendingFileVerifyError) {
+                return {
+                    handled: true,
+                    success: false,
+                    error: error.message,
+                    fileFailures: error.failures.map((f) => ({
+                        name: f.name,
+                        reason: f.reason,
+                    })),
+                };
+            }
+            throw error;
+        }
 
         let lastError = "Failed to add pending item to cart.";
         let addonsAlreadyStripped = false;
