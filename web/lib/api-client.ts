@@ -267,14 +267,20 @@ export async function get<T>(endpoint: string): Promise<ApiResponse<T>> {
 
 /**
  * POST request
+ *
+ * `headers` is an optional override merged on top of the default headers
+ * (Content-Type + Authorization). Used by callers that need to add
+ * trace headers like `x-pagz-source` for prod log correlation.
  */
 export async function post<T>(
     endpoint: string,
-    body?: unknown
+    body?: unknown,
+    headers?: Record<string, string>,
 ): Promise<ApiResponse<T>> {
     return fetchAPI<T>(endpoint, {
         method: 'POST',
         body: body ? JSON.stringify(body) : undefined,
+        headers,
     });
 }
 
