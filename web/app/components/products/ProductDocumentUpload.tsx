@@ -274,8 +274,60 @@ export default function ProductDocumentUpload({
             // Process files locally (calculate page count, etc.)
             const { fileDetails: newFileDetails } = await processFiles(files);
 
-            // Combine with existing files
-            const allFileDetails = [...(uploadedFilesS3 || []), ...newFileDetails];
+            // Issue #86 — dedupe BEFORE upload. If the user re-picks a
+            // file that's already attached AND already uploaded to FTP,
+            // reuse the existing s3Key instead of uploading a second
+            // copy. Without this, two FTP entries appear for the same
+            // logical file and a downstream sweep deletes the older
+            // one, leaving any OrderItem snapshot that still references
+            // it pointing at a dead URL.
+            //
+            // Match key: `(name, size)`. Hashing would be more rigorous
+            // but the storefront never re-derives `File` objects on the
+            // fly — every entry here came from a real OS file picker,
+            // and the name+size pair is a strong-enough natural key
+            // for the duplicate-click case the bug surfaced.
+            const fileKey = (f: File) => `${f.name}::${f.size}`;
+            const reuseMap = new Map<string, FileDetail>();
+            for (const existing of (uploadedFilesS3 || [])) {
+                // Only reuse rows that already have a server-side key —
+                // otherwise we'd attach a "uploaded" status to a row
+                // that hasn't been uploaded yet.
+                if (existing.uploadStatus === 'uploaded' && existing.s3Key) {
+                    reuseMap.set(fileKey(existing.file), existing);
+                }
+            }
+
+            const dedupedNew: FileDetail[] = [];
+            const reusedExisting: FileDetail[] = [];
+            for (const fd of newFileDetails) {
+                const match = reuseMap.get(fileKey(fd.file));
+                if (match) {
+                    // Mirror the freshly-parsed pageCount onto the
+                    // matched row so any client-side page-count change
+                    // between sessions is respected. We keep the
+                    // original id so React list selectors don't think
+                    // it's a brand-new row.
+                    reusedExisting.push({
+                        ...match,
+                        pageCount: fd.pageCount,
+                    });
+                } else {
+                    dedupedNew.push(fd);
+                }
+            }
+
+            if (reusedExisting.length > 0) {
+                console.info(
+                    `[uploads] reusing ${reusedExisting.length} existing FTP file(s)`,
+                    reusedExisting.map((r) => r.file.name),
+                );
+            }
+
+            // Combine with existing files — `dedupedNew` is the set we
+            // actually have to upload; `reusedExisting` rows already
+            // live in `uploadedFilesS3` so we skip adding them again.
+            const allFileDetails = [...(uploadedFilesS3 || []), ...dedupedNew];
             const allFiles = allFileDetails.map(fd => fd.file);
             const finalPageCount = allFileDetails.reduce((sum, fd) => sum + fd.pageCount, 0);
 
@@ -300,8 +352,9 @@ export default function ProductDocumentUpload({
             }
 
             // Upload newly-selected files one-by-one with per-file progress,
-            // status, and cancel/retry support. Issue #58.
-            uploadFilesSerially(newFileDetails);
+            // status, and cancel/retry support. Issue #58. We only upload
+            // `dedupedNew` — `reusedExisting` already lives on FTP.
+            uploadFilesSerially(dedupedNew);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to process files';
             setError(errorMessage);

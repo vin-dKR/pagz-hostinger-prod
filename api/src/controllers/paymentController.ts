@@ -511,7 +511,7 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
             },
         };
 
-        const { orderId, raced, mismatch } = await persistOrderWithRaceGuard(
+        const { orderId, raced, mismatch, missingFiles } = await persistOrderWithRaceGuard(
             {
                 merchantOrderId: pendingPayment.merchantOrderId,
                 userId: pendingPayment.userId,
@@ -549,6 +549,24 @@ export const verifyRazorpayPayment = async (req: Request, res: Response, next: N
                 status: "SUCCESS",
                 correlationId,
                 errorMessage: formatAmountMismatch(mismatch),
+            });
+        }
+
+        // Issue #86 — reference-integrity audit. The customer has paid
+        // and the order is persisted; if any referenced design file was
+        // missing on FTP at persist time, record it so support can chase
+        // the file before the customer hits the order-detail 404. We
+        // don't refund or block here (paid-already invariant); the
+        // event is the forensic breadcrumb.
+        if (missingFiles && missingFiles.length > 0 && !raced) {
+            await recordPaymentEvent({
+                merchantOrderId,
+                gatewayOrderId: razorpayOrderId,
+                source: "verify",
+                code: "MISSING_FILE_AT_PERSIST",
+                status: "SUCCESS",
+                correlationId,
+                errorMessage: missingFiles.join(", "),
             });
         }
 
@@ -763,7 +781,7 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
             },
         };
 
-        const { orderId, raced, mismatch } = await persistOrderWithRaceGuard(
+        const { orderId, raced, mismatch, missingFiles } = await persistOrderWithRaceGuard(
             {
                 merchantOrderId: pendingPayment.merchantOrderId,
                 userId: pendingPayment.userId,
@@ -802,6 +820,22 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
                 payloadHash,
                 correlationId,
                 errorMessage: formatAmountMismatch(mismatch),
+            });
+        }
+
+        // Issue #86 — reference-integrity audit. Mirrors the verify path
+        // so the webhook also leaves a `MISSING_FILE_AT_PERSIST` row
+        // when it's the surface that actually persisted the order.
+        if (missingFiles && missingFiles.length > 0 && !raced) {
+            await recordPaymentEvent({
+                merchantOrderId,
+                gatewayOrderId: razorpayOrderId ?? null,
+                source: "webhook",
+                code: "MISSING_FILE_AT_PERSIST",
+                status: "SUCCESS",
+                payloadHash,
+                correlationId,
+                errorMessage: missingFiles.join(", "),
             });
         }
 

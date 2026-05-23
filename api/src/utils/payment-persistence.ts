@@ -12,6 +12,7 @@ import crypto from "crypto";
 import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../services/prisma.js";
 import { ValidationError, NotFoundError } from "./errors.js";
+import { extractFtpPathFromUrl, verifyFTPFiles } from "../services/ftp.js";
 import {
     buildAddonLineDetails,
     collectAddonIds,
@@ -558,6 +559,69 @@ export async function persistOrderFromPending(
 }
 
 /**
+ * Collect every `customDesignUrl` referenced by a `PendingPayment.items`
+ * blob, deduped and normalised to relative FTP paths. Used by the
+ * pre-persist file-integrity check (issue #86).
+ */
+function collectPendingItemFtpPaths(items: unknown): string[] {
+    if (!Array.isArray(items)) return [];
+    const out = new Set<string>();
+    for (const raw of items) {
+        const item = raw as { customDesignUrl?: unknown } | null;
+        const value = item?.customDesignUrl;
+        if (!value) continue;
+        const urls: string[] = Array.isArray(value)
+            ? value.filter((v): v is string => typeof v === "string")
+            : typeof value === "string"
+                ? [value]
+                : [];
+        for (const u of urls) {
+            const trimmed = u.trim();
+            if (!trimmed) continue;
+            const path = extractFtpPathFromUrl(trimmed);
+            if (path) out.add(path);
+        }
+    }
+    return Array.from(out);
+}
+
+/**
+ * Verify every file referenced by a PendingPayment still exists on FTP.
+ * Runs OUTSIDE the persistence transaction (FTP is a network call and
+ * we don't want it pinning a DB connection). Returns the list of
+ * missing/empty/unreadable paths so the caller can emit an audit row.
+ *
+ * Issue #86 — conservative: never blocks an already-paid order; just
+ * leaves a clear forensic trail so support can chase the file before
+ * the customer notices a 404 on order detail. Empty array on transport
+ * errors (fail-open) for the same reason `assertOrderFilesValid` does
+ * in the pre-payment guard.
+ */
+async function detectMissingPendingFiles(
+    items: unknown,
+    merchantOrderId: string,
+): Promise<string[]> {
+    const paths = collectPendingItemFtpPaths(items);
+    if (paths.length === 0) return [];
+    try {
+        const result = await verifyFTPFiles(paths);
+        if (result.invalid.length === 0) return [];
+        for (const entry of result.invalid) {
+            console.warn(
+                `[Payment ${merchantOrderId}] file missing on FTP at persist: ${entry.path} (${entry.reason})`,
+            );
+        }
+        return result.invalid.map((e) => e.path);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+            `[Payment ${merchantOrderId}] FTP verify at persist failed transiently; proceeding without audit: ${message}`,
+        );
+        return [];
+    }
+}
+
+/**
  * Run `persistOrderFromPending` inside a transaction, retrying the read once
  * if we lose the verify-vs-webhook race on the `gatewayOrderId` unique
  * constraint (P2002). The retry resolves to the order the other path created
@@ -570,17 +634,51 @@ export async function persistOrderFromPending(
  * #74). Persistence has already locked `Order.total` / `Payment.amount` to
  * the gateway-charged value at this point — the mismatch is purely audit
  * signal for ops.
+ *
+ * Issue #86 — every referenced `customDesignUrl` is re-verified on FTP
+ * *before* the transaction (no DB connection pinned across the network
+ * round-trip). Any missing files are surfaced via the returned
+ * `missingFiles` array so the caller can record a
+ * `MISSING_FILE_AT_PERSIST` PaymentEvent. The order is still persisted:
+ * the customer has already paid and the gateway already captured —
+ * failing here would strand their money. The audit row is the
+ * breadcrumb support uses to chase the file before the customer
+ * notices.
  */
 export async function persistOrderWithRaceGuard(
     pendingPayment: Parameters<typeof persistOrderFromPending>[1],
     gateway: GatewayPaymentInfo,
     statusComment: string,
-): Promise<{ orderId: string; raced: boolean; mismatch?: AmountMismatchSnapshot }> {
+): Promise<{
+    orderId: string;
+    raced: boolean;
+    mismatch?: AmountMismatchSnapshot;
+    /** Relative FTP paths that the gateway-locked items reference but
+     *  no longer exist on the FTP server. Caller emits a
+     *  `MISSING_FILE_AT_PERSIST` PaymentEvent so support can recover the
+     *  file. Undefined when nothing's missing or when the probe failed
+     *  transiently (fail-open). */
+    missingFiles?: string[];
+}> {
+    // Pre-tx integrity check. Best-effort; runs once even on the verify-
+    // vs-webhook race path — the loser short-circuits via P2002 below
+    // and re-uses the winning order, so re-probing would be wasted
+    // work. The cost is a single FTP listing per file and we don't
+    // amplify it per retry.
+    const missingFiles = await detectMissingPendingFiles(
+        pendingPayment.items,
+        pendingPayment.merchantOrderId,
+    );
+
     try {
         const result = await prisma.$transaction(
             (tx) => persistOrderFromPending(tx, pendingPayment, gateway, statusComment),
         );
-        return { ...result, raced: false };
+        return {
+            ...result,
+            raced: false,
+            missingFiles: missingFiles.length > 0 ? missingFiles : undefined,
+        };
     } catch (err: unknown) {
         // P2002 = unique constraint violation. The only unique we collide on
         // here is `Order.gatewayOrderId` — proof the parallel path already
@@ -593,7 +691,13 @@ export async function persistOrderWithRaceGuard(
                 where: { gatewayOrderId: pendingPayment.merchantOrderId },
                 select: { id: true },
             });
-            if (existing) return { orderId: existing.id, raced: true };
+            if (existing) {
+                return {
+                    orderId: existing.id,
+                    raced: true,
+                    missingFiles: missingFiles.length > 0 ? missingFiles : undefined,
+                };
+            }
         }
         throw err;
     }
