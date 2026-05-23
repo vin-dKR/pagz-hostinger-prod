@@ -25,6 +25,20 @@ import { computeCategoryCartShortfalls } from "../utils/category-min-cart-value.
 import { processHalfPageCalculation } from "../utils/half-page-calculation.js";
 
 /**
+ * Service-style products (issue #82) are published from a `CategoryPricingRule`
+ * and carry `generatedFromPricingRule = true`. For those, the cart `quantity`
+ * is `pageCount × copies` summed across all uploaded files — not a count of
+ * orderable SKU units. Comparing that against `Product.stock` (an admin-set
+ * SKU count, default 0) wrongly rejected legitimate multi-file orders with
+ * "Insufficient stock", e.g. 1000p + 482p PDFs against a stock of 100.
+ *
+ * Stock semantics still apply to physical SKUs (`generatedFromPricingRule =
+ * false`) and to any product `variant` (variants only exist on physical SKUs).
+ */
+const isStockTrackedProduct = (p: { generatedFromPricingRule?: boolean | null }): boolean =>
+    p.generatedFromPricingRule !== true;
+
+/**
  * Shape of the `addons` include used for cart reads. Centralised so the cart
  * GET response, the add-to-cart response, and any future read path stay in
  * sync and always surface the fields the UI needs for display/pricing.
@@ -514,12 +528,15 @@ export const addToCart = async (req: Request, res: Response, next: NextFunction)
             throw new NotFoundError("Product not found");
         }
 
-        // Check stock
-        if (product.stock < quantity) {
+        // Check stock — only meaningful for physical SKUs. Service-style
+        // products (print jobs) pass `quantity = pageCount × copies` which
+        // is not comparable to `Product.stock`. See `isStockTrackedProduct`.
+        if (isStockTrackedProduct(product) && product.stock < quantity) {
             throw new ValidationError("Insufficient stock");
         }
 
-        // Verify variant if provided
+        // Verify variant if provided. Variants exist on physical SKUs, so
+        // their stock check always applies when a variantId is supplied.
         if (variantId) {
             const variant = product.variants.find((v) => v.id === variantId);
             if (!variant || !variant.available) {
@@ -821,9 +838,15 @@ export const updateCartItem = async (req: Request, res: Response, next: NextFunc
             throw new UnauthorizedError("Not authorized to update this cart item");
         }
 
-        // Check stock
-        const stock = cartItem.variant ? cartItem.variant.stock : cartItem.product.stock;
-        if (stock < quantity) {
+        // Check stock — variant stock is always enforced when present
+        // (variants only exist on physical SKUs). Product-level stock is
+        // skipped for service-style products since their `quantity` is
+        // `pageCount × copies`, not a count of orderable units (issue #82).
+        if (cartItem.variant) {
+            if (cartItem.variant.stock < quantity) {
+                throw new ValidationError("Insufficient stock");
+            }
+        } else if (isStockTrackedProduct(cartItem.product) && cartItem.product.stock < quantity) {
             throw new ValidationError("Insufficient stock");
         }
 
