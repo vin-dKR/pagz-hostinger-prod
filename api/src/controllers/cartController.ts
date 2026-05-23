@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { randomUUID } from "crypto";
 import { prisma } from "../services/prisma.js";
 import { sendSuccess } from "../utils/response.js";
 import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
@@ -1310,6 +1311,18 @@ export const calculatePricing = async (
     res: Response,
     next: NextFunction,
 ) => {
+    // Per-request id so the two log lines emitted below (input + result)
+    // can be correlated when several pricing calls are interleaved across
+    // tabs / surfaces. `x-pagz-source` lets the client tag the call site
+    // (`services-page`, `guest-cart`, ...) — surfaces drift between the
+    // two surfaces in prod logs without needing to repro locally. Issue #93.
+    const requestId =
+        (typeof req.headers["x-request-id"] === "string" && req.headers["x-request-id"]) ||
+        randomUUID();
+    const source =
+        (typeof req.headers["x-pagz-source"] === "string" && req.headers["x-pagz-source"]) ||
+        "unknown";
+
     try {
         const body = (req.body ?? {}) as CalculatePricingRequestBody;
 
@@ -1341,6 +1354,20 @@ export const calculatePricing = async (
         const fileCount = files.length;
 
         const requestedAddonIds = normalizeAddonIds(body.selectedAddons);
+
+        console.log(
+            `[calculate-pricing] req=${requestId} source=${source} input`,
+            {
+                categoryId,
+                selectedSpecifications,
+                selectedAddons: requestedAddonIds,
+                copies,
+                files: files.map((f) => ({ url: f.url, pageCount: f.pageCount })),
+                pageCount,
+                fileCount,
+                side: body.side ?? null,
+            },
+        );
 
         // Load the category + active rules in a single query. Rules drive both
         // base and addon math — keeping it to one DB roundtrip per request.
@@ -1427,6 +1454,20 @@ export const calculatePricing = async (
             }
         }
 
+        console.log(
+            `[calculate-pricing] req=${requestId} base`,
+            {
+                matchingBaseRules: matchingBaseRules.map((r) => ({
+                    id: r.id,
+                    basePrice: r.basePrice ? Number(r.basePrice) : 0,
+                    ruleType: r.ruleType,
+                    specs: r.specificationValues,
+                })),
+                chosenBaseRuleId: baseRule?.id ?? null,
+                baseSubtotal: Number(baseSubtotal.toFixed(2)),
+            },
+        );
+
         // ── Addons ───────────────────────────────────────────────────────────
         // Filter the client-supplied addon ids down to live addon rules on
         // this category. Unknown ids (admin deleted mid-session) are ignored
@@ -1436,6 +1477,17 @@ export const calculatePricing = async (
                 .filter((r) => r.ruleType === "ADDON")
                 .map((r) => [r.id, r]),
         );
+
+        // Defense (Step 4 of #93): surface ids the client sent that no longer
+        // exist as live ADDON rules on this category — admin deleted them or
+        // the guest stored a stale payload from a previous session.
+        const staleAddonIds = requestedAddonIds.filter((id) => !addonRulesById.has(id));
+        if (staleAddonIds.length > 0) {
+            console.warn(
+                `[calculate-pricing] req=${requestId} stale addon ids dropped`,
+                { categoryId, source, staleAddonIds },
+            );
+        }
 
         const activeAddonInputs: Array<{
             rule: AddonPricingRule;
@@ -1542,6 +1594,32 @@ export const calculatePricing = async (
                 : undefined,
             hasHalfPageAdjustment: hasHalfPage,
         };
+
+        console.log(
+            `[calculate-pricing] req=${requestId} result`,
+            {
+                addonRulesMatched: activeAddonInputs.length,
+                addonsRequested: requestedAddonIds.length,
+                survivingIds: Array.from(survivingIds),
+                activeAddonInputs: activeAddonInputs.map((e) => ({
+                    ruleId: e.rule.id,
+                    name: e.name,
+                    perFileEvaluation: e.rule.perFileEvaluation,
+                    copyMultiplier: e.rule.copyMultiplier,
+                    fileMultiplier: e.rule.fileMultiplier,
+                    minQuantity: e.rule.minQuantity,
+                    maxQuantity: e.rule.maxQuantity,
+                })),
+                addonsResponse: addonsResponse.map((a) => ({
+                    ruleId: a.ruleId,
+                    total: a.total,
+                    breakdownLen: a.breakdown.length,
+                })),
+                baseSubtotal: responseBody.baseSubtotal,
+                addonsSubtotal: responseBody.addonsSubtotal,
+                total: responseBody.total,
+            },
+        );
 
         return sendSuccess(res, responseBody);
     } catch (error) {

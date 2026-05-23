@@ -373,13 +373,31 @@ export interface CalculatePricingResponse {
 }
 
 /**
+ * Optional surface tag passed via the `x-pagz-source` header so prod logs
+ * can correlate two pricing calls coming from different UIs (services
+ * page vs guest cart vs cart preview). Added for issue #93 to debug the
+ * guest-cart base/addon split mismatch.
+ */
+export type CalculatePricingSource =
+    | 'services-page'
+    | 'guest-cart'
+    | 'cart'
+    | 'checkout'
+    | 'unknown';
+
+/**
  * Ask the API to compute base + addon totals for a service configuration.
  * Used by the services page live price card, cart preview, and checkout
  * summary. Public — works for guest sessions.
  */
 export async function calculatePricing(
     input: CalculatePricingRequest,
+    source: CalculatePricingSource = 'unknown',
 ): Promise<ApiResponse<CalculatePricingResponse>> {
-    return post<CalculatePricingResponse>('/cart/calculate-pricing', input);
+    return post<CalculatePricingResponse>(
+        '/cart/calculate-pricing',
+        input,
+        { 'x-pagz-source': source },
+    );
 }
 

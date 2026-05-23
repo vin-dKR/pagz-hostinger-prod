@@ -537,6 +537,7 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
         },
         {
             enabled: Boolean(category?.id) && Object.keys(selectedSpecifications).length > 0,
+            source: 'services-page',
         },
     );
 

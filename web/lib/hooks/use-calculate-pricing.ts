@@ -17,6 +17,7 @@ import {
     calculatePricing,
     type CalculatePricingRequest,
     type CalculatePricingResponse,
+    type CalculatePricingSource,
 } from '@/lib/api/cart';
 
 /** Debounce a value by `delayMs`. Skips the very first tick so the first
@@ -53,6 +54,9 @@ export interface UseCalculatePricingOptions {
     enabled?: boolean;
     /** Override the 200ms input debounce. */
     debounceMs?: number;
+    /** Tag the call site so prod logs can correlate two pricing requests
+     *  coming from different surfaces (services page vs guest cart). */
+    source?: CalculatePricingSource;
 }
 
 export type UseCalculatePricingResult = UseQueryResult<
@@ -69,7 +73,7 @@ export function useCalculatePricing(
     input: CalculatePricingRequest,
     options: UseCalculatePricingOptions = {},
 ): UseCalculatePricingResult {
-    const { enabled = true, debounceMs = 200 } = options;
+    const { enabled = true, debounceMs = 200, source = 'unknown' } = options;
     const debounced = useDebounced(input, debounceMs);
 
     return useQuery<CalculatePricingResponse | undefined>({
@@ -84,7 +88,7 @@ export function useCalculatePricing(
         gcTime: 5 * 60_000,
         refetchOnWindowFocus: false,
         queryFn: async () => {
-            const res = await calculatePricing(debounced);
+            const res = await calculatePricing(debounced, source);
             if (!res.success || !res.data) {
                 throw new Error(res.error || 'Pricing request failed');
             }
