@@ -39,13 +39,17 @@ interface OrderItem {
     customDesignUrl?: string[]; // Array of S3 URLs
     variant?: string;
     addonsTotal?: number;
+    /**
+     * Server-computed per-addon contributions for this line. Issue #85 —
+     * replaced the legacy raw-priceModifier list. Only entries with
+     * `total > 0` survive into the render path so out-of-range addon
+     * rules don't surface as ₹0.00 rows. Empty/undefined when no addon
+     * rule fired for this line.
+     */
     addons?: Array<{
-        id: string;
-        specificationValues?: Record<string, any>;
-        priceModifier?: number | null;
-        basePrice?: number | null;
-        quantityMultiplier: boolean;
-        copyMultiplier?: boolean;
+        ruleId: string;
+        name: string;
+        total: number;
     }>;
     templateId?: string;
     templateName?: string;
@@ -170,92 +174,31 @@ function transformOrder(order: Order): OrderDetails {
         total: Number(order.total),
         // Use stored subtotal from database (base price only)
         subtotal: Number(order.subtotal || 0),
-        // Use stored addonsSubtotal from database, fallback to calculating if not stored
-        addonsSubtotal: (() => {
-            // First try database value
-            if (order.addonsSubtotal !== undefined && order.addonsSubtotal !== null && order.addonsSubtotal > 0) {
-                return Number(order.addonsSubtotal);
-            }
-            // Fallback: derive from items' addons. Mirrors
-            // `computeAddonLineTotal` so cart, server, and this fallback agree.
-            return order.items.reduce((sum: number, item: any) => {
-                const addons = Array.isArray(item.addons) ? item.addons : [];
-                const meta = item.metadata || {};
-                const pageCount = Number(meta.pageCount) || 0;
-                const copies = Number(meta.copies) > 0 ? Number(meta.copies) : 1;
-                // Per-copy effective sheets — half-page reduced when present.
-                const perCopyPages =
-                    Number(meta.effectivePageCount) > 0
-                        ? Number(meta.effectivePageCount)
-                        : pageCount > 0
-                            ? pageCount
-                            : null;
-                // Total effective sheets (× copies) — same gate the api util uses.
-                const totalPages = perCopyPages != null ? perCopyPages * copies : null;
-
-                const addonsTotal = addons.reduce((addonSum: number, addon: any) => {
-                    const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
-                    const gatePages = addon.copyMultiplier ? perCopyPages : totalPages;
-                    if (hasPageRange && gatePages != null) {
-                        const inRange =
-                            (addon.minQuantity == null || gatePages >= addon.minQuantity) &&
-                            (addon.maxQuantity == null || gatePages <= addon.maxQuantity);
-                        if (!inRange) return addonSum;
-                    }
-
-                    const rawPrice =
-                        addon.priceModifier !== null && addon.priceModifier !== undefined
-                            ? Number(addon.priceModifier)
-                            : addon.basePrice !== null && addon.basePrice !== undefined
-                                ? Number(addon.basePrice)
-                                : 0;
-
-                    let multiplier = 1;
-                    if (addon.copyMultiplier) {
-                        const perBookMult = addon.quantityMultiplier
-                            ? (perCopyPages ?? 1)
-                            : 1;
-                        multiplier = perBookMult * copies;
-                    } else if (addon.quantityMultiplier) {
-                        multiplier = totalPages ?? item.quantity;
-                    }
-
-                    return addonSum + rawPrice * multiplier;
-                }, 0);
-                return sum + addonsTotal;
-            }, 0);
-        })(),
+        // Issue #85 — trust the persisted `order.addonsSubtotal` (the
+        // server-computed "actually charged" total). The previous fallback
+        // re-summed `item.addons[].priceModifier` client-side, which
+        // ignored half-page semantics + perFileEvaluation gating and
+        // produced a phantom ₹X addon subtotal even when the customer
+        // paid only the base. When the api returns null the answer is 0,
+        // never a re-derived guess.
+        addonsSubtotal: order.addonsSubtotal != null
+            ? Number(order.addonsSubtotal)
+            : 0,
         shipping: Number(order.shippingCharges || 0),
         tax: 0, // Tax is typically included in subtotal or calculated separately
         discount: Number(order.discountAmount || 0),
         items: order.items.map((item: any) => {
-            const addons = Array.isArray(item.addons) ? item.addons : [];
-            const meta = item.metadata || {};
-            const pageCount = Number(meta.pageCount) || 0;
-            const copies = Number(meta.copies) > 0 ? Number(meta.copies) : 1;
-            const perCopyPages =
-                Number(meta.effectivePageCount) > 0
-                    ? Number(meta.effectivePageCount)
-                    : pageCount > 0
-                        ? pageCount
-                        : null;
-            const totalPages = perCopyPages != null ? perCopyPages * copies : null;
-            const addonsTotal = addons.reduce((sum: number, addon: any) => {
-                const rawPrice =
-                    addon.priceModifier !== null && addon.priceModifier !== undefined
-                        ? Number(addon.priceModifier)
-                        : addon.basePrice !== null && addon.basePrice !== undefined
-                            ? Number(addon.basePrice)
-                            : 0;
-                let multiplier = 1;
-                if (addon.copyMultiplier) {
-                    const perBookMult = addon.quantityMultiplier ? (perCopyPages ?? 1) : 1;
-                    multiplier = perBookMult * copies;
-                } else if (addon.quantityMultiplier) {
-                    multiplier = totalPages ?? item.quantity;
-                }
-                return sum + rawPrice * multiplier;
-            }, 0);
+            // Server-computed per-addon contributions (issue #85). Empty
+            // when no addons attached, or when none of the attached rules
+            // fired for this line.
+            const pricedAddons: Array<{ ruleId: string; name: string; total: number }> =
+                Array.isArray(item.pricing?.addons)
+                    ? item.pricing.addons.filter((a: any) => Number(a?.total || 0) > 0)
+                    : [];
+            const addonsTotal = pricedAddons.reduce(
+                (sum, a) => sum + Number(a.total || 0),
+                0,
+            );
 
             const metadata = item.metadata || {};
             
@@ -294,14 +237,17 @@ function transformOrder(order: Order): OrderDetails {
                 customDesignUrl: item.customDesignUrl,
                 variant: item.variant?.name,
                 addonsTotal: addonsTotal > 0 ? addonsTotal : undefined,
-                addons: addons.length > 0 ? addons.map((addon: any) => ({
-                    id: addon.id,
-                    specificationValues: addon.specificationValues || {},
-                    priceModifier: addon.priceModifier,
-                    basePrice: addon.basePrice,
-                    quantityMultiplier: addon.quantityMultiplier,
-                    copyMultiplier: !!addon.copyMultiplier,
-                })) : undefined,
+                // Issue #85 — render from server-computed `pricing.addons`
+                // (already filtered to `total > 0` above). Replaces the
+                // legacy raw-priceModifier list that produced phantom
+                // addon rows for out-of-range rules.
+                addons: pricedAddons.length > 0
+                    ? pricedAddons.map((addon) => ({
+                          ruleId: addon.ruleId,
+                          name: addon.name,
+                          total: Number(addon.total || 0),
+                      }))
+                    : undefined,
                 templateId: metadata.templateId,
                 templateName: metadata.templateName,
                 templatePreviewImage: metadata.templatePreviewImage,
@@ -670,43 +616,17 @@ function OrderDetailsPageContent({
                                                             Addons: <span className="font-medium">₹{item.addonsTotal.toFixed(2)}</span>
                                                         </p>
                                                         {item.addons && item.addons.length > 0 && (
+                                                            // Issue #85 — render server-computed per-addon
+                                                            // totals (already filtered to `total > 0` in the
+                                                            // transformer). The rule's raw priceModifier never
+                                                            // appears here; the customer sees only what they
+                                                            // were actually charged.
                                                             <div className="mt-1 p-2 bg-purple-50 rounded border border-purple-200">
-                                                                {item.addons.map((addon, idx) => {
-                                                                    const specValues = addon.specificationValues || {};
-                                                                    const specDetails = Object.entries(specValues)
-                                                                        .map(([key, value]) => `${key}: ${value}`)
-                                                                        .join(', ');
-                                                                    const rawPrice =
-                                                                        addon.priceModifier !== null && addon.priceModifier !== undefined
-                                                                            ? Number(addon.priceModifier)
-                                                                            : addon.basePrice !== null && addon.basePrice !== undefined
-                                                                                ? Number(addon.basePrice)
-                                                                                : 0;
-                                                                    const safeCopies = Number(item.copies || 0) > 0 ? Number(item.copies) : 1;
-                                                                    const perCopy = item.effectivePageCount && item.effectivePageCount > 0
-                                                                        ? Number(item.effectivePageCount)
-                                                                        : item.pageCount && item.pageCount > 0
-                                                                            ? Number(item.pageCount)
-                                                                            : null;
-                                                                    let multiplier = 1;
-                                                                    const parts: string[] = [];
-                                                                    if (addon.copyMultiplier) {
-                                                                        const perBookMult = addon.quantityMultiplier && perCopy ? perCopy : 1;
-                                                                        multiplier = perBookMult * safeCopies;
-                                                                        if (perBookMult > 1) parts.push(`${perBookMult} ${perBookMult === 1 ? 'page' : 'pages'}`);
-                                                                        parts.push(`${safeCopies} ${safeCopies === 1 ? 'copy' : 'copies'}`);
-                                                                    } else if (addon.quantityMultiplier) {
-                                                                        multiplier = item.quantity;
-                                                                        if (multiplier > 1) parts.push(`${multiplier}`);
-                                                                    }
-                                                                    const total = rawPrice * multiplier;
-                                                                    return (
-                                                                        <div key={idx} className="text-xs text-purple-700 mb-1 last:mb-0">
-                                                                            {specDetails || `Addon #${idx + 1}`}: ₹{rawPrice.toFixed(2)}
-                                                                            {parts.length > 0 && ` × ${parts.join(' × ')} = ₹${total.toFixed(2)}`}
-                                                                        </div>
-                                                                    );
-                                                                })}
+                                                                {item.addons.map((addon) => (
+                                                                    <div key={addon.ruleId} className="text-xs text-purple-700 mb-1 last:mb-0">
+                                                                        {addon.name}: ₹{addon.total.toFixed(2)}
+                                                                    </div>
+                                                                ))}
                                                             </div>
                                                         )}
                                                     </div>
@@ -907,14 +827,21 @@ function OrderDetailsPageContent({
                                         </span>
                                     </div>
                                 ) : null}
-                                <div className="flex justify-between text-sm font-medium border-t border-gray-200 pt-2">
-                                    <span className="text-gray-700">
-                                        Subtotal
-                                    </span>
-                                    <span className="text-gray-900">
-                                        ₹{(order.subtotal + (order.addonsSubtotal || 0)).toFixed(2)}
-                                    </span>
-                                </div>
+                                {/* Issue #85 — only render the combined Subtotal
+                                    row when it adds new information (i.e. when
+                                    there's a non-zero addons component). For
+                                    base-only orders the row is redundant with
+                                    "Base Price Subtotal" above. */}
+                                {(order.addonsSubtotal && order.addonsSubtotal > 0) ? (
+                                    <div className="flex justify-between text-sm font-medium border-t border-gray-200 pt-2">
+                                        <span className="text-gray-700">
+                                            Subtotal
+                                        </span>
+                                        <span className="text-gray-900">
+                                            ₹{(order.subtotal + order.addonsSubtotal).toFixed(2)}
+                                        </span>
+                                    </div>
+                                ) : null}
                                 {order.shipping > 0 && (
                                     <div className="flex justify-between text-sm">
                                         <span className="text-gray-600">

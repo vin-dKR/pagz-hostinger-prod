@@ -630,7 +630,12 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
             throw new NotFoundError("Order not found");
         }
 
-        // Build public FTP URLs for order files (files are publicly accessible via pagz.in)
+        // Build public FTP URLs for order files (files are publicly accessible via pagz.in).
+        // Issue #85 — also surface per-addon contributions via the shared
+        // engine so the customer's order detail UI renders actually-charged
+        // amounts (`total`), never the raw rule `priceModifier`. The admin
+        // surface has had this since #75 (`getAdminOrder`); this aligns the
+        // customer surface to the same source of truth.
         const orderWithFiles = {
             ...order,
             items: order.items.map((item) => {
@@ -641,6 +646,13 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
                     ? [item.customDesignUrl]
                     : [];
 
+                const pricingAddons = buildOrderItemAddonDetails(item, fileUrls.length);
+
+                const baseEnriched = {
+                    ...item,
+                    pricing: { addons: pricingAddons },
+                };
+
                 if (fileUrls.length > 0) {
                     // For FTP-hosted files, construct public URLs directly (no presigning needed)
                     const publicUrls = fileUrls.map((fileUrl) => {
@@ -649,12 +661,12 @@ export const getOrder = async (req: Request, res: Response, next: NextFunction) 
                     });
 
                     return {
-                        ...item,
+                        ...baseEnriched,
                         customDesignUrl: fileUrls,
                         customDesignPresignedUrls: publicUrls, // Public FTP URLs (replaces presigned S3 URLs)
                     };
                 }
-                return item;
+                return baseEnriched;
             }),
         };
 

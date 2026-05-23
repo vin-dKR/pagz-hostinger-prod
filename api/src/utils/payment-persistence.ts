@@ -13,14 +13,15 @@ import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../services/prisma.js";
 import { ValidationError, NotFoundError } from "./errors.js";
 import {
+    buildAddonLineDetails,
     collectAddonIds,
-    computeAddonsSubtotal,
     fetchAddonRuleMap,
     fetchAddonSpecMap,
     normalizeAddonIds,
     sanitizePricingFiles,
     warnPerFileFallback,
     type AddonLineItemInput,
+    type AddonPricingRule,
     type PricingFileMeta,
 } from "./addon-pricing.js";
 import { deriveHalfPageFromSelectedSpecs } from "./half-page-from-specs.js";
@@ -401,7 +402,43 @@ export async function persistOrderFromPending(
         merchantOrderId: pendingPayment.merchantOrderId,
         userId: pendingPayment.userId,
     });
-    const addonsSubtotal = computeAddonsSubtotal(orderItems, addonMap, addonSpecMap);
+    // Issue #85 — persist `Order.addonsSubtotal` as the sum of addon
+    // contributions that ACTUALLY FIRED for this order (entries where
+    // `total > 0`), not the raw priceModifier sum of every selected
+    // addon. Same engine as before, made explicit via `buildAddonLineDetails`
+    // so the persisted column mirrors what the read path (admin order
+    // detail, customer order detail) renders. Out-of-range rules naturally
+    // compute `total = 0` and drop out of the sum here.
+    const addonsSubtotal = orderItems.reduce((sum, oi) => {
+        if (oi.addons.length === 0) return sum;
+        const lineRules = oi.addons
+            .map((id) => {
+                const rule = addonMap.get(id);
+                if (!rule) return null;
+                return {
+                    ...rule,
+                    specificationValues: addonSpecMap.get(id) ?? null,
+                } satisfies AddonPricingRule & {
+                    specificationValues: Record<string, unknown> | null;
+                };
+            })
+            .filter(
+                (r): r is AddonPricingRule & {
+                    specificationValues: Record<string, unknown> | null;
+                } => r !== null,
+            );
+        if (lineRules.length === 0) return sum;
+        const details = buildAddonLineDetails(lineRules, {
+            quantity: oi.quantity,
+            addons: oi.addons,
+            metadata: oi.metadata ?? null,
+            fileCount: oi.fileCount,
+        });
+        return sum + details.reduce(
+            (lineSum, entry) => lineSum + (entry.total > 0 ? entry.total : 0),
+            0,
+        );
+    }, 0);
     const grossSubtotal = subtotal + addonsSubtotal;
 
     const { discountAmount, couponId } = await resolveCouponDiscount(

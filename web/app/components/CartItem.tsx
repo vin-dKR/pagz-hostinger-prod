@@ -456,12 +456,24 @@ export default function CartItem({
                         no client-side `computeAddonLineTotal` recursion
                         runs here anymore. Phase 3 expands a per-file
                         sub-row under each addon when the rule has
-                        `perFileEvaluation` on and 2+ files were uploaded. */}
+                        `perFileEvaluation` on and 2+ files were uploaded.
+                        Issue #83 — filter `total > 0` so addon rules that
+                        didn't fire for this line (e.g. binding tiers whose
+                        page range doesn't cover the upload) don't surface
+                        as ₹0.00 rows. Mirrors the same filter applied in
+                        OrderReview (PR #79) so cart and checkout review
+                        render identically. The label map is built from the
+                        priced subset so duplicate-name disambiguation only
+                        runs across addons the user actually sees. */}
                     {item.pricing?.addons && item.pricing.addons.length > 0 && (() => {
-                        const labels = buildAddonLabelMap(item.pricing.addons);
+                        const pricedAddons = item.pricing.addons.filter(
+                            (addon) => toNumber(addon.total) > 0,
+                        );
+                        if (pricedAddons.length === 0) return null;
+                        const labels = buildAddonLabelMap(pricedAddons);
                         return (
                         <ul className="mt-1.5 space-y-1">
-                            {item.pricing.addons.map((addon) => (
+                            {pricedAddons.map((addon) => (
                                 <li key={addon.ruleId} className="text-[11px] text-gray-500">
                                     <div>
                                         <span className="text-gray-600">{labels.get(addon.ruleId) ?? addon.name}</span>{" "}
