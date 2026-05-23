@@ -68,6 +68,18 @@ export interface PendingPurchaseData {
          *  are drained as aggregate-only. Carried through to the
          *  authenticated `/cart` POST after login. */
         files?: FileMeta[];
+        /** Issue #94 fail-open marker — set by `pending-cart-intent`
+         *  when the post-login FTP verify returned transient errors
+         *  (`unreadable`) and we restored the file into the cart on
+         *  trust. The cart-page mount sweep re-runs verify after we
+         *  reach `/cart`; the 60-min staleness check below uses this
+         *  flag to prompt the user to discard a dead session. */
+        unverified?: boolean;
+        /** Epoch-ms when `unverified` was set. The 60-min discard
+         *  prompt is keyed on this rather than the top-level
+         *  `timestamp` so a stale upload doesn't inherit a freshly-
+         *  set unverified state. */
+        unverifiedAt?: number;
     };
     currentPrice?: number;
     totalPrice?: number;
@@ -233,6 +245,40 @@ export function clearPendingPurchaseData(): void {
  */
 export function hasPendingPurchaseData(): boolean {
     return getPendingPurchaseData() !== null;
+}
+
+/**
+ * Window after which an `unverified` pending-purchase entry should be
+ * flagged for user attention. Issue #94 — when the post-login FTP
+ * verify fails transiently we fail open and trust the keys into the
+ * cart, but if the cart page never converts (e.g. user closed tab, FTP
+ * stayed flaky, sessionStorage lingered across navigations) the entry
+ * shouldn't haunt the user forever. 60 minutes is long enough for a
+ * normal checkout flow but short enough that a forgotten dead session
+ * doesn't auto-restore the next day.
+ */
+const PENDING_UNVERIFIED_STALE_MS = 60 * 60 * 1000;
+
+/**
+ * True when the pending-purchase entry was fail-opened past a transient
+ * FTP verify failure AND that fail-open is now older than the staleness
+ * window. Callers (cart-page, PendingMergeBanner) should prompt the user
+ * to discard or keep retrying so a dead session doesn't linger.
+ *
+ * Returns `false` for fresh / verified entries, so a simple `if`-guard
+ * at the call site is enough.
+ */
+export function isPendingPurchaseStaleUnverified(
+    data: PendingPurchaseData | null = getPendingPurchaseData(),
+): boolean {
+    if (!data) return false;
+    if (data.metadata?.unverified !== true) return false;
+    const markedAt =
+        typeof data.metadata?.unverifiedAt === 'number' && data.metadata.unverifiedAt > 0
+            ? data.metadata.unverifiedAt
+            : data.timestamp;
+    if (!markedAt) return false;
+    return Date.now() - markedAt > PENDING_UNVERIFIED_STALE_MS;
 }
 
 /**

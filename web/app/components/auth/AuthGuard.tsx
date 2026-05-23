@@ -13,6 +13,15 @@ import { hasPendingPurchaseData } from "../../../lib/utils/pending-purchase";
 import { toastError } from "../../../lib/utils/toast";
 
 const MERGE_ERROR_KEY = "pendingMergeError";
+/**
+ * Issue #94 — soft notice key set when the post-login merge SUCCEEDED
+ * but one or more files came back transient from the FTP verify and we
+ * fail-opened the restore. The cart page reads this on mount and renders
+ * an amber soft notice ("we couldn't verify your files right now — your
+ * cart is restored. We'll verify again on checkout.") instead of the
+ * hard error banner shown for genuine failures.
+ */
+const MERGE_NOTICE_KEY = "pendingMergeNotice";
 
 /**
  * AuthGuard
@@ -58,6 +67,30 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                                 sessionStorage.removeItem(MERGE_ERROR_KEY);
                             } catch {
                                 /* ignore */
+                            }
+                            // Fail-open notice: merge succeeded but files
+                            // came back transient from FTP verify. The
+                            // cart page renders a soft amber banner so
+                            // the user knows their files weren't verified
+                            // — payment-init will re-verify before charging.
+                            if (result.verifyFellOpen) {
+                                try {
+                                    sessionStorage.setItem(
+                                        MERGE_NOTICE_KEY,
+                                        JSON.stringify({
+                                            kind: "verify-fell-open",
+                                            at: Date.now(),
+                                        }),
+                                    );
+                                } catch {
+                                    /* ignore */
+                                }
+                            } else {
+                                try {
+                                    sessionStorage.removeItem(MERGE_NOTICE_KEY);
+                                } catch {
+                                    /* ignore */
+                                }
                             }
                             window.location.href = redirectPath || "/cart";
                         } else {

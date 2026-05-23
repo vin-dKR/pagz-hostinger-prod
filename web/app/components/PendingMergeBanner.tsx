@@ -23,7 +23,9 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw, Trash2 } from "lucide-react";
 import {
     clearPendingPurchaseData,
+    getPendingPurchaseData,
     hasPendingPurchaseData,
+    isPendingPurchaseStaleUnverified,
 } from "@/lib/utils/pending-purchase";
 import { processPendingAddToCartIntent } from "@/lib/utils/pending-cart-intent";
 import { describeVerifyReason } from "@/lib/utils/cart-file-sweep";
@@ -31,6 +33,32 @@ import type { VerifyFileInvalidEntry } from "@/lib/api/cart";
 import { toastError, toastSuccess } from "@/lib/utils/toast";
 
 const MERGE_ERROR_KEY = "pendingMergeError";
+/** Soft-notice key set by AuthGuard when the merge SUCCEEDED but the
+ *  FTP verify came back transient and we fail-opened. The banner
+ *  renders an amber "your cart is restored, we'll re-verify on
+ *  checkout" notice instead of an error so the user isn't told their
+ *  cart is broken when the payment-init guard will catch any real
+ *  problem before charging them (issue #94). */
+const MERGE_NOTICE_KEY = "pendingMergeNotice";
+
+type MergeNotice =
+    | { kind: "verify-fell-open"; at: number }
+    | null;
+
+function readMergeNotice(): MergeNotice {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = sessionStorage.getItem(MERGE_NOTICE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as MergeNotice;
+        if (parsed && parsed.kind === "verify-fell-open" && typeof parsed.at === "number") {
+            return parsed;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
 
 interface FileFailure {
     name: string;
@@ -76,13 +104,32 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
     const [errorMessage, setErrorMessage] = useState<string>("");
     const [fileFailures, setFileFailures] = useState<FileFailure[]>([]);
     const [retrying, setRetrying] = useState(false);
+    /** "error" — hard failure, retry/discard banner. "notice" — soft
+     *  fail-open notice (issue #94), info copy + single dismiss button. */
+    const [mode, setMode] = useState<"error" | "notice">("error");
+    /** Issue #94 D — when the pending entry is older than the
+     *  unverified-stale window we surface a stronger "this looks dead,
+     *  consider discarding" prompt alongside the normal Retry/Discard
+     *  buttons. */
+    const [staleUnverified, setStaleUnverified] = useState(false);
 
     useEffect(() => {
-        if (!hasPendingPurchaseData()) return;
-        const mergeError = readMergeError();
-        setErrorMessage(mergeError?.error || "Your previous cart selections couldn't be restored.");
-        setFileFailures(mergeError?.fileFailures || []);
-        setVisible(true);
+        if (hasPendingPurchaseData()) {
+            const mergeError = readMergeError();
+            setMode("error");
+            setErrorMessage(mergeError?.error || "Your previous cart selections couldn't be restored.");
+            setFileFailures(mergeError?.fileFailures || []);
+            setStaleUnverified(isPendingPurchaseStaleUnverified(getPendingPurchaseData()));
+            setVisible(true);
+            return;
+        }
+        // No pending data — check for a soft notice (merge succeeded
+        // but files were trusted past a transient verify failure).
+        const notice = readMergeNotice();
+        if (notice) {
+            setMode("notice");
+            setVisible(true);
+        }
     }, []);
 
     const handleRetry = useCallback(async () => {
@@ -119,16 +166,60 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
     const handleDismiss = useCallback(() => {
         // Only this explicit action clears the pending entry (issue #87
         // mandate: don't reset cart to empty until the user opts in).
-        clearPendingPurchaseData();
+        // Notice mode (merge succeeded, fail-open notice) has nothing
+        // to clear from sessionStorage's pending entry — the merge
+        // already wiped it — so this is a no-op there.
+        if (mode === "error") {
+            clearPendingPurchaseData();
+        }
         try {
             sessionStorage.removeItem(MERGE_ERROR_KEY);
         } catch {
             /* ignore */
         }
+        try {
+            sessionStorage.removeItem(MERGE_NOTICE_KEY);
+        } catch {
+            /* ignore */
+        }
         setVisible(false);
-    }, []);
+    }, [mode]);
 
     if (!visible) return null;
+
+    // Notice mode (issue #94 fail-open): merge succeeded, files were
+    // trusted past a transient FTP verify failure. Soft amber notice
+    // with a single dismiss button — no retry, no per-file detail —
+    // because the cart-page sweep + payment-init guard handle the
+    // actual re-verify.
+    if (mode === "notice") {
+        return (
+            <div className="mb-4 sm:mb-6 rounded-xl sm:rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
+                <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm sm:text-base font-semibold text-amber-900 mb-1">
+                            We couldn't verify your files right now
+                        </p>
+                        <p className="text-xs sm:text-sm text-amber-800 break-words">
+                            Your cart is restored. We'll verify your uploaded
+                            files again on checkout — if anything's actually
+                            missing, payment won't go through.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                                onClick={handleDismiss}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-amber-700 bg-white border border-amber-300 hover:bg-amber-100"
+                                type="button"
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     const hasFileDetail = fileFailures.length > 0;
     // Issue #94 — distinguish "all-transient" from "some files are
@@ -175,6 +266,13 @@ export default function PendingMergeBanner({ onMerged }: { onMerged?: () => void
                     ) : (
                         <p className="text-xs sm:text-sm text-amber-800 break-words">
                             {errorMessage}
+                        </p>
+                    )}
+                    {staleUnverified && (
+                        <p className="mt-2 text-xs sm:text-sm text-amber-900 bg-amber-100 border border-amber-300 rounded px-2 py-1.5">
+                            This restore has been pending for over an hour.
+                            If retrying still doesn't help, discarding the
+                            session and re-uploading is the fastest fix.
                         </p>
                     )}
                     <div className="mt-3 flex flex-wrap gap-2">
