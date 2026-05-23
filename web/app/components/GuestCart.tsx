@@ -207,15 +207,53 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
         return files.length > 0 ? files : undefined;
     }, [pending]);
 
+    // ── Issue #93 — recompute selectedAddons from the LIVE category data.
+    //
+    // Previously this passed `pending.selectedAddons` (the snapshot saved
+    // at add-to-cart time). That list could differ from what the services
+    // page computes live — e.g. a perFile rule that wasn't in the snapshot
+    // but is spec-matched today, or an admin rule edit between guest-add
+    // and the guest opening the cart. The asymmetry made the server pick
+    // a different baseRule / no addons, so guest cart showed
+    // `base = total, addons = 0` while services page showed the proper split.
+    //
+    // Fix: derive the id set the same way services page does
+    // (`/services/[categorySlug]/page.tsx` `selectedAddonIds` memo) — filter
+    // live `categoryAddons` by stored `pending.specifications`. Falls back
+    // to the snapshot when the live addons list hasn't loaded yet so the
+    // first render still has *something* to send.
+    const computedSelectedAddons = useMemo<string[]>(() => {
+        const stored =
+            pending?.selectedAddons || pending?.metadata?.selectedAddons || [];
+        if (!pending?.specifications || categoryAddons.length === 0) {
+            return stored;
+        }
+        const normalize = (v: unknown) =>
+            v === null || v === undefined ? "" : String(v);
+        const specs = pending.specifications as Record<string, unknown>;
+        return categoryAddons
+            .filter((rule) => {
+                const ruleSpecs = (rule.specificationValues || {}) as Record<string, unknown>;
+                for (const [slug, val] of Object.entries(ruleSpecs)) {
+                    if (normalize(specs[slug]) !== normalize(val)) return false;
+                }
+                return true;
+            })
+            .map((rule) => rule.id);
+    }, [pending, categoryAddons]);
+
     const pricingHook = useCalculatePricing(
         {
             categoryId: category?.id ?? "",
             selectedSpecifications: (pending?.specifications ?? {}) as Record<string, string>,
-            selectedAddons: (pending?.selectedAddons || pending?.metadata?.selectedAddons || []),
+            selectedAddons: computedSelectedAddons,
             files: pricingFiles,
             copies: pending?.copies && pending.copies > 0 ? pending.copies : 1,
         },
-        { enabled: pending?.type === "service" && Boolean(category?.id) },
+        {
+            enabled: pending?.type === "service" && Boolean(category?.id),
+            source: "guest-cart",
+        },
     );
 
     // Server-authoritative price with a graceful fallback to the cached
@@ -266,9 +304,13 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
             // Diagnostic: customer had selected N addons, api returned 0.
             // Surfaces stale rule IDs or post-add-to-cart spec drift.
             // Logs the full payload so the next prod report has the data
-            // we need to find the underlying mismatch.
-            const expectedAddonCount = pending?.selectedAddons?.length ?? 0;
+            // we need to find the underlying mismatch. Now also surfaces
+            // any divergence between the snapshot ids and the recomputed
+            // live ids (issue #93 — the snapshot may omit perFile rules).
+            const expectedAddonCount = computedSelectedAddons.length;
             if (expectedAddonCount > 0 && live.addons.length === 0) {
+                const stored =
+                    pending?.selectedAddons || pending?.metadata?.selectedAddons || [];
                 console.warn(
                     "[GuestCart] expected addons but api returned none.",
                     {
@@ -282,7 +324,8 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                         payload: {
                             categoryId: category?.id,
                             specs: pending?.specifications,
-                            addonIds: pending?.selectedAddons,
+                            storedAddonIds: stored,
+                            computedAddonIds: computedSelectedAddons,
                             fileCount: pending?.files?.length,
                             pageCount: pending?.pageCount,
                             copies: pending?.copies,
@@ -325,14 +368,18 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
             total: 0,
             addons: [] as Array<{ ruleId: string; name: string; total: number }>,
         };
-    }, [pricingHook.data, pending]);
+    }, [pricingHook.data, pending, category?.id, computedSelectedAddons]);
 
     // Fallback labels — when the hook hasn't returned yet but we have stored
     // selectedAddons + category addon rules cached, surface the names so the
-    // row doesn't pop in once pricing lands.
+    // row doesn't pop in once pricing lands. Prefer the live-recomputed id set
+    // (matches what the pricing call actually sends) and fall back to the
+    // snapshot when live addons haven't loaded yet.
     const fallbackAddonNames = useMemo(() => {
         if (!pending) return [] as string[];
-        const ids = pending.selectedAddons || pending.metadata?.selectedAddons || [];
+        const ids = computedSelectedAddons.length > 0
+            ? computedSelectedAddons
+            : (pending.selectedAddons || pending.metadata?.selectedAddons || []);
         if (ids.length === 0) return [];
         const byId = new Map(categoryAddons.map((a) => [a.id, a]));
         return ids
@@ -344,7 +391,7 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                 if (entries.length === 0) return "Addon";
                 return entries.map(([k, v]) => `${k}: ${String(v)}`).join(", ");
             });
-    }, [pending, categoryAddons]);
+    }, [pending, categoryAddons, computedSelectedAddons]);
 
     // Wait for hydration so we don't flash "empty cart" before sessionStorage is read.
     if (!hydrated) return null;
@@ -538,7 +585,7 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                                     ))}
                                 </ul>
                                 );
-                            })() : pricingHook.isFetched && (pending.selectedAddons?.length ?? 0) > 0 ? (
+                            })() : pricingHook.isFetched && computedSelectedAddons.length > 0 ? (
                                 <p className="mt-1.5 text-[11px] text-amber-600">
                                     None of your selected addons fit the current page count.
                                     Update files or re-add the item.
