@@ -266,6 +266,44 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
         total: number;
         breakdown?: AddonBreakdownEntry[];
     }
+    /**
+     * Read the snapshot price breakdown that the services page wrote at
+     * add-to-cart time. Used both as the initial fallback (api in flight)
+     * AND as the defensive fallback when the api response clearly mis-
+     * attributes the split (addons=[] but cache says otherwise).
+     *
+     * Returns null when the snapshot is unusable (no breakdown rows /
+     * zero-total) so callers can decide between "show cached" and
+     * "show api". Centralised here so the two fallback paths can't drift.
+     */
+    type CachedBreakdown = {
+        baseTotal: number;
+        addonTotal: number;
+        total: number;
+    } | null;
+    const readCachedBreakdown = (
+        data: PendingPurchaseData | null,
+    ): CachedBreakdown => {
+        if (!data) return null;
+        const rows = data.metadata?.priceBreakdown;
+        if (!rows || rows.length === 0) return null;
+        let base = 0;
+        let addons = 0;
+        for (const row of rows) {
+            const label = String(row.label || "").toLowerCase();
+            const value = Number(row.value || 0);
+            if (!Number.isFinite(value)) continue;
+            if (label.startsWith("base")) {
+                base += value;
+            } else {
+                addons += value;
+            }
+        }
+        const total = base + addons;
+        if (total <= 0) return null;
+        return { baseTotal: base, addonTotal: addons, total };
+    };
+
     const priceBreakdown = useMemo<{
         baseTotal: number;
         addonTotal: number;
@@ -301,13 +339,78 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                 };
             }
 
+            // ── Defensive UI fallback for the issue-#93 collapse symptom ──
+            // The api response landed with `addons=[]` and a high
+            // baseTotal that equals the live total — BUT the snapshot
+            // breakdown saved at add-to-cart time has addon rows summing
+            // to >0 AND the same overall total (within ₹1). That's the
+            // exact "flash correct split then collapse to base=total"
+            // user report: the api response is wrong in attribution but
+            // right on the bottom line, so we prefer the cached split
+            // until the root cause is fixed in the engine.
+            //
+            // We intentionally only flip on a TOTAL match (±₹1) so a
+            // genuine pricing change between add-to-cart and now (admin
+            // edited the rule, user opened the cart a day later) still
+            // surfaces the new number rather than a stale cached one.
+            //
+            // Greppable log: `[GuestCart] live addons=[] but cached has addons`.
+            const cachedSplit = readCachedBreakdown(pending);
+            const expectedAddonCount = computedSelectedAddons.length;
+            const liveTotal = Number(live.total) || 0;
+            const cachedTotal = cachedSplit?.total ?? 0;
+            const totalsMatch =
+                cachedTotal > 0 && liveTotal > 0 && Math.abs(liveTotal - cachedTotal) <= 1;
+            const cacheHasAddons =
+                cachedSplit !== null && cachedSplit.addonTotal > 0;
+            if (
+                expectedAddonCount > 0 &&
+                live.addons.length === 0 &&
+                cacheHasAddons &&
+                totalsMatch
+            ) {
+                console.warn(
+                    "[GuestCart] live addons=[] but cached has addons; using cached split",
+                    {
+                        live: {
+                            total: liveTotal,
+                            base: live.baseSubtotal,
+                            addonsSubtotal: live.addonsSubtotal,
+                            addonCount: live.addons.length,
+                        },
+                        cached: {
+                            base: cachedSplit!.baseTotal,
+                            addons: cachedSplit!.addonTotal,
+                            total: cachedSplit!.total,
+                        },
+                        payload: {
+                            categoryId: category?.id,
+                            specs: pending?.specifications,
+                            storedAddonIds:
+                                pending?.selectedAddons ||
+                                pending?.metadata?.selectedAddons ||
+                                [],
+                            computedAddonIds: computedSelectedAddons,
+                            fileCount: pending?.files?.length,
+                            pageCount: pending?.pageCount,
+                            copies: pending?.copies,
+                        },
+                    },
+                );
+                return {
+                    baseTotal: cachedSplit!.baseTotal,
+                    addonTotal: cachedSplit!.addonTotal,
+                    total: cachedSplit!.total,
+                    addons: [] as PriceBreakdownAddon[],
+                };
+            }
+
             // Diagnostic: customer had selected N addons, api returned 0.
             // Surfaces stale rule IDs or post-add-to-cart spec drift.
             // Logs the full payload so the next prod report has the data
             // we need to find the underlying mismatch. Now also surfaces
             // any divergence between the snapshot ids and the recomputed
             // live ids (issue #93 — the snapshot may omit perFile rules).
-            const expectedAddonCount = computedSelectedAddons.length;
             if (expectedAddonCount > 0 && live.addons.length === 0) {
                 const stored =
                     pending?.selectedAddons || pending?.metadata?.selectedAddons || [];
@@ -341,17 +444,13 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
             };
         }
         if (pending) {
-            const breakdown = pending.metadata?.priceBreakdown;
-            if (breakdown && breakdown.length > 0) {
-                const base = breakdown.find((x) => x.label.toLowerCase().startsWith("base"))?.value ?? 0;
-                const addons = breakdown
-                    .filter((x) => !x.label.toLowerCase().startsWith("base"))
-                    .reduce((sum, x) => sum + Number(x.value || 0), 0);
+            const cachedSplit = readCachedBreakdown(pending);
+            if (cachedSplit) {
                 return {
-                    baseTotal: Number(base) || 0,
-                    addonTotal: Number(addons) || 0,
-                    total: (Number(base) || 0) + (Number(addons) || 0),
-                    addons: [] as Array<{ ruleId: string; name: string; total: number; breakdown?: AddonBreakdownEntry[] }>,
+                    baseTotal: cachedSplit.baseTotal,
+                    addonTotal: cachedSplit.addonTotal,
+                    total: cachedSplit.total,
+                    addons: [] as PriceBreakdownAddon[],
                 };
             }
             const total = Number(pending.totalPrice || pending.currentPrice || 0);
@@ -359,14 +458,14 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                 baseTotal: total,
                 addonTotal: 0,
                 total,
-                addons: [] as Array<{ ruleId: string; name: string; total: number; breakdown?: AddonBreakdownEntry[] }>,
+                addons: [] as PriceBreakdownAddon[],
             };
         }
         return {
             baseTotal: 0,
             addonTotal: 0,
             total: 0,
-            addons: [] as Array<{ ruleId: string; name: string; total: number }>,
+            addons: [] as PriceBreakdownAddon[],
         };
     }, [pricingHook.data, pending, category?.id, computedSelectedAddons]);
 
