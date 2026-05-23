@@ -5,6 +5,7 @@ import { AppError, ValidationError, NotFoundError, UnauthorizedError } from "../
 import { calculateProductEffectivePages, getProductHalfPageBreakdown } from "../utils/product-half-page.js";
 import { deriveHalfPageFromSelectedSpecs } from "../utils/half-page-from-specs.js";
 import { deleteFromFTP, extractFtpPathFromUrl, verifyFTPFiles } from "../services/ftp.js";
+import { partitionDeletableFtpPaths } from "../utils/ftp-reference.js";
 import { getParamAsString } from "../utils/db-utils.js";
 import {
     computeAddonBreakdown,
@@ -904,16 +905,30 @@ export const removeFromCart = async (req: Request, res: Response, next: NextFunc
                 )
             );
 
-            // Delete all FTP files (use allSettled to continue even if some fail)
-            if (ftpPaths.length > 0) {
+            // Issue #86 — refuse to delete files that are still referenced
+            // by another CartItem or any OrderItem. Self-reference (the
+            // item we're about to remove) is excluded via
+            // `excludeCartItemId` so the file is only spared when
+            // something OTHER than this row points at it.
+            const { deletable, refused } = await partitionDeletableFtpPaths(
+                ftpPaths,
+                { excludeCartItemId: itemId },
+            );
+            for (const refusedPath of refused) {
+                console.warn(`[FTP] refused to delete referenced file: ${refusedPath}`);
+            }
+
+            // Delete only the unreferenced ones (allSettled keeps the loop
+            // resilient to per-file FTP burps).
+            if (deletable.length > 0) {
                 const deleteResults = await Promise.allSettled(
-                    ftpPaths.map((p) => deleteFromFTP(p))
+                    deletable.map((p) => deleteFromFTP(p))
                 );
 
                 // Log any failures (but don't throw - cart item deletion should succeed)
                 deleteResults.forEach((result, index) => {
                     if (result.status === "rejected") {
-                        console.error(`[Cart] Failed to delete FTP file ${ftpPaths[index]}:`, result.reason);
+                        console.error(`[Cart] Failed to delete FTP file ${deletable[index]}:`, result.reason);
                     }
                 });
             }
@@ -1130,16 +1145,29 @@ export const clearCart = async (req: Request, res: Response, next: NextFunction)
                 }
             }
 
-            // Delete all FTP files
-            if (ftpPaths.length > 0) {
+            // Issue #86 — exclude the entire cart's own items from the
+            // reference check (we're about to delete them all). Any path
+            // still referenced by another user's cart OR by ANY OrderItem
+            // is kept on FTP to avoid stranding dead URLs on orders.
+            const dedupedPaths = Array.from(new Set(ftpPaths));
+            const { deletable, refused } = await partitionDeletableFtpPaths(
+                dedupedPaths,
+                { excludeCartId: cart.id },
+            );
+            for (const refusedPath of refused) {
+                console.warn(`[FTP] refused to delete referenced file: ${refusedPath}`);
+            }
+
+            // Delete only the unreferenced ones
+            if (deletable.length > 0) {
                 const deleteResults = await Promise.allSettled(
-                    ftpPaths.map((p) => deleteFromFTP(p))
+                    deletable.map((p) => deleteFromFTP(p))
                 );
 
                 // Log any failures (but don't throw - cart clearing should succeed)
                 deleteResults.forEach((result, index) => {
                     if (result.status === "rejected") {
-                        console.error(`[Cart] Failed to delete FTP file ${ftpPaths[index]}:`, result.reason);
+                        console.error(`[Cart] Failed to delete FTP file ${deletable[index]}:`, result.reason);
                     }
                 });
             }

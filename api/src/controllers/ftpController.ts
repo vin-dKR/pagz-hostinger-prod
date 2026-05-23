@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express";
 import { sendSuccess } from "../utils/response.js";
 import { AppError, ValidationError } from "../utils/errors.js";
 import { uploadToFTP, testFTPConnection, listFTPFiles, deleteFromFTP } from "../services/ftp.js";
+import { isFtpPathReferenced } from "../utils/ftp-reference.js";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
@@ -477,6 +478,22 @@ export const deleteFTPFile = async (req: Request, res: Response, next: NextFunct
         if (!isDeletePathAllowed(filePath)) {
             throw new ValidationError(
                 `Delete not allowed for this path. Allowed folders: ${DELETE_ALLOWED_FOLDERS.join(", ")}`,
+            );
+        }
+
+        // Issue #86 guard — refuse to delete a file that is still referenced
+        // by any CartItem or OrderItem. Without this, a user who re-uploads
+        // the same file from the cart can end up with the OLDER FTP entry
+        // being deleted by an unrelated cleanup path while an OrderItem
+        // snapshot still references it, producing a dead URL in order
+        // detail. We return 200 + a "skipped" flag so the client-side
+        // bookkeeping stays consistent.
+        if (await isFtpPathReferenced(filePath)) {
+            console.warn(`[FTP] refused to delete referenced file: ${filePath}`);
+            return sendSuccess(
+                res,
+                { skipped: true, reason: "referenced" },
+                "File is still referenced by an active cart/order; delete skipped",
             );
         }
 

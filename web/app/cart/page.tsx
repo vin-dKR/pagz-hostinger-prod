@@ -372,15 +372,68 @@ function CartPageContent() {
         setUploadingItemId(itemId);
         const toastId = toast.loading(`Uploading 0 / ${files.length}…`, { position: 'top-right' });
 
+        // Issue #86 — dedupe BEFORE the network round-trip. The cart
+        // row already carries every previously-uploaded URL; if the
+        // user re-attaches the same file we want to leave the existing
+        // URL alone instead of producing a second FTP entry that a
+        // later sweep would happily delete (orphaning the OrderItem
+        // snapshot that still references the original). We don't have
+        // a `File` for the existing URLs (only the path), so we match
+        // on the trailing filename embedded in the stored path. The
+        // upload route prefixes each file with `<timestamp>-<uuid8>-`
+        // so a true match on `…-<originalname>` is reliable enough for
+        // the duplicate-click case the bug surfaced. Hashing would be
+        // stronger but would require fetching the existing file from
+        // FTP just to compare — far more expensive than the skipped
+        // upload it would avoid.
+        const cartItemForDedup = items.find((item) => item.id === itemId);
+        const existingUrlsForDedup = cartItemForDedup
+            ? Array.isArray(cartItemForDedup.customDesignUrl)
+                ? cartItemForDedup.customDesignUrl
+                : cartItemForDedup.customDesignUrl
+                    ? [cartItemForDedup.customDesignUrl]
+                    : []
+            : [];
+        const isAlreadyUploaded = (file: File): boolean => {
+            // Mirror the backend's `sanitizeBaseName` substitution so
+            // the substring match stays in lock-step with whatever the
+            // upload route actually wrote into the stored URL.
+            const safeName = file.name.replace(/[^A-Za-z0-9._-]+/g, '_');
+            return existingUrlsForDedup.some((url) => {
+                if (typeof url !== 'string') return false;
+                // Stored as either full URL or relative path; substring
+                // match on the trailing filename is enough.
+                return url.includes(safeName);
+            });
+        };
+
+        const filesToUpload: File[] = [];
+        let dedupedCount = 0;
+        for (const file of files) {
+            if (isAlreadyUploaded(file)) {
+                console.info('[cart] skipping duplicate upload (already on FTP):', file.name);
+                dedupedCount++;
+            } else {
+                filesToUpload.push(file);
+            }
+        }
+        if (dedupedCount > 0 && filesToUpload.length === 0) {
+            // Every selected file is already attached — nothing to
+            // upload, surface a friendly toast and skip the round-trip.
+            toast.success('Already attached — no re-upload needed.', { id: toastId });
+            setUploadingItemId(null);
+            return;
+        }
+
         const uploadedKeys: string[] = [];
         const failed: { name: string; error: string }[] = [];
 
         try {
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
+            for (let i = 0; i < filesToUpload.length; i++) {
+                const file = filesToUpload[i];
                 if (!file) continue;
 
-                const label = `[${i + 1}/${files.length}] ${file.name}`;
+                const label = `[${i + 1}/${filesToUpload.length}] ${file.name}`;
                 toast.loading(`${label} — 0%`, { id: toastId });
 
                 try {
@@ -440,12 +493,23 @@ function CartPageContent() {
             await refetch();
 
             if (failed.length === 0) {
-                toast.success('Design files added successfully!', { id: toastId });
+                // Issue #86 — toast also acknowledges silently-skipped
+                // duplicate selections so the user understands why the
+                // file count didn't grow.
+                toast.success(
+                    dedupedCount > 0
+                        ? `Added ${uploadedKeys.length} file(s); ${dedupedCount} already attached.`
+                        : 'Design files added successfully!',
+                    { id: toastId },
+                );
             } else {
                 // Partial success — main toast resolves, then a follow-up
                 // error toast lists the failures so the user can re-try.
+                // `filesToUpload.length` is the post-dedupe denominator —
+                // counting the skipped ones as failures would be
+                // misleading because we never even tried to upload them.
                 toast.success(
-                    `Uploaded ${uploadedKeys.length} of ${files.length} files.`,
+                    `Uploaded ${uploadedKeys.length} of ${filesToUpload.length} files.`,
                     { id: toastId },
                 );
                 toastError(

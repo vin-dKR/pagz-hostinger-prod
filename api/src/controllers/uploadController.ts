@@ -8,6 +8,7 @@ import {
     extractFtpPathFromUrl,
 } from "../services/ftp.js";
 import { prisma } from "../services/prisma.js";
+import { isFtpPathReferenced } from "../utils/ftp-reference.js";
 import { randomUUID } from "crypto";
 
 /** Generate a filename with timestamp + random suffix.
@@ -340,6 +341,24 @@ export const deleteOrderFile = async (req: Request, res: Response, next: NextFun
 
         // Delete from FTP
         const ftpPath = extractFtpPathFromUrl(fileKey);
+
+        // Issue #86 guard — never delete an FTP file that is still
+        // referenced by another CartItem or any OrderItem. With the
+        // dedupe path now reusing existing FTP URLs across cart lines
+        // (issue #86), a user clicking "remove" on the services page
+        // could otherwise yank the file out from under another line
+        // that's still using it. Soft success keeps the client's local
+        // bookkeeping consistent — the row disappears from the UI
+        // either way; only the FTP side is preserved.
+        if (await isFtpPathReferenced(ftpPath)) {
+            console.warn(`[FTP] refused to delete referenced file: ${ftpPath}`);
+            return sendSuccess(
+                res,
+                { skipped: true, reason: "referenced" },
+                "File is still referenced by an active cart/order; delete skipped",
+            );
+        }
+
         await deleteFromFTP(ftpPath);
 
         return sendSuccess(res, null, "File deleted successfully");
