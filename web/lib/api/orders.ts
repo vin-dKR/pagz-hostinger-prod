@@ -28,8 +28,38 @@ export interface OrderItemAddon {
     fileMultiplier?: boolean;
     /** One charge per physical copy (e.g. binding). */
     copyMultiplier?: boolean;
+    /** Per-file evaluation flag — when true the engine prices the addon
+     *  separately against each uploaded file's pageCount. */
+    perFileEvaluation?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
+}
+
+/**
+ * Per-uploaded-file pricing entry returned by the server for
+ * `perFileEvaluation` addons. Mirrors `web/lib/api/cart.ts#AddonBreakdownEntry`.
+ */
+export interface AddonBreakdownEntry {
+    fileUrl: string | null;
+    pageCount: number;
+    effectivePages: number;
+    price: number;
+}
+
+/**
+ * Per-addon detail row computed by the api against the persisted
+ * OrderItem.metadata + addon rules. Issue #85 — the customer order detail
+ * surface renders from this list (not the raw `item.addons[].priceModifier`)
+ * so the numbers on the page match the actually-charged amounts. Rules
+ * that didn't fire compute as `total = 0`; the UI filters those out
+ * before rendering.
+ */
+export interface OrderItemAddonPricing {
+    ruleId: string;
+    name: string;
+    total: number;
+    breakdown: AddonBreakdownEntry[];
+    range?: { min: number | null; max: number | null };
 }
 
 export interface OrderItem {
@@ -43,6 +73,15 @@ export interface OrderItem {
     customText?: string;
     createdAt: string;
     addons?: OrderItemAddon[];
+    /**
+     * Server-computed addon contributions for this line (issue #85). Each
+     * entry's `total` is the amount actually charged — not the rule's
+     * raw `priceModifier`. UI components filter `total > 0` before
+     * rendering so out-of-range addon rules don't surface as ₹0.00 rows.
+     */
+    pricing?: {
+        addons: OrderItemAddonPricing[];
+    } | null;
     metadata?: {
         pageCount?: number;
         copies?: number;

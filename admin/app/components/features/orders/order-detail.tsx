@@ -294,76 +294,25 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                     </div>
                                 )}
                                 <div className="pt-4 border-t">
-                                    {/* Use stored values from database, with fallback calculation */}
+                                    {/* Issue #85 — render the breakdown columns directly from
+                                        persisted `order.subtotal` + `order.addonsSubtotal` (both
+                                        computed by the shared engine at persist time). The
+                                        previous fallback re-summed `item.addons[].priceModifier`
+                                        client-side, ignoring half-page + perFileEvaluation
+                                        gating, which produced a phantom Addons Subtotal even
+                                        when the customer paid only the base. We also collapse
+                                        the redundant combined "Subtotal" row when there are no
+                                        addons (it would duplicate Base Price Subtotal). */}
                                     {(() => {
-                                        // Use stored subtotal from database (base price only)
-                                        const baseSubtotal = order.subtotal !== null && order.subtotal !== undefined
+                                        const baseSubtotal = order.subtotal != null
                                             ? Number(order.subtotal)
-                                            : order.items.reduce((sum, item) => {
-                                                return sum + (Number(item.price) * item.quantity);
-                                            }, 0);
-
-                                        // Use stored addonsSubtotal from database, fallback to calculating if not stored
-                                        const addonsSubtotal = (() => {
-                                            // First try database value
-                                            if (order.addonsSubtotal !== null && order.addonsSubtotal !== undefined && order.addonsSubtotal > 0) {
-                                                return Number(order.addonsSubtotal);
-                                            }
-                                            // Fallback: calculate from items' addons
-                                            return order.items.reduce((sum, item) => {
-                                                const addons = Array.isArray((item as any).addons) ? (item as any).addons : [];
-                                                const meta = (item as any).metadata || {};
-                                                const pageCount = Number(meta.pageCount) || 0;
-                                                const copies = Number(meta.copies) > 0 ? Number(meta.copies) : 1;
-                                                const perCopyPages =
-                                                    Number(meta.effectivePageCount) > 0
-                                                        ? Number(meta.effectivePageCount)
-                                                        : pageCount > 0
-                                                            ? pageCount
-                                                            : null;
-                                                // Half-page-aware total — sheets actually printed
-                                                // across all copies. Mirrors the api util gate.
-                                                const totalPages = perCopyPages != null
-                                                    ? perCopyPages * copies
-                                                    : null;
-
-                                                const itemAddonsTotal = addons.reduce((addonSum: number, addon: any) => {
-                                                    const hasPageRange = addon.minQuantity != null || addon.maxQuantity != null;
-                                                    // Range gating page set differs by flag — copyMultiplier
-                                                    // gates per-copy pages (binding-style: per book), the
-                                                    // others gate against total document volume.
-                                                    const gatePages = addon.copyMultiplier
-                                                        ? perCopyPages
-                                                        : totalPages;
-                                                    if (hasPageRange && gatePages != null) {
-                                                        const inRange =
-                                                            (addon.minQuantity == null || gatePages >= addon.minQuantity) &&
-                                                            (addon.maxQuantity == null || gatePages <= addon.maxQuantity);
-                                                        if (!inRange) return addonSum;
-                                                    }
-
-                                                    const rawPrice =
-                                                        addon.priceModifier !== null && addon.priceModifier !== undefined
-                                                            ? Number(addon.priceModifier)
-                                                            : addon.basePrice !== null && addon.basePrice !== undefined
-                                                                ? Number(addon.basePrice)
-                                                                : 0;
-
-                                                    let multiplier = 1;
-                                                    if (addon.copyMultiplier) {
-                                                        const perBookMult = addon.quantityMultiplier
-                                                            ? (perCopyPages ?? 1)
-                                                            : 1;
-                                                        multiplier = perBookMult * copies;
-                                                    } else if (addon.quantityMultiplier) {
-                                                        multiplier = totalPages ?? item.quantity;
-                                                    }
-
-                                                    return addonSum + rawPrice * multiplier;
-                                                }, 0);
-                                                return sum + itemAddonsTotal;
-                                            }, 0);
-                                        })();
+                                            : order.items.reduce(
+                                                (sum, item) => sum + Number(item.price) * item.quantity,
+                                                0,
+                                            );
+                                        const addonsSubtotal = order.addonsSubtotal != null
+                                            ? Number(order.addonsSubtotal)
+                                            : 0;
 
                                         return (
                                             <>
@@ -372,15 +321,17 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                     <span>{formatCurrency(baseSubtotal)}</span>
                                                 </div>
                                                 {addonsSubtotal > 0 && (
-                                                    <div className="flex justify-between text-sm mb-2">
-                                                        <span className="text-gray-600">Addons Subtotal</span>
-                                                        <span>{formatCurrency(addonsSubtotal)}</span>
-                                                    </div>
+                                                    <>
+                                                        <div className="flex justify-between text-sm mb-2">
+                                                            <span className="text-gray-600">Addons Subtotal</span>
+                                                            <span>{formatCurrency(addonsSubtotal)}</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-sm font-medium mb-2 pt-1 border-t border-gray-200">
+                                                            <span className="text-gray-700">Subtotal</span>
+                                                            <span className="text-gray-900">{formatCurrency(baseSubtotal + addonsSubtotal)}</span>
+                                                        </div>
+                                                    </>
                                                 )}
-                                                <div className="flex justify-between text-sm font-medium mb-2 pt-1 border-t border-gray-200">
-                                                    <span className="text-gray-700">Subtotal</span>
-                                                    <span className="text-gray-900">{formatCurrency(baseSubtotal + addonsSubtotal)}</span>
-                                                </div>
                                             </>
                                         );
                                     })()}
