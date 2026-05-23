@@ -23,6 +23,8 @@ import {
     type AddonLineItemInput,
     type PricingFileMeta,
 } from "./addon-pricing.js";
+import { deriveHalfPageFromSelectedSpecs } from "./half-page-from-specs.js";
+import { checkProductHalfPageOption } from "./product-half-page.js";
 
 // Prisma transaction client — every interactive transaction callback gets one
 // of these. Aliased so call sites don't have to spell the generic.
@@ -183,20 +185,79 @@ export async function buildOrderItemsFromPending(
                 : [];
         const selectedAddons = normalizeAddonIds(rawAddons);
 
+        // Issue #84 — derive `side` server-side from `metadata.specifications`
+        // so the addon-pricing engine's per-file branch can half-page-reduce
+        // each file's effective pages at persist time.
+        //
+        // Why this is needed: cart preview computes `sideForMeta` on the fly
+        // (cartController.getCart) but never writes it back to the row's
+        // metadata, and the web checkout posts that same row metadata
+        // verbatim into PendingPayment. By the time we land in
+        // persistOrderFromPending the blob has `specifications` but no `side`,
+        // and `deriveFileSubline(parent, file)` reads `parent.side` to decide
+        // whether to halve the file's pageCount. Missing `side` → no
+        // reduction → 1000-page file stays at 1000 → matches the 501-1005
+        // tier (₹69) instead of the post-reduction 301-500 tier (₹199).
+        //
+        // Authoritative: ALWAYS derive from `specifications` against the
+        // live category option's `isHalfPage` flag. We never trust a
+        // client-supplied `side` here because doing so would let a guest
+        // set `side: 'both'` on a one-sided spec and get half the page
+        // count for free. Falls back to `checkProductHalfPageOption`
+        // (ProductSpecification snapshot) for legacy rows written before
+        // `metadata.specifications` was persisted — mirrors the same
+        // decision tree used by `cartController.getCart`.
+        //
+        // No-op when:
+        //   - the spec lookup returns false (one-sided spec) AND the
+        //     product snapshot also lacks `isHalfPage`.
+        //   - both `side` and `specifications` are absent — engine continues
+        //     to take the aggregate path.
+        const userSpecs = (metadata as { specifications?: unknown } | null | undefined)?.specifications;
+        let specsHalfPage = userSpecs && typeof userSpecs === "object"
+            ? await deriveHalfPageFromSelectedSpecs(
+                productId as string,
+                userSpecs as Record<string, unknown>,
+            )
+            : false;
+        if (!specsHalfPage) {
+            // Legacy fallback — product snapshot. Same call cartController
+            // takes inside `calculateProductEffectivePages` when the user
+            // specs lookup misses.
+            specsHalfPage = await checkProductHalfPageOption(productId as string);
+        }
+        const derivedSide: "one" | "both" | undefined = specsHalfPage ? "both" : undefined;
+
         // Preserve the rest of the metadata blob untouched (priceBreakdown,
         // selectedAddons, half-page snapshots, specifications, template info,
-        // ...) and overlay the sanitised `files`. We only delete the key
-        // when both the input lacked `files` AND there's nothing to write,
-        // so legacy entries flow through with no spurious empty array.
+        // ...) and overlay the sanitised `files` + server-derived `side`.
+        // We only delete `files` when both the input lacked it AND there's
+        // nothing to write, so legacy entries flow through with no spurious
+        // empty array. `side` is always overwritten with the server-derived
+        // value (or removed when no half-page applies) so a client-supplied
+        // value can never poison persistence.
         let outboundMetadata: AddonLineItemInput["metadata"] | undefined = metadata || undefined;
-        if (outboundMetadata && (sanitizedFiles || "files" in (outboundMetadata as object))) {
+        if (
+            outboundMetadata
+            && (sanitizedFiles || "files" in (outboundMetadata as object) || derivedSide || "side" in (outboundMetadata as object))
+        ) {
             const next = { ...(outboundMetadata as Record<string, unknown>) };
             if (sanitizedFiles && sanitizedFiles.length > 0) {
                 next.files = sanitizedFiles;
             } else {
                 delete next.files;
             }
+            if (derivedSide) {
+                next.side = derivedSide;
+            } else {
+                delete next.side;
+            }
             outboundMetadata = next as AddonLineItemInput["metadata"];
+        } else if (!outboundMetadata && derivedSide) {
+            // Edge case: item had no metadata at all but the product carries
+            // a half-page spec via the (empty) row. Stamp `side` so the
+            // engine still gets the hint at recompute time.
+            outboundMetadata = { side: derivedSide } as AddonLineItemInput["metadata"];
         }
 
         orderItems.push({
