@@ -1136,6 +1136,24 @@ export const verifyCartFiles = async (req: Request, res: Response, next: NextFun
         }
 
         const result = await verifyFTPFiles(paths);
+
+        // Server-side breadcrumb for issue #94: the next failed restore
+        // should have a correlatable line in the api log so we can
+        // distinguish "the file is genuinely empty" from "the FTP
+        // probe timed out". `failed` carries `{ path, reason }` so the
+        // verbose log doesn't drop the per-entry reason needed to
+        // diagnose false-negative restores (network blip vs missing
+        // file). One log line per request, regardless of input size,
+        // so we don't flood the log on a 50-file cart sweep.
+        const failed = result.invalid.map((entry) => ({
+            path: entry.path,
+            reason: entry.reason,
+        }));
+        console.info(
+            `[cart-verify] user=${req.user.id} paths=${paths.length} ` +
+            `ok=${result.valid.length} failed=${JSON.stringify(failed)}`,
+        );
+
         return sendSuccess(res, result);
     } catch (error) {
         next(error);

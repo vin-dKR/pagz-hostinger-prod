@@ -60,6 +60,13 @@ function CartPageContent() {
     // re-run the FTP probe on every cart context update. Signature = sorted
     // item id + file count to refresh after upload / remove.
     const [lastSweepKey, setLastSweepKey] = useState<string | null>(null);
+    // Issue #94 — when the initial sweep returns transient (`unreadable`)
+    // failures, schedule ONE background retry 2s later. Hostinger's FTP
+    // control channel occasionally hiccups under the load of a fresh
+    // post-login session and the second attempt almost always succeeds.
+    // Tracks per-signature so we don't retry forever on a permanently
+    // flaky server.
+    const [needsTransientRetry, setNeedsTransientRetry] = useState<string | null>(null);
 
     // Select all items by default on initial mount only
     useEffect(() => {
@@ -104,11 +111,32 @@ function CartPageContent() {
                 setLastSweepKey(signature);
                 setItemsMissingFiles(new Set(result.itemsWithNoFilesLeft));
 
+                // Partition the invalids: hard failures (empty / missing)
+                // warrant the existing "removed N files" toast; transient
+                // ones (unreadable / network) are silent here — the
+                // background retry below will resolve them.
+                const hardFailures = result.invalidEntries.filter(
+                    (e) => e.reason === 'empty' || e.reason === 'missing',
+                );
+                const transientFailures = result.invalidEntries.filter(
+                    (e) => e.reason !== 'empty' && e.reason !== 'missing',
+                );
+
+                if (hardFailures.length > 0) {
+                    toastError(formatInvalidFilesMessage(hardFailures.length));
+                }
                 if (result.hadInvalid) {
-                    toastError(formatInvalidFilesMessage(result.invalidEntries.length));
                     // Pull the cleaned-up cart back so the UI mirrors the
                     // stripped customDesignUrl arrays.
                     await refetch();
+                }
+                // Schedule the one-shot retry for transient-only failures
+                // so the user doesn't see a flicker of "missing files"
+                // banner when the FTP probe just blipped (issue #94).
+                if (transientFailures.length > 0) {
+                    setNeedsTransientRetry(signature);
+                } else {
+                    setNeedsTransientRetry(null);
                 }
             } catch (err) {
                 // FTP verify is best-effort UX — if it fails, the
@@ -124,6 +152,52 @@ function CartPageContent() {
             cancelled = true;
         };
     }, [authLoading, loading, isAuthenticated, items, lastSweepKey, refetch]);
+
+    // Issue #94 — one-shot retry of the file sweep 2s after a transient
+    // failure. We DON'T set `lastSweepKey` again here so this effect
+    // fires exactly once per signature (cleared on success below). The
+    // dependency list deliberately excludes `items` so a cart refetch
+    // during the 2s window doesn't restart the timer.
+    useEffect(() => {
+        if (!needsTransientRetry) return;
+        if (authLoading || loading) return;
+        if (!isAuthenticated) return;
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            if (cancelled) return;
+            try {
+                const result = await sweepCartFiles(items, true);
+                if (cancelled) return;
+
+                setItemsMissingFiles(new Set(result.itemsWithNoFilesLeft));
+
+                const hardFailures = result.invalidEntries.filter(
+                    (e) => e.reason === 'empty' || e.reason === 'missing',
+                );
+                if (hardFailures.length > 0) {
+                    toastError(formatInvalidFilesMessage(hardFailures.length));
+                }
+                if (result.hadInvalid) {
+                    await refetch();
+                }
+                // Whether the retry succeeded or still saw transient
+                // errors, we don't retry again — the cart-context refetch
+                // (via the user reloading / interacting) will reset
+                // `lastSweepKey` if anything actually changes.
+                setNeedsTransientRetry(null);
+            } catch (err) {
+                console.warn('[cart] transient-retry sweep failed:', err);
+                if (!cancelled) setNeedsTransientRetry(null);
+            }
+        }, 2000);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [needsTransientRetry, authLoading, loading, isAuthenticated]);
 
     // Filter selected items
     const selectedItemsList = useMemo(() => {
