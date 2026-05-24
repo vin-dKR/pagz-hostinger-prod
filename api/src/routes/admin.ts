@@ -73,7 +73,7 @@ import {
     addCouponCategories,
     removeCouponCategories,
 } from "../controllers/couponController.js";
-import { getAdminPayment, getAdminPayments, getPaymentStatistics } from "../controllers/paymentController.js";
+import { getAdminPayment, getAdminPayments, getPaymentStatistics, getOrphanPendingPayments, recoverStuckPayment } from "../controllers/paymentController.js";
 import {
     deleteAdminReview,
     getAdminReviews,
@@ -260,6 +260,10 @@ router.post("/coupons/:id/categories/remove", removeCouponCategories);
 // Payment Management (admin only)
 router.get("/payments", getAdminPayments);
 router.get("/payments/statistics", getPaymentStatistics);
+// Recovery for "Razorpay captured but Order not written" failures.
+// Order matters — these are listed BEFORE the wildcard `/:id` route.
+router.get("/payments/orphans", getOrphanPendingPayments);
+router.post("/payments/recover/:merchantOrderId", recoverStuckPayment);
 router.get("/payments/:id", getAdminPayment);
 
 // Review Management (admin only)

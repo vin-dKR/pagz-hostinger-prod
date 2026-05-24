@@ -977,6 +977,149 @@ function mapRazorpayInstrument(paymentEntity: RazorpayPaymentEntity | undefined)
  *       401:
  *         description: Unauthorized - Admin authentication required
  */
+// Admin: list orphan PendingPayments — rows that have no matching Order.
+// Surfaces the "Razorpay captured but no Order in DB" class of failures
+// (transaction timeout, pool exhaustion, webhook never fired, ...).
+// Each row is the recovery candidate for `POST /admin/payments/recover/:merchantOrderId`.
+export const getOrphanPendingPayments = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+) => {
+    try {
+        // Lookback window — payments older than 30 days are out of scope.
+        const lookback = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+        const pendings = await prisma.pendingPayment.findMany({
+            where: {
+                createdAt: { gte: lookback },
+                // PendingPayment.status flips to 'PROCESSED' (or whatever
+                // the persist path writes) once an Order is created.
+                // Stuck rows stay in 'PENDING'.
+                status: "PENDING",
+            },
+            orderBy: { createdAt: "desc" },
+            take: 200,
+        });
+
+        // For each, check if an Order exists for that merchantOrderId.
+        // We do this in a single batch query rather than per-row.
+        const merchantIds = pendings.map((p) => p.merchantOrderId);
+        const matchedOrders = merchantIds.length === 0 ? [] : await prisma.order.findMany({
+            where: { gatewayOrderId: { in: merchantIds } },
+            select: { gatewayOrderId: true, id: true },
+        });
+        const orderByMerchantId = new Map(matchedOrders.map((o) => [o.gatewayOrderId, o.id]));
+
+        const orphans = pendings
+            .filter((p) => !orderByMerchantId.has(p.merchantOrderId))
+            .map((p) => ({
+                merchantOrderId: p.merchantOrderId,
+                userId: p.userId,
+                amount: Number(p.amount),
+                addressId: p.addressId,
+                couponCode: p.couponCode,
+                createdAt: p.createdAt,
+                expiresAt: p.expiresAt,
+                itemCount: Array.isArray(p.items) ? (p.items as unknown[]).length : 0,
+            }));
+
+        return sendSuccess(res, { orphans, count: orphans.length });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Admin: manually recover a stuck payment by replaying persistOrderFromPending.
+// Use case: Razorpay captured, but the persist transaction errored out
+// (timeout, pool exhaustion). PendingPayment + PaymentEvent rows are
+// intact — this endpoint locates the gateway capture details from
+// Razorpay (via the merchantOrderId) and runs the same persistence path
+// the webhook/verify would have, with the timeout fix in place.
+export const recoverStuckPayment = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) => {
+    try {
+        const rawMerchantOrderId = req.params.merchantOrderId;
+        const merchantOrderId = typeof rawMerchantOrderId === "string" ? rawMerchantOrderId : "";
+        if (!merchantOrderId) {
+            throw new ValidationError("merchantOrderId is required");
+        }
+
+        const pending = await prisma.pendingPayment.findUnique({
+            where: { merchantOrderId },
+        });
+        if (!pending) {
+            throw new NotFoundError(`PendingPayment ${merchantOrderId} not found`);
+        }
+
+        // If an Order already exists for this merchantOrderId, nothing to do.
+        const existing = await prisma.order.findUnique({
+            where: { gatewayOrderId: merchantOrderId },
+            select: { id: true },
+        });
+        if (existing) {
+            return sendSuccess(res, {
+                orderId: existing.id,
+                alreadyExisted: true,
+            }, "Order already exists for this merchantOrderId");
+        }
+
+        // Admin must supply the Razorpay payment ID (from Razorpay dashboard).
+        // Without it we can't link the Payment row back to the gateway charge.
+        const rawPaymentId = req.body?.razorpayPaymentId;
+        const rawOrderId = req.body?.razorpayOrderId;
+        const razorpayPaymentId = typeof rawPaymentId === "string" ? rawPaymentId : "";
+        const razorpayOrderId = typeof rawOrderId === "string" ? rawOrderId : "";
+        if (!razorpayPaymentId || !razorpayOrderId) {
+            throw new ValidationError(
+                "razorpayPaymentId and razorpayOrderId are required in body (copy from Razorpay dashboard).",
+            );
+        }
+
+        const correlationId = uuidv4();
+        const { orderId, raced } = await persistOrderWithRaceGuard(
+            pending,
+            {
+                razorpayOrderId,
+                razorpayPaymentId,
+                paymentInstrument: "RAZORPAY",
+                paymentDetails: {
+                    gateway: "RAZORPAY",
+                    razorpayOrderId,
+                    razorpayPaymentId,
+                    recoveredManually: true,
+                    recoveredAt: new Date().toISOString(),
+                },
+            } as Parameters<typeof persistOrderWithRaceGuard>[1],
+            "Order recovered manually by admin from stuck payment",
+        );
+
+        // Audit the manual recovery. Reuse `source: 'verify'` since the
+        // event-source enum only covers the two automatic paths; the
+        // `code` and `errorMessage` carry the manual-recovery flag.
+        await recordPaymentEvent({
+            merchantOrderId,
+            gatewayOrderId: razorpayOrderId,
+            source: "verify",
+            code: raced ? "ALREADY_PERSISTED" : "ADMIN_RECOVERED",
+            status: "success",
+            errorMessage: "Manually recovered via /admin/payments/recover",
+            correlationId,
+        });
+
+        return sendSuccess(res, {
+            orderId,
+            raced,
+            correlationId,
+        }, raced ? "Order already existed (race)" : "Order created successfully");
+    } catch (error) {
+        next(error);
+    }
+};
+
 // Admin: Get all payments
 export const getAdminPayments = async (req: Request, res: Response, next: NextFunction) => {
     try {
