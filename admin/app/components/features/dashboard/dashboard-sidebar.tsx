@@ -19,6 +19,7 @@ import {
     Ticket,
     Truck,
     CreditCard,
+    AlertTriangle,
     Star,
     ChevronLeft,
     ChevronRight,
@@ -39,6 +40,7 @@ const navigation = [
     { name: 'Coupons', href: '/coupons', icon: Ticket },
     { name: 'Shipping', href: '/shipping-methods', icon: Truck },
     { name: 'Payments', href: '/payments', icon: CreditCard },
+    { name: 'Orphan Payments', href: '/orphan-payments', icon: AlertTriangle },
     { name: 'Reviews', href: '/reviews', icon: Star },
 ]
 
