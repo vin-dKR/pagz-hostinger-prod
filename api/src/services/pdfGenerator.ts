@@ -363,13 +363,24 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                     subRows: NonNullable<typeof item.addons>[number]['breakdown'],
                 ) => {
                     if (!subRows || subRows.length === 0) return;
-                    for (const sub of subRows) {
-                        ensurePageSpace(12);
+                    // Drop ₹0 entries — files outside the rule's tier add
+                    // noise to the invoice. For single-priced or all-zero
+                    // breakdowns, the parent addon line already carries
+                    // the whole story, so skip sub-rows altogether.
+                    const visible = subRows.filter(
+                        (sub) => Number(sub.price || 0) > 0,
+                    );
+                    if (visible.length <= 1) return;
+                    for (const sub of visible) {
+                        ensurePageSpace(11);
                         const pagesHint = sub.pageCount && sub.pageCount > 0
                             ? ` (${sub.pageCount} pages)`
                             : '';
                         doc.font('Helvetica').fontSize(8.5).fillColor(colors.muted);
-                        doc.text(`  └ ${sub.label}${pagesHint}`, margin + 12, y, {
+                        // ASCII bullet — Helvetica WinAnsi can't render
+                        // U+2514 (`└`) and substitutes with `%`, which
+                        // looked like a bug in the invoice.
+                        doc.text(`  - ${sub.label}${pagesHint}`, margin + 12, y, {
                             width: contentWidth - 100,
                         });
                         doc.font('Helvetica').fontSize(8.5).fillColor(colors.ink);
@@ -377,7 +388,7 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                             width: contentWidth - 8,
                             align: 'right',
                         });
-                        y += 12;
+                        y += 11;
                     }
                 };
 
@@ -392,7 +403,7 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                         (item.addons || []).map((a) => [a.name.toLowerCase(), a]),
                     );
                     for (const row of breakdown) {
-                        ensurePageSpace(14);
+                        ensurePageSpace(12);
                         doc.font('Helvetica').fontSize(9.5).fillColor(colors.muted);
                         doc.text(row.label, margin + 8, y, { width: contentWidth - 90 });
                         if (Number(row.value) > 0) {
@@ -402,7 +413,7 @@ export async function generateInvoicePDF(invoiceData: InvoiceData): Promise<Buff
                                 align: 'right',
                             });
                         }
-                        y += 14;
+                        y += 12;
                         const lower = row.label.toLowerCase();
                         // Match either explicit `addon: <name>` or any row
                         // containing the addon's display name. Defensive
