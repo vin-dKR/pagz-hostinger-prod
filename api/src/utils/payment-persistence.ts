@@ -673,6 +673,17 @@ export async function persistOrderWithRaceGuard(
     try {
         const result = await prisma.$transaction(
             (tx) => persistOrderFromPending(tx, pendingPayment, gateway, statusComment),
+            {
+                // Default 5s timeout was hitting orders with many items / addons:
+                // a 6.3s commit attempt logged "transaction expired" and Razorpay
+                // captured but no Order was written. 30s is well under the
+                // user-perceived wait (Razorpay's own popup waits longer) and
+                // gives Hostinger's MariaDB room when it's loaded.
+                timeout: 30_000,
+                // Default maxWait is 2s; bump it so the request queues for a
+                // pool slot instead of bailing under the pool=5 limit.
+                maxWait: 15_000,
+            },
         );
         return {
             ...result,
