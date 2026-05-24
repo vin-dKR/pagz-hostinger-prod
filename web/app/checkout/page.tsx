@@ -428,27 +428,46 @@ function CheckoutPageContent() {
             }
 
             // Create Razorpay order
-            const response = await createRazorpayOrder({
-                items: cartItems.map((item: any) => {
-                    // Extract addon IDs from cart item
-                    let addonIds: string[] = [];
-                    if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
-                        addonIds = item.addons.map((addon: any) => addon.id).filter((id: any): id is string => typeof id === 'string');
-                    } else if (item.metadata?.selectedAddons && Array.isArray(item.metadata.selectedAddons)) {
-                        addonIds = item.metadata.selectedAddons.filter((id: any): id is string => typeof id === 'string');
-                    }
+            const razorpayItems = cartItems.map((item: any) => {
+                // Extract addon IDs from cart item
+                let addonIds: string[] = [];
+                if (item.addons && Array.isArray(item.addons) && item.addons.length > 0) {
+                    addonIds = item.addons.map((addon: any) => addon.id).filter((id: any): id is string => typeof id === 'string');
+                } else if (item.metadata?.selectedAddons && Array.isArray(item.metadata.selectedAddons)) {
+                    addonIds = item.metadata.selectedAddons.filter((id: any): id is string => typeof id === 'string');
+                }
 
-                    return {
-                        productId: item.productId,
-                        variantId: item.variantId,
-                        quantity: item.quantity,
-                        customDesignUrl: item.customDesignUrl,
-                        customText: item.customText,
-                        addons: addonIds.length > 0 ? addonIds : undefined,
-                        hasAddon: addonIds.length > 0,
-                        metadata: item.metadata || undefined,
-                    };
-                }),
+                return {
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    quantity: item.quantity,
+                    customDesignUrl: item.customDesignUrl,
+                    customText: item.customText,
+                    addons: addonIds.length > 0 ? addonIds : undefined,
+                    hasAddon: addonIds.length > 0,
+                    metadata: item.metadata || undefined,
+                };
+            });
+
+            // DEBUG — surface the exact payload going to Razorpay-create-order
+            // so we can diagnose pricing drift between cart and payment-init.
+            // Grep prod console for `[checkout:debug]`.
+            console.log('[checkout:debug]', {
+                amount: calculatedTotal,
+                items: razorpayItems.map((it: any, idx: number) => ({
+                    idx,
+                    product: { id: it.productId, variantId: it.variantId, quantity: it.quantity },
+                    addons: it.addons,
+                    customDesignUrl: it.customDesignUrl,
+                    metadataFiles: it.metadata?.files,
+                    metadataSelectedAddons: it.metadata?.selectedAddons,
+                    metadataSpecifications: it.metadata?.specifications,
+                    metadataPriceBreakdown: it.metadata?.priceBreakdown,
+                })),
+            });
+
+            const response = await createRazorpayOrder({
+                items: razorpayItems,
                 addressId: selectedAddressId,
                 amount: calculatedTotal,
                 couponCode: appliedCoupon?.coupon?.code,

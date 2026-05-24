@@ -1348,6 +1348,17 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
             // Add to cart with S3 URLs
             // Always use totalQuantity which already includes copies multiplication
 
+            // DEBUG — surface the exact payload going to /cart so we can
+            // diagnose guest-cart vs services-page split drift (#93).
+            // Grep prod console for `[addToCart:debug]`.
+            console.log('[addToCart:debug]', {
+                product: { id: matchingProduct.id, name: matchingProduct.name },
+                addons: selectedAddonIds,
+                customDesignUrl: s3Keys,
+                metadata,
+                quantity: totalQuantity,
+            });
+
             const response = await toastPromise(
                 addToCart({
                     productId: matchingProduct.id,
