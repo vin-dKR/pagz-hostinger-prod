@@ -5,6 +5,63 @@
 
 import { get, post, patch } from './api-client';
 
+// ── Orphan payments (paid-but-no-order recovery) ──────────────────
+// Razorpay can capture before the persist transaction lands the Order
+// row. The `/orphans` endpoint exposes those rows so an admin can
+// manually recover them via `/recover/:merchantOrderId`.
+
+export interface OrphanPendingPayment {
+  merchantOrderId: string;
+  userId: string;
+  amount: number;
+  addressId: string;
+  couponCode: string | null;
+  createdAt: string;
+  expiresAt: string;
+  itemCount: number;
+}
+
+export interface OrphanPaymentsResponse {
+  orphans: OrphanPendingPayment[];
+  count: number;
+}
+
+export interface RecoverStuckPaymentBody {
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+}
+
+export interface RecoverStuckPaymentResult {
+  orderId: string;
+  raced?: boolean;
+  alreadyExisted?: boolean;
+  correlationId?: string;
+}
+
+/** GET /api/v1/admin/payments/orphans */
+export async function getOrphanPendingPayments(): Promise<OrphanPaymentsResponse> {
+  const response = await get<OrphanPaymentsResponse>('/admin/payments/orphans');
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Failed to fetch orphan payments');
+  }
+  return response.data;
+}
+
+/** POST /api/v1/admin/payments/recover/:merchantOrderId */
+export async function recoverStuckPayment(
+  merchantOrderId: string,
+  body: RecoverStuckPaymentBody,
+): Promise<RecoverStuckPaymentResult> {
+  const response = await post<RecoverStuckPaymentResult>(
+    `/admin/payments/recover/${encodeURIComponent(merchantOrderId)}`,
+    body,
+  );
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Recovery failed');
+  }
+  return response.data;
+}
+
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
 export type PaymentMethod = 'ONLINE' | 'OFFLINE';
 
