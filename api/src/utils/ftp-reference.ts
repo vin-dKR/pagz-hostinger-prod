@@ -71,6 +71,30 @@ export interface ReferenceCheckOptions {
  * legitimate user-initiated removals — the higher layer logs the
  * underlying error.
  */
+/**
+ * Stringify a Prisma JSON value to a stable searchable form. The DB
+ * column stores either a single string, an array of strings, or
+ * occasionally a stringified JSON blob. We serialize through
+ * `JSON.stringify` so substring matching has a uniform target
+ * regardless of which shape Prisma hands back.
+ */
+function stringifyJsonForSearch(value: unknown): string {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string") return value;
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
+/**
+ * Window for "is this file still in flight" — we look back this far
+ * for CartItem / OrderItem rows. Generous enough to cover a slow
+ * post-payment cart cleanup but tight enough to keep the query cheap.
+ */
+const REFERENCE_LOOKBACK_DAYS = 30;
+
 export async function isFtpPathReferenced(
     rawPath: string,
     options: ReferenceCheckOptions = {},
@@ -78,46 +102,72 @@ export async function isFtpPathReferenced(
     const probes = buildReferenceProbes(rawPath);
     if (probes.length === 0) return false;
 
-    try {
-        for (const probe of probes) {
-            // CartItem reference (excluding the caller's own row, if any).
-            const cartHit = await prisma.cartItem.findFirst({
-                where: {
-                    customDesignUrl: { string_contains: probe },
-                    ...(options.excludeCartItemId
-                        ? { id: { not: options.excludeCartItemId } }
-                        : {}),
-                    ...(options.excludeCartId
-                        ? { cartId: { not: options.excludeCartId } }
-                        : {}),
-                },
-                select: { id: true },
-            });
-            if (cartHit) {
-                console.warn(
-                    `[ftp-reference] keeping FTP file — referenced by CartItem ${cartHit.id}. path="${rawPath}" probe="${probe}"`,
-                );
-                return true;
-            }
+    const lookback = new Date(
+        Date.now() - REFERENCE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+    );
 
-            // OrderItem reference — never excluded; an order snapshot
-            // outliving the cart row is the primary failure mode #86
-            // targets.
-            const orderHit = await prisma.orderItem.findFirst({
-                where: {
-                    customDesignUrl: { string_contains: probe },
-                },
-                select: { id: true, orderId: true },
-            });
-            if (orderHit) {
-                console.warn(
-                    `[ftp-reference] keeping FTP file — referenced by OrderItem ${orderHit.id} (order ${orderHit.orderId}). path="${rawPath}" probe="${probe}"`,
-                );
-                return true;
+    try {
+        // Prisma's `string_contains` filter on a `Json` column doesn't
+        // reliably match a substring across all storage shapes on the
+        // MariaDB adapter (single string vs array vs serialized JSON).
+        // The old query silently returned no hits even when the file
+        // WAS referenced by an OrderItem — files vanished after orders.
+        //
+        // New approach: pull the relevant rows in a bounded window and
+        // do the substring check in JS over the stringified JSON. We
+        // only need `id` + `customDesignUrl`; the lookback window keeps
+        // the row count bounded.
+
+        // ── CartItem check ────────────────────────────────────────
+        const cartRows = await prisma.cartItem.findMany({
+            where: {
+                ...(options.excludeCartItemId
+                    ? { id: { not: options.excludeCartItemId } }
+                    : {}),
+                ...(options.excludeCartId
+                    ? { cartId: { not: options.excludeCartId } }
+                    : {}),
+                createdAt: { gte: lookback },
+            },
+            select: { id: true, customDesignUrl: true },
+            take: 2000,
+        });
+        for (const row of cartRows) {
+            const haystack = stringifyJsonForSearch(row.customDesignUrl);
+            if (!haystack) continue;
+            for (const probe of probes) {
+                if (haystack.includes(probe)) {
+                    console.warn(
+                        `[ftp-reference] keeping FTP file — referenced by CartItem ${row.id}. path="${rawPath}" probe="${probe}"`,
+                    );
+                    return true;
+                }
             }
         }
+
+        // ── OrderItem check ──────────────────────────────────────
+        // Never excluded — order snapshots outliving cart rows are the
+        // primary failure mode this guard protects.
+        const orderRows = await prisma.orderItem.findMany({
+            where: { createdAt: { gte: lookback } },
+            select: { id: true, orderId: true, customDesignUrl: true },
+            take: 5000,
+        });
+        for (const row of orderRows) {
+            const haystack = stringifyJsonForSearch(row.customDesignUrl);
+            if (!haystack) continue;
+            for (const probe of probes) {
+                if (haystack.includes(probe)) {
+                    console.warn(
+                        `[ftp-reference] keeping FTP file — referenced by OrderItem ${row.id} (order ${row.orderId}). path="${rawPath}" probe="${probe}"`,
+                    );
+                    return true;
+                }
+            }
+        }
+
         console.warn(
-            `[ftp-reference] no reference found; allowing delete. path="${rawPath}" probes=${JSON.stringify(probes)}`,
+            `[ftp-reference] no reference found; allowing delete. path="${rawPath}" probes=${JSON.stringify(probes)} scanned cart=${cartRows.length} order=${orderRows.length}`,
         );
         return false;
     } catch (err) {
