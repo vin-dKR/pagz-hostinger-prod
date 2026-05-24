@@ -1148,13 +1148,35 @@ export const verifyCartFiles = async (req: Request, res: Response, next: NextFun
         const failed = result.invalid.map((entry) => ({
             path: entry.path,
             reason: entry.reason,
+            error: entry.error,
         }));
         console.info(
             `[cart-verify] user=${req.user.id} paths=${paths.length} ` +
             `ok=${result.valid.length} failed=${JSON.stringify(failed)}`,
         );
 
-        return sendSuccess(res, result);
+        // Aggressive diagnostic: when EVERY path failed verification this is
+        // almost certainly the FTP pool / control-channel issue (#94) rather
+        // than the user actually losing every file. Emit a single structured
+        // warn carrying the auth user, each path with reason + ftp error so
+        // the next failure case has the data we need to find the underlying
+        // cause without a repro. Greppable string: `[cart-verify] all paths failed`.
+        if (result.valid.length === 0 && result.invalid.length > 0) {
+            console.warn("[cart-verify] all paths failed", {
+                userId: req.user.id,
+                pathCount: paths.length,
+                failures: failed,
+            });
+        }
+
+        // Strip the server-only `error` field before sending — clients
+        // don't need (and shouldn't see) raw FTP error messages.
+        const clientInvalid = result.invalid.map((entry) => ({
+            path: entry.path,
+            reason: entry.reason,
+        }));
+
+        return sendSuccess(res, { valid: result.valid, invalid: clientInvalid });
     } catch (error) {
         next(error);
     }
@@ -1454,6 +1476,33 @@ export const calculatePricing = async (
             return true;
         });
 
+        // Deterministic ordering: highest priority first, then the *most
+        // specific* rule (more pinned specs) so a fully-qualified
+        // `SPECIFICATION_COMBINATION` always beats a bare `BASE_PRICE` that
+        // also happens to match; finally fall back to rule id so two
+        // equally-ranked rules never flip between calls. Without this the
+        // order is whatever Prisma returns for ties, which was the
+        // suspected root cause of "services page picks rule A, guest cart
+        // picks rule B for the same spec set" (issue #93).
+        type MatchingBaseRule = {
+            id: string;
+            priority?: number | null;
+            specificationValues?: unknown;
+        };
+        const baseRuleSpecCount = (rule: MatchingBaseRule): number => {
+            const specs = (rule.specificationValues || {}) as Record<string, unknown>;
+            return Object.keys(specs).length;
+        };
+        (matchingBaseRules as MatchingBaseRule[]).sort((a: MatchingBaseRule, b: MatchingBaseRule) => {
+            const pa = (a.priority ?? 0) as number;
+            const pb = (b.priority ?? 0) as number;
+            if (pa !== pb) return pb - pa;
+            const sa = baseRuleSpecCount(a);
+            const sb = baseRuleSpecCount(b);
+            if (sa !== sb) return sb - sa;
+            return String(a.id).localeCompare(String(b.id));
+        });
+
         const baseRule = matchingBaseRules[0];
         if (baseRule) {
             const basePrice = baseRule.basePrice ? Number(baseRule.basePrice) : 0;
@@ -1638,6 +1687,69 @@ export const calculatePricing = async (
                 total: responseBody.total,
             },
         );
+
+        // ── Defensive diagnostic — addons collapse case ─────────────────────
+        // When the client requested >0 addons but we returned [], that's the
+        // exact symptom in issue #93 (guest cart shows split flash then
+        // collapses to base=total). Emit a single structured warn with the
+        // payload + intermediates needed to diagnose without a repro. One
+        // line per request, easy to grep with `[calculate-pricing-mismatch]`.
+        if (requestedAddonIds.length > 0 && addonsResponse.length === 0) {
+            console.warn("[calculate-pricing-mismatch] addons=[] returned but selectedAddons.length > 0", {
+                requestId,
+                source,
+                categoryId,
+                selectedSpecifications,
+                selectedAddons: requestedAddonIds,
+                staleAddonIds,
+                addonRulesById: addonRulesById.size,
+                activeAddonInputsBefore: activeAddonInputs.map((e) => ({
+                    ruleId: e.rule.id,
+                    perFileEvaluation: e.rule.perFileEvaluation,
+                    copyMultiplier: e.rule.copyMultiplier,
+                    fileMultiplier: e.rule.fileMultiplier,
+                    minQuantity: e.rule.minQuantity,
+                    maxQuantity: e.rule.maxQuantity,
+                })),
+                survivingIds: Array.from(survivingIds),
+                matchingBaseRules: (matchingBaseRules as Array<Record<string, unknown>>).map((r) => ({
+                    id: r.id,
+                    priority: r.priority,
+                    ruleType: r.ruleType,
+                    specs: r.specificationValues,
+                })),
+                chosenBaseRuleId: baseRule?.id ?? null,
+                baseSubtotal: responseBody.baseSubtotal,
+                total: responseBody.total,
+                pageCount,
+                effectivePageCount,
+                copies,
+                fileCount,
+            });
+        }
+
+        // Surface when more than one base rule matched the spec set — a
+        // hidden source of guest-cart vs services-page drift if priority
+        // ordering ever returns a different first element across calls.
+        // We always sort matching rules by `[priority desc, specCount desc]`
+        // before picking [0] so the choice is deterministic regardless of
+        // Prisma's row order, but log the multi-match so prod operators
+        // notice when the rule space gets ambiguous.
+        if (matchingBaseRules.length > 1) {
+            console.warn("[calculate-pricing-mismatch] multiple base rules matched", {
+                requestId,
+                source,
+                categoryId,
+                chosenBaseRuleId: baseRule?.id ?? null,
+                matchingBaseRules: (matchingBaseRules as Array<Record<string, unknown>>).map((r) => ({
+                    id: r.id,
+                    priority: r.priority,
+                    ruleType: r.ruleType,
+                    specCount: Object.keys((r.specificationValues || {}) as object).length,
+                    basePrice: r.basePrice ? Number(r.basePrice) : 0,
+                })),
+            });
+        }
 
         return sendSuccess(res, responseBody);
     } catch (error) {

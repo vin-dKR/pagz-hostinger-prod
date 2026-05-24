@@ -355,6 +355,11 @@ export type FtpVerifyReason = "missing" | "empty" | "unreadable";
 export interface FtpVerifyInvalidEntry {
     path: string;
     reason: FtpVerifyReason;
+    /** Underlying FTP error message when classification was `unreadable`.
+     *  Surfaced server-side only — `verifyCartFiles` logs it for ops; the
+     *  client response strips this field so we don't leak FTP internals
+     *  to the browser. */
+    error?: string;
 }
 export interface FtpVerifyBatchResult {
     valid: string[];
@@ -503,8 +508,60 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Cap the in-flight verify probes so a 20-file restore doesn't open 20
+ *  parallel FTP connections (which Hostinger has been observed to refuse
+ *  beyond ~4 simultaneous control channels). Pure async helper — no
+ *  dep — keeps this file standalone and runtime-cheap. */
+async function runWithConcurrency<T, R>(
+    items: ReadonlyArray<T>,
+    limit: number,
+    worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let cursor = 0;
+
+    const runners: Promise<void>[] = [];
+    const workerCount = Math.min(Math.max(limit, 1), items.length);
+    for (let i = 0; i < workerCount; i++) {
+        runners.push(
+            (async () => {
+                while (true) {
+                    const index = cursor++;
+                    if (index >= items.length) return;
+                    const value = items[index] as T;
+                    results[index] = await worker(value, index);
+                }
+            })(),
+        );
+    }
+    await Promise.all(runners);
+    return results;
+}
+
+const VERIFY_PROBE_CONCURRENCY = 3;
+
+/** Probe a single path with a brand-new FTP connection. Used by the batch
+ *  verify so one file's hung control channel can't poison the rest of the
+ *  batch (which was the suspected root cause of issue #94 — all-files-fail
+ *  symptom even though FTP held the bytes). Always closes the client so we
+ *  never leak a socket on the failure path. */
+async function probeFtpFileWithFreshClient(
+    remotePath: string,
+): Promise<FtpFileVerification> {
+    try {
+        return await withFtpClient((client) => probeFtpFile(client, remotePath));
+    } catch (error) {
+        // `withFtpClient` only throws when the connection itself failed
+        // (auth, TCP, etc.) — surface that as an `unreadable`-class
+        // failure with the underlying message preserved so the caller can
+        // log the real FTP error rather than a generic "couldn't verify".
+        const message = error instanceof Error ? error.message : String(error);
+        return { exists: false, size: 0, error: message };
+    }
+}
+
 /**
- * Batch-verify a list of file paths over a single FTP connection.
+ * Batch-verify a list of file paths.
  *
  * Returns `{ valid, invalid }` where `valid` is the subset that exists
  * with `size > 0`, and `invalid` carries a structured reason per failed
@@ -514,13 +571,21 @@ function sleep(ms: number): Promise<void> {
  * one entry per unique input path. Mixed full-URL + relative-path
  * arrays are accepted.
  *
+ * Connection-per-file (issue #94 hardening):
+ *   Previously this opened ONE FTP connection and walked every path on
+ *   it. Hostinger occasionally hands out a control channel that hangs
+ *   silently mid-batch, in which case every subsequent probe reports
+ *   `unreadable` — the "FTP verify reproducibly returns unreadable for
+ *   files that exist" symptom in the bug report. Opening a fresh client
+ *   per file is slower but takes that whole failure mode off the table
+ *   (one bad socket only ruins one probe). `Promise.allSettled`-style
+ *   semantics: every file gets a chance regardless of its siblings.
+ *
  * Two-pass with race protection (issue #87): any entry that comes back
  * `missing` or `unreadable` on the first pass is re-probed after a
- * short delay over a fresh FTP connection. Hostinger's FTP layer
- * occasionally reports a just-written file as missing (the data-channel
- * close races the directory metadata refresh) and the transient
- * control-channel errors disappear on a reconnect — both manifested as
- * cart-restore false positives before this retry landed.
+ * short delay. Hostinger's FTP layer also occasionally reports a
+ * just-written file as missing (data-channel close races directory
+ * metadata refresh) and those transient errors disappear on a reconnect.
  */
 export async function verifyFTPFiles(paths: string[]): Promise<FtpVerifyBatchResult> {
     const cleanedInputs: string[] = [];
@@ -538,19 +603,28 @@ export async function verifyFTPFiles(paths: string[]): Promise<FtpVerifyBatchRes
         return { valid: [], invalid: [] };
     }
 
-    // Pass 1 — single connection, sequential probe of every input.
-    const firstPass = await withFtpClient(async (client) => {
-        const valid: string[] = [];
-        const invalid: FtpVerifyInvalidEntry[] = [];
-        for (const original of cleanedInputs) {
-            const result = await probeFtpFile(client, original);
-            if (result.exists && result.size > 0) {
-                valid.push(original);
-                continue;
-            }
-            invalid.push({ path: original, reason: classifyProbeFailure(result) });
+    // Pass 1 — fresh connection per file, capped concurrency. Slow path
+    // for huge batches but bullet-proof against the connection-pool
+    // hang that motivated the rewrite.
+    const firstPassProbes = await runWithConcurrency(
+        cleanedInputs,
+        VERIFY_PROBE_CONCURRENCY,
+        (path) => probeFtpFileWithFreshClient(path),
+    );
+
+    const firstPass: FtpVerifyBatchResult = { valid: [], invalid: [] };
+    cleanedInputs.forEach((path, index) => {
+        const result = firstPassProbes[index] ?? { exists: false, size: 0 };
+        if (result.exists && result.size > 0) {
+            firstPass.valid.push(path);
+            return;
         }
-        return { valid, invalid };
+        const reason = classifyProbeFailure(result);
+        const entry: FtpVerifyInvalidEntry = { path, reason };
+        if (reason === "unreadable" && result.error) {
+            entry.error = result.error;
+        }
+        firstPass.invalid.push(entry);
     });
 
     const retryable = firstPass.invalid.filter((entry) =>
@@ -560,34 +634,32 @@ export async function verifyFTPFiles(paths: string[]): Promise<FtpVerifyBatchRes
         return firstPass;
     }
 
-    // Pass 2 — short backoff + fresh connection so we don't carry over a
-    // half-broken control channel from pass 1.
+    // Pass 2 — short backoff, then a fresh client per retry path. Same
+    // concurrency-capped helper so two retries don't open all the
+    // sockets at once.
     await sleep(DEFAULT_VERIFY_OPTIONS.retryDelayMs);
-    const retryByPath = new Map<string, FtpVerifyInvalidEntry>();
-    await withFtpClient(async (client) => {
-        for (const entry of retryable) {
-            const result = await probeFtpFile(client, entry.path);
-            if (result.exists && result.size > 0) {
-                // Recovered — leave it out of the retry map so the merge
-                // below will treat it as valid.
-                continue;
-            }
-            retryByPath.set(entry.path, {
-                path: entry.path,
-                reason: classifyProbeFailure(result),
-            });
-        }
-    });
-
-    // Merge: any retried path that now passes drops from `invalid` and
-    // appears in `valid`; everything else keeps its first-pass reason
-    // (or the refreshed reason from pass 2 if it changed).
-    const stillInvalidPaths = new Set(retryByPath.keys());
-    const recoveredPaths = new Set(
-        retryable
-            .map((entry) => entry.path)
-            .filter((path) => !stillInvalidPaths.has(path)),
+    const retryPaths = retryable.map((entry) => entry.path);
+    const retryProbes = await runWithConcurrency(
+        retryPaths,
+        VERIFY_PROBE_CONCURRENCY,
+        (path) => probeFtpFileWithFreshClient(path),
     );
+
+    const retryByPath = new Map<string, FtpVerifyInvalidEntry>();
+    const recoveredPaths = new Set<string>();
+    retryPaths.forEach((path, index) => {
+        const result = retryProbes[index] ?? { exists: false, size: 0 };
+        if (result.exists && result.size > 0) {
+            recoveredPaths.add(path);
+            return;
+        }
+        const reason = classifyProbeFailure(result);
+        const entry: FtpVerifyInvalidEntry = { path, reason };
+        if (reason === "unreadable" && result.error) {
+            entry.error = result.error;
+        }
+        retryByPath.set(path, entry);
+    });
 
     const finalValid = [...firstPass.valid, ...recoveredPaths];
     const finalInvalid: FtpVerifyInvalidEntry[] = firstPass.invalid

@@ -27,6 +27,13 @@ type PendingCartIntentResult = {
      *  user had previously uploaded as a guest — distinct from
      *  generic add-to-cart errors which surface via `error`. */
     fileFailures?: Array<{ name: string; reason: VerifyFileInvalidEntry['reason'] }>;
+    /** Issue #94 fail-open marker — true when one or more files came
+     *  back transient (`unreadable`) from FTP verify and we trusted
+     *  the stored keys into the cart anyway. The cart-page banner
+     *  uses this to show a soft "we couldn't verify your files right
+     *  now — your cart is restored. We'll verify again on checkout."
+     *  notice rather than a hard error. */
+    verifyFellOpen?: boolean;
 };
 
 type PendingCartMetadata = Record<string, any>;
@@ -225,8 +232,20 @@ function isHardFailReason(reason: VerifyFileInvalidEntry['reason']): boolean {
  *     act as the safety net. See `HARD_FAIL_VERIFY_REASONS` above for
  *     the full rationale (issue #94).
  */
-async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise<string[]> {
-    if (!pendingData.files || pendingData.files.length === 0) return [];
+interface EnsureUploadedFileKeysResult {
+    keys: string[];
+    /** Issue #94 — true when one or more files came back transient
+     *  (`unreadable`) from FTP verify and we trusted the stored key
+     *  past the failure. Propagated through `processPendingAddToCartIntent`
+     *  so the cart-page banner can show a soft notice instead of
+     *  pretending nothing happened. */
+    verifyFellOpen: boolean;
+}
+
+async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise<EnsureUploadedFileKeysResult> {
+    if (!pendingData.files || pendingData.files.length === 0) {
+        return { keys: [], verifyFellOpen: false };
+    }
 
     const filesWithKeys: PendingPurchaseFile[] = pendingData.files.filter((f) => Boolean(f.s3Key));
     const filesWithoutKeys: PendingPurchaseFile[] = pendingData.files.filter((f) => !f.s3Key);
@@ -287,6 +306,27 @@ async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise
             `[pending-cart-intent] restored ${transientCount} file(s) with transient verify ` +
             `errors; cart-page sweep will re-check`,
         );
+        // Aggressive fail-open: mark the pending entry so the cart-page
+        // mount sweep + the 60-min staleness check in pending-purchase
+        // know these files were trusted past a transient verify failure.
+        // The payment-init path (`assertOrderFilesValid`) is the real
+        // safety net — if the files are genuinely missing, payment init
+        // will block before charging the customer.
+        try {
+            await savePendingPurchaseData({
+                ...pendingData,
+                metadata: {
+                    ...(pendingData.metadata || {}),
+                    unverified: true,
+                    unverifiedAt: Date.now(),
+                },
+            });
+        } catch (e) {
+            console.warn(
+                "[pending-cart-intent] failed to mark pending entry as unverified:",
+                e,
+            );
+        }
     }
 
     // ── Step 2: upload the files that don't have a key yet ─────────────────
@@ -369,7 +409,10 @@ async function ensureUploadedFileKeys(pendingData: PendingPurchaseData): Promise
         await savePendingPurchaseData({ ...pendingData, files: updatedFiles });
     }
 
-    return [...validKeys, ...newlyUploadedKeys];
+    return {
+        keys: [...validKeys, ...newlyUploadedKeys],
+        verifyFellOpen: transientCount > 0,
+    };
 }
 
 /**
@@ -450,7 +493,12 @@ async function resolveSavedProduct(productId: string): Promise<any | null> {
     return null;
 }
 
-async function buildServiceCartPayload(pendingData: PendingPurchaseData): Promise<AddToCartData> {
+interface BuiltCartPayload {
+    payload: AddToCartData;
+    verifyFellOpen: boolean;
+}
+
+async function buildServiceCartPayload(pendingData: PendingPurchaseData): Promise<BuiltCartPayload> {
     if (!pendingData.categorySlug || !pendingData.specifications) {
         throw new Error("Pending service data is incomplete.");
     }
@@ -475,41 +523,47 @@ async function buildServiceCartPayload(pendingData: PendingPurchaseData): Promis
         throw new Error("No matching service product found.");
     }
 
-    const uploadedFileKeys = await ensureUploadedFileKeys(pendingData);
+    const uploaded = await ensureUploadedFileKeys(pendingData);
     const selectedAddons = await validateAddonIdsForCategory(
         pendingData.categorySlug,
         getSelectedAddons(pendingData)
     );
 
     return {
-        productId: matchingProduct.id,
-        quantity: pendingData.quantity || 1,
-        customDesignUrl: uploadedFileKeys.length > 0 ? uploadedFileKeys : undefined,
-        metadata: buildMetadata(pendingData),
-        hasAddon: selectedAddons.length > 0,
-        addons: selectedAddons.length > 0 ? selectedAddons : undefined,
+        payload: {
+            productId: matchingProduct.id,
+            quantity: pendingData.quantity || 1,
+            customDesignUrl: uploaded.keys.length > 0 ? uploaded.keys : undefined,
+            metadata: buildMetadata(pendingData),
+            hasAddon: selectedAddons.length > 0,
+            addons: selectedAddons.length > 0 ? selectedAddons : undefined,
+        },
+        verifyFellOpen: uploaded.verifyFellOpen,
     };
 }
 
-async function buildProductCartPayload(pendingData: PendingPurchaseData): Promise<AddToCartData> {
+async function buildProductCartPayload(pendingData: PendingPurchaseData): Promise<BuiltCartPayload> {
     if (!pendingData.productId) {
         throw new Error("Pending product data is incomplete.");
     }
 
-    const uploadedFileKeys = await ensureUploadedFileKeys(pendingData);
+    const uploaded = await ensureUploadedFileKeys(pendingData);
     const selectedAddons = await validateAddonIdsForCategory(
         pendingData.categorySlug,
         getSelectedAddons(pendingData)
     );
 
     return {
-        productId: pendingData.productId,
-        variantId: pendingData.selectedVariant,
-        quantity: pendingData.quantity || 1,
-        customDesignUrl: uploadedFileKeys.length > 0 ? uploadedFileKeys : undefined,
-        metadata: buildMetadata(pendingData),
-        hasAddon: selectedAddons.length > 0,
-        addons: selectedAddons.length > 0 ? selectedAddons : undefined,
+        payload: {
+            productId: pendingData.productId,
+            variantId: pendingData.selectedVariant,
+            quantity: pendingData.quantity || 1,
+            customDesignUrl: uploaded.keys.length > 0 ? uploaded.keys : undefined,
+            metadata: buildMetadata(pendingData),
+            hasAddon: selectedAddons.length > 0,
+            addons: selectedAddons.length > 0 ? selectedAddons : undefined,
+        },
+        verifyFellOpen: uploaded.verifyFellOpen,
     };
 }
 
@@ -524,11 +578,14 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
         await waitForAuthToken();
 
         let cartPayload: AddToCartData;
+        let verifyFellOpen = false;
         try {
-            cartPayload =
+            const built =
                 pendingData.type === "service"
                     ? await buildServiceCartPayload(pendingData)
                     : await buildProductCartPayload(pendingData);
+            cartPayload = built.payload;
+            verifyFellOpen = built.verifyFellOpen;
         } catch (error) {
             // File-verify failure: keep the pending entry in
             // sessionStorage so the banner can offer Retry / Discard.
@@ -556,7 +613,7 @@ export async function processPendingAddToCartIntent(): Promise<PendingCartIntent
                 const response = await addToCart(cartPayload);
                 if (response.success) {
                     clearPendingPurchaseData();
-                    return { handled: true, success: true };
+                    return { handled: true, success: true, verifyFellOpen };
                 }
 
                 lastError = response.error || response.message || lastError;
