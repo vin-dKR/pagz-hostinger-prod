@@ -1070,6 +1070,13 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             id: fd.id,
                             type: fd.type,
                             pageCount: fd.pageCount,
+                            // Carry s3Key through so restoration can fetch the
+                            // already-uploaded FTP file by its timestamped path
+                            // (`1779…-sample.pdf`) instead of the bare original
+                            // filename — without this, post-login verify can't
+                            // find the file and falls back to re-uploading a
+                            // 0-byte blob. (issue #94 follow-up)
+                            s3Key: fd.s3Key,
                         }))
                     )
                     : [];
@@ -1436,6 +1443,13 @@ export default function DynamicServicePage({ params }: DynamicServicePageProps) 
                             id: fd.id,
                             type: fd.type,
                             pageCount: fd.pageCount,
+                            // Carry s3Key through so restoration can fetch the
+                            // already-uploaded FTP file by its timestamped path
+                            // (`1779…-sample.pdf`) instead of the bare original
+                            // filename — without this, post-login verify can't
+                            // find the file and falls back to re-uploading a
+                            // 0-byte blob. (issue #94 follow-up)
+                            s3Key: fd.s3Key,
                         }))
                     )
                     : [];
