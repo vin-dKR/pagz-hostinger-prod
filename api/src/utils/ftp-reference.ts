@@ -93,7 +93,12 @@ export async function isFtpPathReferenced(
                 },
                 select: { id: true },
             });
-            if (cartHit) return true;
+            if (cartHit) {
+                console.warn(
+                    `[ftp-reference] keeping FTP file — referenced by CartItem ${cartHit.id}. path="${rawPath}" probe="${probe}"`,
+                );
+                return true;
+            }
 
             // OrderItem reference — never excluded; an order snapshot
             // outliving the cart row is the primary failure mode #86
@@ -102,20 +107,30 @@ export async function isFtpPathReferenced(
                 where: {
                     customDesignUrl: { string_contains: probe },
                 },
-                select: { id: true },
+                select: { id: true, orderId: true },
             });
-            if (orderHit) return true;
+            if (orderHit) {
+                console.warn(
+                    `[ftp-reference] keeping FTP file — referenced by OrderItem ${orderHit.id} (order ${orderHit.orderId}). path="${rawPath}" probe="${probe}"`,
+                );
+                return true;
+            }
         }
+        console.warn(
+            `[ftp-reference] no reference found; allowing delete. path="${rawPath}" probes=${JSON.stringify(probes)}`,
+        );
         return false;
     } catch (err) {
         console.warn(
             `[ftp-reference] reference check failed for "${rawPath}":`,
             err instanceof Error ? err.message : String(err),
         );
-        // Fail open: don't block a delete because the check itself broke.
-        // The integrity guard in payment-persistence still catches missing
-        // files post-payment and emits an audit row.
-        return false;
+        // Fail SAFE: a DB error must NOT result in deletion of a file
+        // that might be referenced by an order. We'd rather leak a few
+        // bytes on FTP than wipe a customer's design file. The payment
+        // persist layer's missing-file audit row will surface any
+        // genuine orphans for ops to sweep manually.
+        return true;
     }
 }
 
