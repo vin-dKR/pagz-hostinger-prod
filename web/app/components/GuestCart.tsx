@@ -312,62 +312,36 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
     }>(() => {
         const live = pricingHook.data;
         if (live) {
-            // Defensive guard: if the api total is dramatically lower than
-            // the price the user saw at add-to-cart time (e.g. < 10% of
-            // the cached total), something is off — a stale spec ID, an
-            // admin rule that changed mid-session, or a payload mismatch.
             const cached = Number(pending?.totalPrice || pending?.currentPrice || 0);
-            if (cached > 0 && live.total > 0 && live.total < cached * 0.1) {
-                console.warn(
-                    "[GuestCart] live pricing < 10% of cached — using cached.",
-                    {
-                        live: { total: live.total, base: live.baseSubtotal, addons: live.addonsSubtotal, addonCount: live.addons.length },
-                        cached,
-                        payload: {
-                            specs: pending?.specifications,
-                            addonIds: pending?.selectedAddons,
-                            fileCount: pending?.files?.length,
-                            pageCount: pending?.pageCount,
-                        },
-                    },
-                );
-                return {
-                    baseTotal: cached,
-                    addonTotal: 0,
-                    total: cached,
-                    addons: [] as PriceBreakdownAddon[],
-                };
-            }
-
-            // ── Defensive UI fallback for the issue-#93 collapse symptom ──
-            // The api response landed with `addons=[]` and a high
-            // baseTotal that equals the live total — BUT the snapshot
-            // breakdown saved at add-to-cart time has addon rows summing
-            // to >0 AND the same overall total (within ₹1). That's the
-            // exact "flash correct split then collapse to base=total"
-            // user report: the api response is wrong in attribution but
-            // right on the bottom line, so we prefer the cached split
-            // until the root cause is fixed in the engine.
-            //
-            // We intentionally only flip on a TOTAL match (±₹1) so a
-            // genuine pricing change between add-to-cart and now (admin
-            // edited the rule, user opened the cart a day later) still
-            // surfaces the new number rather than a stale cached one.
-            //
-            // Greppable log: `[GuestCart] live addons=[] but cached has addons`.
             const cachedSplit = readCachedBreakdown(pending);
             const expectedAddonCount = computedSelectedAddons.length;
             const liveTotal = Number(live.total) || 0;
+
+            // ── #93 collapse fallback — prefer cached split when api response ──
+            // attributes everything to base. Triggers when:
+            //   - api returned `addons=[]` AND we expected some
+            //   - cached snapshot has addonTotal > 0
+            //   - totals match within ₹1 (cached vs live) OR live total
+            //     is suspiciously low (< 10% of cached) which means the
+            //     api missed too many rules entirely and the snapshot is
+            //     the better source.
+            //
+            // We try this BEFORE the bare 10% guard so the addon split
+            // survives. If both apply, the cached split wins.
+            //
+            // Greppable log: `[GuestCart] live addons=[] but cached has addons`.
             const cachedTotal = cachedSplit?.total ?? 0;
             const totalsMatch =
                 cachedTotal > 0 && liveTotal > 0 && Math.abs(liveTotal - cachedTotal) <= 1;
+            const liveTotalTooLow =
+                cached > 0 && liveTotal > 0 && liveTotal < cached * 0.1;
             const cacheHasAddons =
                 cachedSplit !== null && cachedSplit.addonTotal > 0;
+
             if (
-                expectedAddonCount > 0 &&
-                live.addons.length === 0 &&
                 cacheHasAddons &&
-                totalsMatch
+                live.addons.length === 0 &&
+                (totalsMatch || liveTotalTooLow)
             ) {
                 console.warn(
                     "[GuestCart] live addons=[] but cached has addons; using cached split",
@@ -401,6 +375,32 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                     baseTotal: cachedSplit!.baseTotal,
                     addonTotal: cachedSplit!.addonTotal,
                     total: cachedSplit!.total,
+                    addons: [] as PriceBreakdownAddon[],
+                };
+            }
+
+            // ── Bare 10% guard — when there's no cached split to fall ──
+            // back on, prefer the cached total over a near-zero live total
+            // so the user doesn't see ₹0 when they paid for something
+            // recently. addons stay [] (no breakdown info available).
+            if (liveTotalTooLow) {
+                console.warn(
+                    "[GuestCart] live pricing < 10% of cached — using cached (no split).",
+                    {
+                        live: { total: live.total, base: live.baseSubtotal, addons: live.addonsSubtotal, addonCount: live.addons.length },
+                        cached,
+                        payload: {
+                            specs: pending?.specifications,
+                            addonIds: pending?.selectedAddons,
+                            fileCount: pending?.files?.length,
+                            pageCount: pending?.pageCount,
+                        },
+                    },
+                );
+                return {
+                    baseTotal: cached,
+                    addonTotal: 0,
+                    total: cached,
                     addons: [] as PriceBreakdownAddon[],
                 };
             }
@@ -517,11 +517,11 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
             {/* Left column — pending item (compact card matching CartItem). */}
             <div className="lg:col-span-2">
-                <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
+                <div className="bg-white rounded-2xl border border-gray-100 p-3 sm:p-4">
                     <div className="flex gap-3 sm:gap-4">
                         {/* Image */}
                         <div className="shrink-0">
-                            <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-md overflow-hidden border border-gray-200 bg-gray-50">
+                            <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
                                 {displayImage ? (
                                     <Image
                                         src={displayImage}
@@ -664,25 +664,25 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                             {priceBreakdown.addons.length > 0 ? (() => {
                                 const labels = buildAddonLabelMap(priceBreakdown.addons);
                                 return (
-                                <ul className="mt-1.5 space-y-1">
-                                    {priceBreakdown.addons.map((addon) => (
-                                        <li key={addon.ruleId} className="text-[11px] text-gray-500">
-                                            <div>
-                                                <span className="text-gray-600">{labels.get(addon.ruleId) ?? addon.name}</span>
-                                                {addon.total > 0 && (
-                                                    <span className="font-medium text-gray-700"> {formatPrice(addon.total)}</span>
+                                    <ul className="mt-1.5 space-y-1">
+                                        {priceBreakdown.addons.map((addon) => (
+                                            <li key={addon.ruleId} className="text-[11px] text-gray-500">
+                                                <div>
+                                                    <span className="text-gray-600">{labels.get(addon.ruleId) ?? addon.name}</span>
+                                                    {addon.total > 0 && (
+                                                        <span className="font-medium text-gray-700"> {formatPrice(addon.total)}</span>
+                                                    )}
+                                                </div>
+                                                {addon.breakdown && addon.breakdown.length > 1 && (
+                                                    <AddonBreakdownRows
+                                                        breakdown={addon.breakdown}
+                                                        resolveFilename={resolveFilename}
+                                                        variant="compact"
+                                                    />
                                                 )}
-                                            </div>
-                                            {addon.breakdown && addon.breakdown.length > 1 && (
-                                                <AddonBreakdownRows
-                                                    breakdown={addon.breakdown}
-                                                    resolveFilename={resolveFilename}
-                                                    variant="compact"
-                                                />
-                                            )}
-                                        </li>
-                                    ))}
-                                </ul>
+                                            </li>
+                                        ))}
+                                    </ul>
                                 );
                             })() : pricingHook.isFetched && computedSelectedAddons.length > 0 ? (
                                 <p className="mt-1.5 text-[11px] text-amber-600">
@@ -694,13 +694,13 @@ export default function GuestCart({ onEmpty }: GuestCartProps) {
                                 // renders once even if multiple addon ids share it.
                                 const unique = Array.from(new Set(fallbackAddonNames));
                                 return (
-                                <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                                    {unique.map((name, idx) => (
-                                        <li key={`${name}-${idx}`} className="text-[11px] text-gray-400 italic">
-                                            <span>{name}</span>
-                                        </li>
-                                    ))}
-                                </ul>
+                                    <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                                        {unique.map((name, idx) => (
+                                            <li key={`${name}-${idx}`} className="text-[11px] text-gray-400 italic">
+                                                <span>{name}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
                                 );
                             })() : null}
                         </div>
