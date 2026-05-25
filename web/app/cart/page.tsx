@@ -603,6 +603,8 @@ function CartPageContent() {
         { label: "Cart", href: "/cart" },
     ];
 
+    console.log("---debug addonsSubtotal in the cart", addonsSubtotal)
+
     return (
         <div className="min-h-screen py-4 sm:py-6 lg:py-8">
             {ConfirmDialog}

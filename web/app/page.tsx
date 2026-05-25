@@ -3,7 +3,14 @@ import CategoryProducts from "./components/CategoryProducts";
 import Testimonials from "./components/Testimonials";
 import type { Testimonial } from "@/lib/api/reviews";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3002/api/v1";
+// NEXT_PUBLIC_* vars are inlined at BUILD time. Falls back to the
+// local api so a dev forgetting the env var still gets a working page;
+// prod must set NEXT_PUBLIC_API_URL before `next build`.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
+
+if (!API_BASE_URL) {
+    console.log("no API_BASE_URL configured")
+}
 
 async function fetchTestimonials(limit = 12): Promise<Testimonial[]> {
     try {

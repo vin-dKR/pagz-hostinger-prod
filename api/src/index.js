@@ -38,6 +38,8 @@ const allowedOrigins = [
     "https://silver-fish-590311.hostingersite.com",
     "https://pagz.in",
     "https://admin.pagz.in",
+    "https://pagz-dun.vercel.app/",
+    process.env.FRONTEND_URL,
     // Allow additional origins from environment variable (comma-separated)
     ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim()) : []),
 ];

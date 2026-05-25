@@ -43,6 +43,7 @@ export default function BillingSummary({
     orderComment: orderCommentProp,
     onOrderCommentChange,
 }: BillingSummaryProps) {
+    console.log("---debug: addonsSubtotal", addonsSubtotal)
     // When the parent doesn't lift state, fall back to a local buffer so
     // the textarea remains usable on cart / preview surfaces that don't
     // need to read it back.
