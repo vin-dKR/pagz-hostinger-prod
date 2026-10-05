@@ -1,17 +1,12 @@
-/**
- * Table Components
- * Apple-inspired table with clean, minimal styling
- */
-
 import { type HTMLAttributes, forwardRef } from 'react';
 import { cn } from '@/lib/utils/cn';
 
 const Table = forwardRef<HTMLTableElement, HTMLAttributes<HTMLTableElement>>(
     ({ className, ...props }, ref) => (
-        <div className="relative w-full overflow-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-card)]">
+        <div className="relative w-full overflow-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-card)] shadow-[var(--shadow-sm)]">
             <table
                 ref={ref}
-                className={cn('w-full caption-bottom text-sm', className)}
+                className={cn('w-full caption-bottom text-[13px]', className)}
                 {...props}
             />
         </div>
@@ -23,7 +18,7 @@ const TableHeader = forwardRef<
     HTMLTableSectionElement,
     HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
-    <thead ref={ref} className={cn('[&_tr]:border-b border-[var(--color-border)]', className)} {...props} />
+    <thead ref={ref} className={cn('bg-[#f7f7f7] [&_tr]:border-b [&_tr]:border-[var(--color-border)]', className)} {...props} />
 ));
 TableHeader.displayName = 'TableHeader';
 
@@ -46,7 +41,7 @@ const TableRow = forwardRef<
     <tr
         ref={ref}
         className={cn(
-            'border-b border-[var(--color-border)] transition-colors duration-150 hover:bg-[var(--color-accent)] data-[state=selected]:bg-[var(--color-accent)]',
+            'border-b border-[#eeeeee] transition-colors duration-150 hover:bg-[#f8f8f8] data-[state=selected]:bg-[#f0f0f5]',
             className
         )}
         {...props}
@@ -61,7 +56,7 @@ const TableHead = forwardRef<
     <th
         ref={ref}
         className={cn(
-            'h-12 px-4 text-left align-middle text-xs font-semibold text-[var(--color-foreground-secondary)] uppercase tracking-wider [&:has([role=checkbox])]:pr-0',
+            'h-9 whitespace-nowrap px-4 text-left align-middle text-[11px] font-medium tracking-normal text-[var(--color-foreground-secondary)] [&:has([role=checkbox])]:pr-0',
             className
         )}
         {...props}
@@ -75,11 +70,10 @@ const TableCell = forwardRef<
 >(({ className, ...props }, ref) => (
     <td
         ref={ref}
-        className={cn('p-4 align-middle text-sm text-[var(--color-foreground)] [&:has([role=checkbox])]:pr-0', className)}
+    className={cn('px-4 py-3.5 align-middle text-[13px] text-[var(--color-foreground)] [&:has([role=checkbox])]:pr-0', className)}
         {...props}
     />
 ));
 TableCell.displayName = 'TableCell';
 
 export { Table, TableHeader, TableBody, TableHead, TableRow, TableCell };
-

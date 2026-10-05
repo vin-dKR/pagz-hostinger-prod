@@ -56,17 +56,18 @@ export function PaymentFilters({ filters, onFiltersChange }: PaymentFiltersProps
     );
 
     return (
-        <div className="">
+        <div className="relative shrink-0">
             <div className="flex items-center justify-between">
                 <Button
                     variant="outline"
                     onClick={() => setIsOpen(!isOpen)}
                     className="flex items-center gap-2"
+                    aria-expanded={isOpen}
                 >
                     <Filter className="h-4 w-4" />
                     Filters
                     {hasActiveFilters && (
-                        <span className="ml-1 bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                        <span className="ml-1 bg-[var(--color-primary)] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                             {Object.keys(filters).filter(k => filters[k as keyof PaymentQueryParams]).length}
                         </span>
                     )}
@@ -79,8 +80,8 @@ export function PaymentFilters({ filters, onFiltersChange }: PaymentFiltersProps
             </div>
 
             {isOpen && (
-                <Card className="mb-4 mt-2">
-                    <CardContent className="p-4 space-y-4">
+                <Card className="absolute left-0 top-full z-30 mt-2 w-[min(90vw,760px)] shadow-[var(--shadow-lg)] lg:w-[min(65vw,760px)]">
+                    <CardContent className="max-h-[min(70vh,620px)] space-y-4 overflow-y-auto p-5">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {/* Status Filter */}
                             <div>

@@ -61,6 +61,12 @@ export function CategoriesList() {
     const { confirm, ConfirmDialog } = useConfirm();
 
     useEffect(() => {
+        if (window.matchMedia('(max-width: 639px)').matches) {
+            setViewMode('grid');
+        }
+    }, []);
+
+    useEffect(() => {
         loadCategories(page, debouncedSearch);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, debouncedSearch]);
@@ -130,7 +136,7 @@ export function CategoriesList() {
             <Card>
             <CardContent className="p-0">
                 {/* Search + Pagination Header */}
-                <div className="flex flex-col gap-3 border-b bg-gray-50/60 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                <div className="admin-toolbar flex flex-col gap-3 border-b border-[var(--color-border)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="relative w-full max-w-sm">
                         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                         <Input
@@ -140,27 +146,31 @@ export function CategoriesList() {
                             onChange={(e) => setSearchInput(e.target.value)}
                         />
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 rounded-md border border-gray-300 p-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-0.5 rounded-[8px] border border-[#dedede] bg-[#ededed] p-0.5 shadow-[inset_0_1px_2px_#00000006]">
                             <Button
-                                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                                variant={viewMode === 'table' ? 'outline' : 'ghost'}
                                 size="sm"
                                 onClick={() => setViewMode('table')}
                                 className="h-7 px-2"
+                                aria-label="Table view"
+                                title="Table view"
                             >
                                 <List className="h-4 w-4" />
                             </Button>
                             <Button
-                                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                                variant={viewMode === 'grid' ? 'outline' : 'ghost'}
                                 size="sm"
                                 onClick={() => setViewMode('grid')}
                                 className="h-7 px-2"
+                                aria-label="Grid view"
+                                title="Grid view"
                             >
                                 <Grid3x3 className="h-4 w-4" />
                             </Button>
                         </div>
-                        <div className="flex items-center gap-2 flex-nowrap text-xs text-[var(--color-foreground-secondary)]">
-                            <span className="whitespace-nowrap">
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-foreground-secondary)]">
+                            <span>
                                 {total.toLocaleString()} results • Page {page} of {Math.max(totalPages, 1)}
                             </span>
                             <Button
@@ -221,15 +231,12 @@ export function CategoriesList() {
                             </Card>
                         </div>
                     ) : viewMode === 'table' ? (
-                        <Table>
+                        <Table className="min-w-[800px]">
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Image</TableHead>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Slug</TableHead>
-                                    <TableHead>Display Order</TableHead>
-                                    <TableHead>Parent</TableHead>
-                                    <TableHead>Stats</TableHead>
+                                    <TableHead>Category</TableHead>
+                                    <TableHead>Catalog footprint</TableHead>
+                                    <TableHead>Placement</TableHead>
                                     <TableHead>Created</TableHead>
                                     <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
@@ -237,61 +244,55 @@ export function CategoriesList() {
                             <TableBody>
                                 {categories.map((category) => (
                                     <TableRow key={category.id}>
-                                        <TableCell>
-                                            {category.primaryImage || category.images?.[0] ? (
-                                                <div className="relative h-12 w-12 overflow-hidden rounded-md border border-gray-200">
-                                                    <Image
-                                                        src={normalizeImageSrc(
-                                                            category.primaryImage?.url || category.images?.[0]?.url || ''
-                                                        )}
-                                                        alt={category.primaryImage?.alt || category.name || ''}
-                                                        fill
-                                                        className="object-cover"
-                                                    />
+                                        <TableCell className="min-w-[260px]">
+                                            <div className="flex items-center gap-3">
+                                                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[8px] border border-[var(--color-border)] bg-[var(--color-background-tertiary)] ring-[3px] ring-[#f5f5f5]">
+                                                    {category.primaryImage || category.images?.[0] ? (
+                                                        <Image
+                                                            src={normalizeImageSrc(category.primaryImage?.url || category.images?.[0]?.url || '')}
+                                                            alt={category.primaryImage?.alt || category.name || ''}
+                                                            fill
+                                                            className="object-cover"
+                                                        />
+                                                    ) : (
+                                                        <ImageIcon className="h-5 w-5 text-[var(--color-foreground-tertiary)]" />
+                                                    )}
                                                 </div>
-                                            ) : (
-                                                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-gray-100">
-                                                    <ImageIcon className="h-5 w-5 text-gray-400" />
+                                                <div className="min-w-0">
+                                                    <Link href={`/categories/${category.id}`} className="block truncate font-semibold text-[var(--color-foreground)] hover:text-[var(--color-primary)]">
+                                                        {category.name}
+                                                    </Link>
+                                                    <span className="mt-0.5 block truncate font-mono text-[11px] text-[var(--color-foreground-tertiary)]">/{category.slug}</span>
                                                 </div>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="font-medium">
-                                            <Link
-                                                href={`/categories/${category.id}`}
-                                                className="text-blue-600 hover:underline"
-                                            >
-                                                {category.name}
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell className="font-mono text-sm">{category.slug}</TableCell>
-                                        <TableCell>
-                                            <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800">
-                                                {category.priority ?? 0}
-                                            </span>
-                                        </TableCell>
-                                        <TableCell>{category.parent?.name || '-'}</TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-col gap-1 text-xs text-gray-600">
-                                                <span>{category._count?.specifications || 0} specs</span>
-                                                <span>{category._count?.pricingRules || 0} rules</span>
-                                                <span className="font-medium text-blue-600">
-                                                    {category._count?.publishedPricingRules || 0} products
-                                                </span>
                                             </div>
                                         </TableCell>
-                                        <TableCell>{formatDate(category.createdAt)}</TableCell>
+                                        <TableCell>
+                                            <div className="flex w-fit items-center gap-4 rounded-lg border border-[#ededed] bg-[#fafafa] px-3 py-2 tabular-nums">
+                                                <span className="flex flex-col"><strong className="text-sm font-semibold">{category._count?.publishedPricingRules || 0}</strong><span className="text-[10px] text-[var(--color-foreground-tertiary)]">Products</span></span>
+                                                <span className="flex flex-col"><strong className="text-sm font-semibold">{category._count?.pricingRules || 0}</strong><span className="text-[10px] text-[var(--color-foreground-tertiary)]">Rules</span></span>
+                                                <span className="flex flex-col"><strong className="text-sm font-semibold">{category._count?.specifications || 0}</strong><span className="text-[10px] text-[var(--color-foreground-tertiary)]">Specs</span></span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-2 py-1 font-mono text-[11px] text-[var(--color-foreground-secondary)]">#{category.priority ?? 0}</span>
+                                                <span className="max-w-[120px] truncate text-xs text-[var(--color-foreground-secondary)]">{category.parent?.name || 'Top level'}</span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="whitespace-nowrap text-xs text-[var(--color-foreground-secondary)]">{formatDate(category.createdAt)}</TableCell>
                                         <TableCell className="text-right">
-                                            <div className="flex items-center justify-end gap-2">
+                                            <div className="flex items-center justify-end gap-1">
                                                 <Link href={`/categories/${category.id}`}>
-                                                    <Button variant="outline" size="sm">
+                                                    <Button variant="outline" size="sm" className="h-8">
                                                         Manage
                                                     </Button>
                                                 </Link>
                                                 <Button
-                                                    variant="outline"
-                                                    size="sm"
+                                                    variant="ghost"
+                                                    size="icon"
                                                     onClick={() => handleDeleteCategory(category)}
                                                     className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                    aria-label={`Delete ${category.name}`}
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
@@ -302,65 +303,55 @@ export function CategoriesList() {
                             </TableBody>
                         </Table>
                     ) : (
-                        <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 lg:grid-cols-3">
+                        <div className="grid grid-cols-1 gap-3 bg-[#f5f5f5] p-3 sm:grid-cols-2 2xl:grid-cols-3">
                             {categories.map((category) => (
-                                <Card key={category.id} className="overflow-hidden">
-                                    <div className="relative h-48 w-full bg-gray-100">
-                                        {category.primaryImage || category.images?.[0] ? (
-                                            <Image
-                                                src={normalizeImageSrc(
-                                                    category.primaryImage?.url || category.images?.[0]?.url || ''
-                                                )}
-                                                alt={category.primaryImage?.alt || category.name || ''}
-                                                fill
-                                                className="object-cover"
-                                            />
-                                        ) : (
-                                            <div className="flex h-full items-center justify-center">
-                                                <ImageIcon className="h-12 w-12 text-gray-400" />
-                                            </div>
-                                        )}
-                                    </div>
+                                <Card key={category.id} className="group relative overflow-hidden transition-[border-color,box-shadow] duration-200 hover:border-[#c9c9c9] hover:shadow-[var(--shadow-md)]">
                                     <CardContent className="p-4">
-                                        <Link
-                                            href={`/categories/${category.id}`}
-                                            className="block"
-                                        >
-                                            <h3 className="text-lg font-semibold text-gray-900 hover:text-blue-600">
-                                                {category.name}
-                                            </h3>
-                                        </Link>
-                                        <p className="mt-1 text-xs font-mono text-gray-500">{category.slug}</p>
-                                        {category.parent && (
-                                            <p className="mt-1 text-xs text-gray-600">
-                                                Parent: {category.parent.name}
-                                            </p>
-                                        )}
-                                        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                                            <span className="rounded bg-blue-50 px-2 py-1 text-blue-700">
-                                                {category._count?.specifications || 0} Specs
-                                            </span>
-                                            <span className="rounded bg-green-50 px-2 py-1 text-green-700">
-                                                {category._count?.pricingRules || 0} Rules
-                                            </span>
-                                            <span className="rounded bg-purple-50 px-2 py-1 text-purple-700">
-                                                {category._count?.publishedPricingRules || 0} Products
-                                            </span>
+                                        <div className="flex min-w-0 items-start gap-3">
+                                            <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-background-tertiary)]">
+                                                {category.primaryImage || category.images?.[0] ? (
+                                                    <Image
+                                                        src={normalizeImageSrc(category.primaryImage?.url || category.images?.[0]?.url || '')}
+                                                        alt={category.primaryImage?.alt || category.name || ''}
+                                                        fill
+                                                        className="object-cover"
+                                                    />
+                                                ) : (
+                                                    <ImageIcon className="h-6 w-6 text-[var(--color-foreground-tertiary)]" />
+                                                )}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-foreground-tertiary)]">Catalog / #{category.priority ?? 0}</span>
+                                                <Link href={`/categories/${category.id}`} className="mt-1 block truncate text-[15px] font-semibold text-[var(--color-foreground)] hover:text-[var(--color-primary)]">
+                                                    {category.name}
+                                                </Link>
+                                                <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--color-foreground-tertiary)]">/{category.slug}</p>
+                                            </div>
                                         </div>
-                                        <div className="mt-3 flex justify-end gap-2">
+                                        <p className="mt-3 truncate text-xs text-[var(--color-foreground-secondary)]">{category.parent ? `In ${category.parent.name}` : 'Top-level category'}</p>
+                                        <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-[#e9e9e9] bg-[#f8f8f8] px-3 py-3 tabular-nums">
+                                            <span className="flex flex-col"><strong className="text-[15px] font-semibold text-[var(--color-foreground)]">{category._count?.publishedPricingRules || 0}</strong><span className="text-[10px] text-[var(--color-foreground-tertiary)]">Products</span></span>
+                                            <span className="flex flex-col"><strong className="text-[15px] font-semibold text-[var(--color-foreground)]">{category._count?.pricingRules || 0}</strong><span className="text-[10px] text-[var(--color-foreground-tertiary)]">Rules</span></span>
+                                            <span className="flex flex-col"><strong className="text-[15px] font-semibold text-[var(--color-foreground)]">{category._count?.specifications || 0}</strong><span className="text-[10px] text-[var(--color-foreground-tertiary)]">Specs</span></span>
+                                        </div>
+                                        <div className="mt-3 flex items-center justify-between gap-2">
+                                            <span className="text-[11px] text-[var(--color-foreground-tertiary)]">Created {formatDate(category.createdAt)}</span>
+                                            <div className="flex items-center gap-1">
                                             <Link href={`/categories/${category.id}`}>
-                                                <Button variant="outline" size="sm">
+                                                <Button variant="outline" size="sm" className="h-8">
                                                     Manage
                                                 </Button>
                                             </Link>
                                             <Button
-                                                variant="outline"
-                                                size="sm"
+                                                variant="ghost"
+                                                size="icon"
                                                 onClick={() => handleDeleteCategory(category)}
                                                 className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                aria-label={`Delete ${category.name}`}
                                             >
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
+                                            </div>
                                         </div>
                                     </CardContent>
                                 </Card>
@@ -373,4 +364,3 @@ export function CategoriesList() {
         </>
     );
 }
-

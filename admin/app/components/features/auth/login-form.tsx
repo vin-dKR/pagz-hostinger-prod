@@ -7,6 +7,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -79,10 +80,15 @@ export function LoginForm() {
         />
       </div>
 
+      <div className="flex justify-end">
+        <Link href="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+          Forgot password?
+        </Link>
+      </div>
+
       <Button type="submit" className="w-full" isLoading={isLoading}>
         Sign In
       </Button>
     </form>
   );
 }
-

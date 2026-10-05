@@ -7,7 +7,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { PageLoading } from '@/app/components/ui/loading';
@@ -17,7 +16,7 @@ import {
     getUser,
     type User,
 } from '@/lib/api/users.service';
-import { formatCurrency } from '@/lib/utils/format';
+import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { ArrowLeft, Edit, User as UserIcon, Package, MapPin, CreditCard, Star, Heart } from 'lucide-react';
 import { UserProfile } from './user-profile';
 import { UserOrders } from './user-orders';
@@ -98,114 +97,74 @@ export function UserDetail({ userId, initialUser }: UserDetailProps & { initialU
     }
 
     return (
-        <div className="space-y-6">
+        <div className="mx-auto max-w-[1560px] space-y-6 pb-12">
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" onClick={() => router.back()}>
-                        <ArrowLeft className="h-4 w-4 mr-2" />
-                        Back
-                    </Button>
-                    <div className="flex items-center gap-4">
-                        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xl">
+            <div className="border-b border-[var(--color-border)] pb-6">
+                <Button variant="ghost" size="sm" onClick={() => router.back()} className="-ml-2 mb-4 h-8 gap-1.5 text-[var(--color-foreground-secondary)]">
+                    <ArrowLeft className="h-4 w-4" />
+                    Users
+                </Button>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-4">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-accent)] text-lg font-semibold text-[var(--color-primary)] sm:h-16 sm:w-16">
                             {getInitials(user.name, user.email)}
                         </div>
-                        <div>
-                            <h1 className="text-3xl font-bold">{user.name || 'N/A'}</h1>
-                            <p className="text-gray-600">{user.email}</p>
+                        <div className="min-w-0">
+                            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-foreground-tertiary)]">Customer profile</p>
+                            <h1 className="truncate text-2xl font-semibold tracking-tight text-[var(--color-foreground)] sm:text-[30px]">{user.name || 'N/A'}</h1>
+                            <p className="mt-1 truncate text-sm text-[var(--color-foreground-secondary)]">{user.email} <span className="mx-1.5 text-[var(--color-foreground-tertiary)]">·</span> Joined {formatDate(user.createdAt)}</p>
                         </div>
                     </div>
-                </div>
-                <div className="flex items-center gap-2">
-                    {getRoleBadge(user)}
-                    <Button
-                        variant="outline"
-                        onClick={() => setIsEditModalOpen(true)}
-                    >
-                        <Edit className="h-4 w-4 mr-2" />
-                        Edit
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {getRoleBadge(user)}
+                        <Button variant="outline" onClick={() => setIsEditModalOpen(true)} className="gap-2"><Edit className="h-4 w-4" />Edit profile</Button>
+                    </div>
                 </div>
             </div>
 
             {/* Quick Info Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card>
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-600">Total Orders</p>
-                                <p className="text-2xl font-bold">{user.statistics?.totalOrders || 0}</p>
-                            </div>
-                            <Package className="h-8 w-8 text-blue-500" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-600">Total Spent</p>
-                                <p className="text-2xl font-bold">
-                                    {formatCurrency(user.statistics?.totalSpent || 0)}
-                                </p>
-                            </div>
-                            <CreditCard className="h-8 w-8 text-green-500" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-600">Reviews</p>
-                                <p className="text-2xl font-bold">{user.statistics?.totalReviews || 0}</p>
-                            </div>
-                            <Star className="h-8 w-8 text-yellow-500" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-600">Addresses</p>
-                                <p className="text-2xl font-bold">{user.statistics?.addressesCount || 0}</p>
-                            </div>
-                            <MapPin className="h-8 w-8 text-purple-500" />
-                        </div>
-                    </CardContent>
-                </Card>
+            <div className="admin-panel grid grid-cols-2 gap-1 md:grid-cols-4">
+                {[
+                    { label: 'Total orders', value: (user.statistics?.totalOrders || 0).toLocaleString(), icon: Package },
+                    { label: 'Total spent', value: formatCurrency(user.statistics?.totalSpent || 0), icon: CreditCard },
+                    { label: 'Reviews', value: (user.statistics?.totalReviews || 0).toLocaleString(), icon: Star },
+                    { label: 'Addresses', value: (user.statistics?.addressesCount || 0).toLocaleString(), icon: MapPin },
+                ].map((metric) => {
+                    const Icon = metric.icon;
+                    return <div key={metric.label} className="min-w-0"><div className="flex min-h-8 items-center justify-between gap-2 px-3 text-[11px] font-medium text-[var(--color-foreground-secondary)]"><span>{metric.label}</span><Icon className="h-3.5 w-3.5 shrink-0 text-[var(--color-foreground-tertiary)]" aria-hidden="true" /></div><p className="admin-panel-interior truncate px-3 py-4 text-xl font-semibold tracking-tight tabular-nums text-[var(--color-foreground)] sm:text-2xl">{metric.value}</p></div>;
+                })}
             </div>
 
             {/* Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList>
-                    <TabsTrigger value="overview">
+                <div className="overflow-x-auto pb-1">
+                <TabsList className="h-auto w-max min-w-full justify-start rounded-none border-0 border-b border-[var(--color-border)] bg-transparent p-0">
+                    <TabsTrigger value="overview" className="h-10">
                         <UserIcon className="h-4 w-4 mr-2" />
                         Overview
                     </TabsTrigger>
-                    <TabsTrigger value="orders">
+                    <TabsTrigger value="orders" className="h-10">
                         <Package className="h-4 w-4 mr-2" />
                         Orders
                     </TabsTrigger>
-                    <TabsTrigger value="addresses">
+                    <TabsTrigger value="addresses" className="h-10">
                         <MapPin className="h-4 w-4 mr-2" />
                         Addresses
                     </TabsTrigger>
-                    <TabsTrigger value="payments">
+                    <TabsTrigger value="payments" className="h-10">
                         <CreditCard className="h-4 w-4 mr-2" />
                         Payments
                     </TabsTrigger>
-                    <TabsTrigger value="reviews">
+                    <TabsTrigger value="reviews" className="h-10">
                         <Star className="h-4 w-4 mr-2" />
                         Reviews
                     </TabsTrigger>
-                    <TabsTrigger value="wishlist-cart">
+                    <TabsTrigger value="wishlist-cart" className="h-10">
                         <Heart className="h-4 w-4 mr-2" />
                         Wishlist & Cart
                     </TabsTrigger>
                 </TabsList>
+                </div>
 
                 <TabsContent value="overview">
                     <UserProfile userId={userId} user={user} />
@@ -246,4 +205,3 @@ export function UserDetail({ userId, initialUser }: UserDetailProps & { initialU
         </div>
     );
 }
-

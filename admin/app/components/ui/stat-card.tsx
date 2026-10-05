@@ -1,8 +1,3 @@
-/**
- * Reusable Stat Card Component
- * Displays a statistic with icon and optional trend
- */
-
 import { Card, CardContent } from './card';
 import { LucideIcon } from 'lucide-react';
 
@@ -23,35 +18,31 @@ export function StatCard({
     title,
     value,
     icon: Icon,
-    iconColor = 'text-blue-600',
-    bgColor = 'bg-blue-50',
+    iconColor = 'text-[var(--color-primary)]',
+    bgColor = 'bg-[#f3f3f3]',
     trend,
     description,
 }: StatCardProps) {
     return (
         <Card>
-            <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-600">{title}</p>
-                        <p className="mt-2 text-2xl font-bold text-gray-900">{value}</p>
-                        {description && (
-                            <p className="mt-1 text-xs text-gray-500">{description}</p>
-                        )}
-                        {trend && (
-                            <p
-                                className={`mt-1 text-xs ${
-                                    trend.isPositive ? 'text-green-600' : 'text-red-600'
-                                }`}
-                            >
-                                {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%
-                            </p>
-                        )}
-                    </div>
-                    <div className={`rounded-full p-3 ${bgColor}`}>
-                        <Icon className={`h-6 w-6 ${iconColor}`} />
+            <CardContent className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                    <p className="text-[12px] font-medium text-[var(--color-foreground-secondary)]">{title}</p>
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] ${bgColor}`}>
+                        <Icon className={`h-4 w-4 ${iconColor}`} strokeWidth={1.8} />
                     </div>
                 </div>
+                <p className="mt-2 text-[26px] font-semibold leading-none tracking-[-0.04em] text-[var(--color-foreground)] tabular-nums">{value}</p>
+                {(description || trend) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        {trend && (
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${trend.isPositive ? 'bg-[#e9f6f0] text-[#217659]' : 'bg-[#fdf0ef] text-[#b83e3e]'}`}>
+                                {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%
+                            </span>
+                        )}
+                        {description && <p className="text-[11px] text-[var(--color-foreground-tertiary)]">{description}</p>}
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

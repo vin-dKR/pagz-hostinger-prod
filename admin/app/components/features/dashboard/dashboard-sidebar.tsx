@@ -1,177 +1,176 @@
 'use client';
 
-/**
- * Dashboard Sidebar Component
- * Apple-inspired navigation sidebar with subtle styling
- */
-
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import {
-    LayoutDashboard,
-    Package,
-    ShoppingCart,
-    FolderTree,
-    LogOut,
-    Users,
-    Ticket,
-    Truck,
-    CreditCard,
-    AlertTriangle,
-    Star,
-    ChevronLeft,
-    ChevronRight,
-    Menu,
-    X,
-    Image as ImageIcon,
-} from 'lucide-react';
-import { logoutAdmin } from '@/lib/api/auth.service';
-import { setAuthToken } from '@/lib/api/api-client';
+import { sidebarIcons } from './sidebar-icons';
 
 const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Products', href: '/products', icon: Package },
-    { name: 'Orders', href: '/orders', icon: ShoppingCart },
-    { name: 'Categories', href: '/categories', icon: FolderTree },
-    { name: 'Carousel', href: '/carousels', icon: ImageIcon },
-    { name: 'Users', href: '/users', icon: Users },
-    { name: 'Coupons', href: '/coupons', icon: Ticket },
-    { name: 'Shipping', href: '/shipping-methods', icon: Truck },
-    { name: 'Payments', href: '/payments', icon: CreditCard },
-    { name: 'Orphan Payments', href: '/orphan-payments', icon: AlertTriangle },
-    { name: 'Reviews', href: '/reviews', icon: Star },
-]
+    {
+        label: 'Overview',
+        items: [{ name: 'Dashboard', href: '/dashboard', icon: sidebarIcons.dashboard }],
+    },
+    {
+        label: 'Catalog',
+        items: [
+            { name: 'Products', href: '/products', icon: sidebarIcons.products },
+            { name: 'Categories', href: '/categories', icon: sidebarIcons.categories },
+            { name: 'Carousel', href: '/carousels', icon: sidebarIcons.carousel },
+        ],
+    },
+    {
+        label: 'Operations',
+        items: [
+            { name: 'Orders', href: '/orders', icon: sidebarIcons.orders },
+            { name: 'Payments', href: '/payments', icon: sidebarIcons.payments },
+            { name: 'Orphan payments', href: '/orphan-payments', icon: sidebarIcons.orphanPayments },
+            { name: 'Shipping', href: '/shipping-methods', icon: sidebarIcons.shipping },
+        ],
+    },
+    {
+        label: 'Customers & growth',
+        items: [
+            { name: 'Users', href: '/users', icon: sidebarIcons.users },
+            { name: 'Coupons', href: '/coupons', icon: sidebarIcons.coupons },
+            { name: 'Reviews', href: '/reviews', icon: sidebarIcons.reviews },
+        ],
+    },
+];
 
 export function DashboardSidebar() {
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-    // Load sidebar state from localStorage
     useEffect(() => {
-        const savedState = localStorage.getItem('sidebarCollapsed');
-        if (savedState !== null) {
-            setIsCollapsed(savedState === 'true');
-        }
+        setIsCollapsed(localStorage.getItem('sidebarCollapsed') === 'true');
     }, []);
 
-    // Save sidebar state to localStorage
-    const toggleCollapse = () => {
-        const newState = !isCollapsed;
-        setIsCollapsed(newState);
-        localStorage.setItem('sidebarCollapsed', String(newState));
-    };
+    useEffect(() => {
+        if (!isMobileOpen) return;
 
-    const handleLogout = () => {
-        setAuthToken(undefined);
-        logoutAdmin();
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setIsMobileOpen(false);
+        };
+
+        window.addEventListener('keydown', closeOnEscape);
+        return () => window.removeEventListener('keydown', closeOnEscape);
+    }, [isMobileOpen]);
+
+    const toggleCollapse = () => {
+        const next = !isCollapsed;
+        setIsCollapsed(next);
+        localStorage.setItem('sidebarCollapsed', String(next));
     };
 
     return (
         <>
-            {/* Mobile overlay */}
+            <button
+                type="button"
+                aria-label="Open navigation"
+                aria-controls="admin-sidebar"
+                aria-expanded={isMobileOpen}
+                onClick={() => setIsMobileOpen(true)}
+                className="fixed left-3 top-3 z-30 inline-flex h-[34px] w-[34px] items-center justify-center rounded-[8px] border border-[#d3d3d3] bg-[#ededed] text-[#383838] shadow-[0_1px_2px_rgb(24_24_24/0.08)] hover:bg-white lg:hidden"
+            >
+                <Menu className="h-[18px] w-[18px]" />
+            </button>
+
             {isMobileOpen && (
-                <div
-                    className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+                <button
+                    type="button"
+                    aria-label="Close navigation"
                     onClick={() => setIsMobileOpen(false)}
+                    className="fixed inset-0 z-40 bg-[#222]/35 backdrop-blur-[2px] lg:hidden"
                 />
             )}
 
-            {/* Sidebar */}
-            <div className={cn(
-                'flex flex-col bg-[var(--color-background-secondary)] border-r border-[var(--color-border)] transition-all duration-300 ease-in-out',
-                isCollapsed ? 'w-16 lg:w-16' : 'w-64',
-                isMobileOpen ? 'fixed lg:relative inset-y-0 left-0 z-50 lg:z-auto' : 'hidden lg:flex',
-                'flex-col'
-            )}>
-                {/* Header */}
-                <div className="flex h-16 items-center justify-between border-b border-[var(--color-border)] px-4 lg:px-6">
-                    {!isCollapsed && (
-                        <h2 className="text-lg font-semibold text-[var(--color-foreground)] tracking-tight whitespace-nowrap">
-                            Admin Panel
-                        </h2>
-                    )}
-                    <div className="flex items-center gap-2 ml-auto">
-                        {/* Mobile close button */}
-                        <button
-                            onClick={() => setIsMobileOpen(false)}
-                            className="lg:hidden p-1.5 rounded-md hover:bg-[var(--color-accent)] transition-colors"
-                            title="Close sidebar"
-                        >
-                            <X className="h-5 w-5 text-[var(--color-foreground-secondary)]" />
-                        </button>
-                        {/* Desktop collapse button */}
-                        <button
-                            onClick={toggleCollapse}
-                            className="hidden lg:flex p-1.5 rounded-md hover:bg-[var(--color-accent)] transition-colors"
-                            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                        >
-                            {isCollapsed ? (
-                                <ChevronRight className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
-                            ) : (
-                                <ChevronLeft className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
-                            )}
-                        </button>
+            <aside
+                id="admin-sidebar"
+                aria-label="Admin navigation"
+                className={cn(
+                    'z-50 flex h-full w-[240px] shrink-0 flex-col border-r border-[#d6d6d6] bg-[#ededed] transition-[width,transform] duration-200 ease-out lg:relative lg:z-auto lg:mr-[7px] lg:w-[220px] lg:border-r-0',
+                    isCollapsed && 'lg:w-[58px]',
+                    isMobileOpen
+                        ? 'fixed inset-y-0 left-0 shadow-[10px_0_28px_rgb(24_24_24/0.18)]'
+                        : 'fixed inset-y-0 left-0 -translate-x-full lg:translate-x-0'
+                )}
+            >
+                <div className={cn('flex h-[58px] shrink-0 items-center gap-2.5 border-b border-[#d8d8d8] px-3', isCollapsed && 'lg:justify-center lg:px-1')}>
+                    <div className="relative h-[31px] w-[31px] shrink-0">
+                        <span aria-hidden="true" className="absolute inset-[2px] translate-x-[2px] translate-y-[2px] rotate-[7deg] rounded-[7px] border border-[#bcbcbc] bg-white" />
+                        <span className="absolute inset-0 flex items-center justify-center rounded-[7px] bg-[#282828] text-[19px] font-black leading-none tracking-[-0.12em] text-white shadow-[0_2px_4px_rgb(24_24_24/0.14)]">P<span className="self-end pb-[5px] text-[11px]">.</span></span>
                     </div>
-                </div>
-
-                {/* Navigation */}
-                <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
-                    {navigation.map((item) => {
-                        const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-                        return (
-                            <Link
-                                key={item.name}
-                                href={item.href}
-                                onClick={() => setIsMobileOpen(false)}
-                                className={cn(
-                                    'flex items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                                    isActive
-                                        ? 'bg-[var(--color-primary)] text-[var(--color-primary-foreground)] shadow-sm'
-                                        : 'text-[var(--color-foreground-secondary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]',
-                                    isCollapsed && 'justify-center'
-                                )}
-                                title={isCollapsed ? item.name : undefined}
-                            >
-                                <item.icon className={cn(
-                                    'h-5 w-5 transition-colors flex-shrink-0',
-                                    isActive ? 'text-[var(--color-primary-foreground)]' : 'text-[var(--color-foreground-tertiary)]'
-                                )} />
-                                {!isCollapsed && (
-                                    <span className="whitespace-nowrap">{item.name}</span>
-                                )}
-                            </Link>
-                        );
-                    })}
-                </nav>
-
-                {/* Logout */}
-                <div className="border-t border-[var(--color-border)] p-4">
+                    <div className={cn('min-w-0 flex-1', isCollapsed && 'lg:sr-only')}>
+                        <p className="truncate text-[14px] font-black leading-none tracking-[-0.055em] text-[#242424]">Print E-Com</p>
+                        <p className="mt-1 text-[9px] font-semibold uppercase leading-none tracking-[0.19em] text-[#888]">Operations</p>
+                    </div>
                     <button
-                        onClick={handleLogout}
-                        className={cn(
-                            'flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm font-medium text-[var(--color-foreground-secondary)] transition-all duration-200 hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]',
-                            isCollapsed && 'justify-center'
-                        )}
-                        title={isCollapsed ? 'Logout' : undefined}
+                        type="button"
+                        aria-label="Close navigation"
+                        onClick={() => setIsMobileOpen(false)}
+                        className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-[7px] text-[#555] hover:bg-white lg:hidden"
                     >
-                        <LogOut className="h-5 w-5 flex-shrink-0" />
-                        {!isCollapsed && <span className="whitespace-nowrap">Logout</span>}
+                        <X className="h-4 w-4" />
                     </button>
                 </div>
-            </div>
 
-            {/* Mobile menu button */}
-            <button
-                onClick={() => setIsMobileOpen(true)}
-                className="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-md bg-[var(--color-background-secondary)] border border-[var(--color-border)] shadow-sm hover:bg-[var(--color-accent)] transition-colors"
-                title="Open menu"
-            >
-                <Menu className="h-5 w-5 text-[var(--color-foreground)]" />
-            </button>
+                <nav className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-2.5 py-4" aria-label="Sections">
+                    {navigation.map((group, index) => (
+                        <div key={group.label} className={cn(index > 0 && 'border-t border-[#d9d9d9] pt-3')}>
+                            <p className={cn('mb-1.5 px-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b8b8b]', isCollapsed && 'lg:sr-only')}>
+                                {group.label}
+                            </p>
+                            <div className="space-y-0.5">
+                                {group.items.map((item) => {
+                                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                                    return (
+                                        <Link
+                                            key={item.href}
+                                            href={item.href}
+                                            title={isCollapsed ? item.name : undefined}
+                                            aria-current={isActive ? 'page' : undefined}
+                                            onClick={() => setIsMobileOpen(false)}
+                                            className={cn(
+                                                'group relative flex h-[35px] items-center gap-2.5 rounded-[9px] border px-2.5 text-[12px] transition-[background-color,border-color,box-shadow,color]',
+                                                isActive
+                                                    ? 'border-[#d6d6d6] bg-white font-semibold text-[#242424] shadow-[0_1px_2px_rgb(24_24_24/0.07),inset_0_1px_0_#fff]'
+                                                    : 'border-transparent font-medium text-[#555] hover:border-[#d9d9d9] hover:bg-[#f5f5f5] hover:text-[#242424]',
+                                                isCollapsed && 'lg:justify-center lg:px-0'
+                                            )}
+                                        >
+                                            <item.icon className={cn('h-[18px] w-[18px] shrink-0', isActive ? 'text-[#262626]' : 'text-[#727272] group-hover:text-[#343434]')} />
+                                            <span className={cn('truncate', isCollapsed && 'lg:sr-only')}>{item.name}</span>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </nav>
+
+                <div className="shrink-0 border-t border-[#d7d7d7] p-2.5">
+                    <div className={cn('flex items-center gap-2.5 rounded-[9px] px-1.5 py-1.5', isCollapsed && 'lg:justify-center lg:px-0')}>
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] border border-[#d2d2d2] bg-white text-[10px] font-bold text-[#282828] shadow-[0_1px_2px_rgb(24_24_24/0.055)]">A</div>
+                        <div className={cn('min-w-0', isCollapsed && 'lg:sr-only')}>
+                            <p className="truncate text-[11px] font-semibold text-[#353535]">Admin workspace</p>
+                            <p className="truncate text-[10px] text-[#8a8a8a]">Store management</p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={toggleCollapse}
+                        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                        className={cn('mt-0.5 hidden h-7 w-full items-center gap-2 rounded-[7px] px-2 text-[11px] font-medium text-[#888] hover:bg-white hover:text-[#292929] lg:flex', isCollapsed && 'justify-center px-0')}
+                    >
+                        {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                        {!isCollapsed && <span>Collapse sidebar</span>}
+                    </button>
+                </div>
+            </aside>
         </>
     );
 }
-

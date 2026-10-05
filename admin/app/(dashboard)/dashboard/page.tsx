@@ -1,9 +1,3 @@
-/**
- * Dashboard Overview Page
- * Apple-inspired dashboard with clean layout and generous spacing
- * Server Component – data fetched on the server via helper.
- */
-
 import { DashboardStats } from '@/app/components/features/dashboard/dashboard-stats';
 import { RecentOrders } from '@/app/components/features/dashboard/recent-orders';
 import { RevenueChart } from '@/app/components/features/dashboard/revenue-chart';
@@ -21,61 +15,40 @@ export default async function DashboardPage() {
         data = await getDashboardOverview();
     } catch (error) {
         console.error('[DASHBOARD] Error loading dashboard data:', error);
-        // Set data to null so components show loading states
         data = null;
     }
 
     return (
-        <div className="space-y-8 max-w-[1600px]">
-            <header className="flex flex-col gap-2">
-                <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight">Dashboard</h1>
-                <p className="text-sm text-[var(--color-foreground-secondary)]">
-                    Overview of your e-print store
-                </p>
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 pb-12 lg:gap-4">
+            <header className="flex flex-wrap items-end justify-between gap-3 border-b border-[#dedede] pb-3">
+                <div>
+                    <div className="flex items-baseline gap-2.5">
+                        <span className="font-mono text-[10px] font-medium text-[#999]">01 /</span>
+                        <h1 className="text-[25px] font-semibold leading-tight tracking-[-0.04em] text-[#252525] sm:text-[28px]">Dashboard</h1>
+                    </div>
+                    <p className="mt-0.5 text-[12px] text-[#777]">
+                        Your store performance and recent activity at a glance.
+                    </p>
+                </div>
             </header>
 
-            {/* Top stats */}
-            <DashboardStats
-                stats={data?.stats}
-                loading={!data}
-            />
+            <section aria-label="Store metrics">
+                <DashboardStats stats={data?.stats} timeSeries={data?.timeSeries} loading={!data} />
+            </section>
 
-            {/* Charts row */}
-            <div className="grid gap-6 md:grid-cols-2">
-                <RevenueChart
-                    data={data?.timeSeries.revenueLast30Days || []}
-                    loading={!data}
-                />
-                <OrdersTrendChart
-                    data={data?.timeSeries.ordersLast30Days || []}
-                    loading={!data}
-                />
-            </div>
+            <section aria-label="Sales analytics" className="grid min-w-0 gap-3 xl:grid-cols-2">
+                <RevenueChart data={data?.timeSeries.revenueLast30Days || []} loading={!data} />
+                <OrdersTrendChart data={data?.timeSeries.ordersLast30Days || []} loading={!data} />
+            </section>
 
-            {/* Tables / lists row */}
-            <div className="grid gap-6 md:grid-cols-2">
-                <RecentOrders
-                    recentOrders={data?.recentOrders || []}
-                    loading={!data}
-                />
-                <TopProducts
-                    topProducts={data?.topProducts || []}
-                    loading={!data}
-                />
-            </div>
-
-            {/* Secondary row */}
-            <div className="grid gap-6 md:grid-cols-2">
-                <RecentCustomers
-                    recentCustomers={data?.recentCustomers || []}
-                    loading={!data}
-                />
-                <RecentCoupons
-                    recentCoupons={data?.recentCoupons || []}
-                    loading={!data}
-                />
-            </div>
+            <section aria-label="Recent store activity" className="space-y-3">
+                <RecentOrders recentOrders={data?.recentOrders || []} loading={!data} />
+                <div className="grid min-w-0 items-start gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+                    <TopProducts topProducts={data?.topProducts || []} loading={!data} />
+                    <RecentCustomers recentCustomers={data?.recentCustomers || []} loading={!data} />
+                    <RecentCoupons recentCoupons={data?.recentCoupons || []} loading={!data} />
+                </div>
+            </section>
         </div>
     );
 }
-

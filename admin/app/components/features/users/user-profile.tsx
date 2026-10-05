@@ -1,14 +1,8 @@
-/**
- * User Profile Tab Component
- * Displays user information and statistics
- */
-
 'use client';
 
 import { Card, CardContent } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { formatDate } from '@/lib/utils/format';
-import { Mail, Phone, Shield, Calendar, User as UserIcon } from 'lucide-react';
 import { User } from '@/lib/api/users.service';
 import { UserSecurityActions } from './user-security-actions';
 import { UserCommunication } from './user-communication';
@@ -19,175 +13,68 @@ interface UserProfileProps {
 }
 
 export function UserProfile({ user }: UserProfileProps) {
+    const metrics = user.statistics ? [
+        { label: 'Total orders', value: user.statistics.totalOrders },
+        { label: 'Total spent', value: `₹${user.statistics.totalSpent.toLocaleString()}` },
+        { label: 'Average order value', value: `₹${user.statistics.avgOrderValue?.toLocaleString() || '0'}` },
+        { label: 'Total reviews', value: user.statistics.totalReviews },
+        { label: 'Addresses', value: user.statistics.addressesCount },
+        { label: 'Wishlist items', value: user.statistics.wishlistItemsCount },
+        { label: 'Cart items', value: user.statistics.cartItemsCount },
+        { label: 'Account age', value: `${user.statistics.accountAge || 0} days` },
+    ] : [];
+
     return (
-        <div className="space-y-6">
-            {/* User Information Card */}
-            <Card>
-                <CardContent className="p-6">
-                    <h2 className="text-xl font-semibold mb-4">User Information</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="text-sm text-gray-600">Full Name</label>
-                            <p className="font-medium">{user.name || 'N/A'}</p>
+        <div className="space-y-5">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]">
+                <Card>
+                    <CardContent className="p-5 sm:p-6">
+                        <div className="mb-5 border-b border-[var(--color-border)] pb-4">
+                            <h2 className="text-sm font-semibold text-[var(--color-foreground)]">Account details</h2>
+                            <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Profile and registration information</p>
                         </div>
-                        <div>
-                            <label className="text-sm text-gray-600">Email</label>
-                            <div className="flex items-center gap-2">
-                                <Mail className="h-4 w-4 text-gray-400" />
-                                <a href={`mailto:${user.email}`} className="text-blue-600 hover:underline">
-                                    {user.email}
-                                </a>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-sm text-gray-600">Phone</label>
-                            {user.phone ? (
-                                <div className="flex items-center gap-2">
-                                    <Phone className="h-4 w-4 text-gray-400" />
-                                    <a href={`tel:${user.phone}`} className="text-blue-600 hover:underline">
-                                        {user.phone}
-                                    </a>
-                                </div>
-                            ) : (
-                                <p className="text-gray-400">N/A</p>
-                            )}
-                        </div>
-                        <div>
-                            <label className="text-sm text-gray-600">Role</label>
-                            <div className="flex items-center gap-2 mt-1">
-                                <Shield className="h-4 w-4 text-gray-400" />
-                                {user.isSuperAdmin ? (
-                                    <Badge variant="destructive">Super Admin</Badge>
-                                ) : user.isAdmin ? (
-                                    <Badge variant="default">Admin</Badge>
-                                ) : (
-                                    <Badge variant="secondary">Customer</Badge>
-                                )}
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-sm text-gray-600">User ID</label>
-                            <p className="font-mono text-sm">{user.id}</p>
-                        </div>
-                        {user.supabaseId && (
-                            <div>
-                                <label className="text-sm text-gray-600">Supabase ID</label>
-                                <p className="font-mono text-sm">{user.supabaseId}</p>
-                            </div>
-                        )}
-                        <div>
-                            <label className="text-sm text-gray-600">Registration Date</label>
-                            <div className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4 text-gray-400" />
-                                <p>{formatDate(user.createdAt)}</p>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-sm text-gray-600">Last Updated</label>
-                            <p>{formatDate(user.updatedAt)}</p>
-                        </div>
+                        <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+                            <div><dt className="text-xs text-[var(--color-foreground-tertiary)]">Full name</dt><dd className="mt-1 break-words text-sm font-medium text-[var(--color-foreground)]">{user.name || 'N/A'}</dd></div>
+                            <div><dt className="text-xs text-[var(--color-foreground-tertiary)]">Email</dt><dd className="mt-1 break-all text-sm font-medium"><a href={`mailto:${user.email}`} className="text-[var(--color-primary)] hover:underline">{user.email}</a></dd></div>
+                            <div><dt className="text-xs text-[var(--color-foreground-tertiary)]">Phone</dt><dd className="mt-1 text-sm font-medium">{user.phone ? <a href={`tel:${user.phone}`} className="text-[var(--color-primary)] hover:underline">{user.phone}</a> : <span className="text-[var(--color-foreground-tertiary)]">N/A</span>}</dd></div>
+                            <div><dt className="text-xs text-[var(--color-foreground-tertiary)]">Role</dt><dd className="mt-1">{user.isSuperAdmin ? <Badge variant="destructive">Super Admin</Badge> : user.isAdmin ? <Badge variant="default">Admin</Badge> : <Badge variant="secondary">Customer</Badge>}</dd></div>
+                            <div><dt className="text-xs text-[var(--color-foreground-tertiary)]">Registration date</dt><dd className="mt-1 text-sm font-medium text-[var(--color-foreground)]">{formatDate(user.createdAt)}</dd></div>
+                            <div><dt className="text-xs text-[var(--color-foreground-tertiary)]">Last updated</dt><dd className="mt-1 text-sm font-medium text-[var(--color-foreground)]">{formatDate(user.updatedAt)}</dd></div>
+                            <div><dt className="text-xs text-[var(--color-foreground-tertiary)]">User ID</dt><dd className="mt-1 break-all font-mono text-xs text-[var(--color-foreground-secondary)]">{user.id}</dd></div>
+                            {user.supabaseId && <div><dt className="text-xs text-[var(--color-foreground-tertiary)]">Supabase ID</dt><dd className="mt-1 break-all font-mono text-xs text-[var(--color-foreground-secondary)]">{user.supabaseId}</dd></div>}
+                        </dl>
+                    </CardContent>
+                </Card>
+                {user.statistics && (
+                    <Card>
+                        <CardContent className="p-5 sm:p-6">
+                            <div className="mb-5 border-b border-[var(--color-border)] pb-4"><h2 className="text-sm font-semibold text-[var(--color-foreground)]">Recent activity</h2><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Latest order and review dates</p></div>
+                            <dl className="space-y-5">
+                                <div className="flex items-center justify-between gap-3"><dt className="text-sm text-[var(--color-foreground-secondary)]">Last order</dt><dd className="text-sm font-medium text-[var(--color-foreground)]">{user.statistics.lastOrderDate ? formatDate(user.statistics.lastOrderDate) : 'Never'}</dd></div>
+                                <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-5"><dt className="text-sm text-[var(--color-foreground-secondary)]">Last review</dt><dd className="text-sm font-medium text-[var(--color-foreground)]">{user.statistics.lastReviewDate ? formatDate(user.statistics.lastReviewDate) : 'Never'}</dd></div>
+                            </dl>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
+
+            {user.statistics && (
+                <section className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-sm">
+                    <div className="border-b border-[var(--color-border)] px-5 py-4 sm:px-6"><h2 className="text-sm font-semibold text-[var(--color-foreground)]">Customer activity</h2></div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4">
+                        {metrics.map((metric) => <div key={metric.label} className="min-w-0 border-b border-r border-[var(--color-border)] px-4 py-4 sm:px-5"><p className="truncate text-xs text-[var(--color-foreground-tertiary)]">{metric.label}</p><p className="mt-2 truncate text-lg font-semibold tracking-tight tabular-nums text-[var(--color-foreground)]">{metric.value}</p></div>)}
                     </div>
-                </CardContent>
-            </Card>
-
-            {/* Statistics Card */}
-            {user.statistics && (
-                <Card>
-                    <CardContent className="p-6">
-                        <h2 className="text-xl font-semibold mb-4">Statistics</h2>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div>
-                                <label className="text-sm text-gray-600">Total Orders</label>
-                                <p className="text-2xl font-bold">{user.statistics.totalOrders}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-gray-600">Total Spent</label>
-                                <p className="text-2xl font-bold">₹{user.statistics.totalSpent.toLocaleString()}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-gray-600">Average Order Value</label>
-                                <p className="text-2xl font-bold">
-                                    ₹{user.statistics.avgOrderValue?.toLocaleString() || '0'}
-                                </p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-gray-600">Total Reviews</label>
-                                <p className="text-2xl font-bold">{user.statistics.totalReviews}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-gray-600">Addresses</label>
-                                <p className="text-2xl font-bold">{user.statistics.addressesCount}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-gray-600">Wishlist Items</label>
-                                <p className="text-2xl font-bold">{user.statistics.wishlistItemsCount}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-gray-600">Cart Items</label>
-                                <p className="text-2xl font-bold">{user.statistics.cartItemsCount}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-gray-600">Account Age</label>
-                                <p className="text-2xl font-bold">{user.statistics.accountAge || 0} days</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                </section>
             )}
 
-            {/* Activity Summary */}
-            {user.statistics && (
-                <Card>
-                    <CardContent className="p-6">
-                        <h2 className="text-xl font-semibold mb-4">Activity Summary</h2>
-                        <div className="space-y-2">
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Last Order</span>
-                                <span>
-                                    {user.statistics.lastOrderDate
-                                        ? formatDate(user.statistics.lastOrderDate)
-                                        : 'Never'}
-                                </span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Last Review</span>
-                                <span>
-                                    {user.statistics.lastReviewDate
-                                        ? formatDate(user.statistics.lastReviewDate)
-                                        : 'Never'}
-                                </span>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* Security Actions */}
             <Card>
-                <CardContent className="p-6">
-                    <h2 className="text-xl font-semibold mb-4">Security & Account Management</h2>
-                    <UserSecurityActions
-                        userId={user.id}
-                        userName={user.name || user.email}
-                        isSuspended={user.notificationPreferences && (user.notificationPreferences as any)?.suspension?.isSuspended}
-                        onSuccess={() => {
-                            // Reload user data
-                            window.location.reload();
-                        }}
-                    />
+                <CardContent className="p-5 sm:p-6">
+                    <div className="mb-5 border-b border-[var(--color-border)] pb-4"><h2 className="text-sm font-semibold text-[var(--color-foreground)]">Security & account management</h2><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Existing account controls and access settings</p></div>
+                    <UserSecurityActions userId={user.id} userName={user.name || user.email} isSuspended={user.notificationPreferences && (user.notificationPreferences as any)?.suspension?.isSuspended} onSuccess={() => { window.location.reload(); }} />
                 </CardContent>
             </Card>
 
-            {/* Communication */}
-            <UserCommunication
-                userId={user.id}
-                user={user}
-                onSuccess={() => {
-                    // Reload user data
-                    window.location.reload();
-                }}
-            />
+            <UserCommunication userId={user.id} user={user} onSuccess={() => { window.location.reload(); }} />
         </div>
     );
 }
-

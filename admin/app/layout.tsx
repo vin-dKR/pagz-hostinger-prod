@@ -4,8 +4,8 @@ import { ToastProvider } from '@/app/components/providers/toast-provider';
 import { QueryProvider } from '@/app/components/providers/query-provider';
 
 export const metadata: Metadata = {
-    title: 'Admin Panel - Print E-Com',
-    description: 'Admin panel for managing the e-print store',
+    title: 'Print E-Com | Admin Console',
+    description: 'Manage the Print E-Com store',
 };
 
 export default function RootLayout({
@@ -23,4 +23,3 @@ export default function RootLayout({
         </html>
     );
 }
-

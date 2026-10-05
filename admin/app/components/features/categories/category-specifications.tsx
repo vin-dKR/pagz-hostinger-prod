@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
+import { Select } from '@/app/components/ui/select';
 import { Alert } from '@/app/components/ui/alert';
 import {
     getCategoryById,
@@ -329,7 +330,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
             <>
                 {ConfirmDialog}
                 <div className="flex min-h-[200px] items-center justify-center">
-                    <p className="text-sm text-gray-500">Loading specifications...</p>
+                    <p className="text-sm text-[var(--color-foreground-secondary)]">Loading specifications...</p>
                 </div>
             </>
         );
@@ -347,12 +348,12 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
     return (
         <>
             {ConfirmDialog}
-            <div className="space-y-6">
+            <div className="space-y-5">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">
+                    <h2 className="text-xl font-semibold tracking-[-0.02em] text-[var(--color-foreground)]">
                         Specifications - {category.name}
-                    </h1>
-                    <p className="mt-2 text-sm text-gray-600">
+                    </h2>
+                    <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
                         Define the configurable fields and options for this category. These power the
                         dynamic service page.
                     </p>
@@ -360,14 +361,14 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
 
                 {error && <Alert variant="error">{error}</Alert>}
 
-                <div className="grid gap-6 md:grid-cols-2">
+                <div className="grid items-start gap-5 xl:grid-cols-2">
                     {/* Specifications list & form */}
                     <Card>
                         <CardHeader>
                             <CardTitle>Specifications</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <form onSubmit={handleSubmitSpec} className="space-y-3">
+                            <form onSubmit={handleSubmitSpec} className="space-y-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="spec-name">Name</Label>
                                     <Input
@@ -387,9 +388,8 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
 
                                 <div className="space-y-2">
                                     <Label htmlFor="spec-type">Type</Label>
-                                    <select
+                                    <Select
                                         id="spec-type"
-                                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                         value={specForm.type}
                                         onChange={(e) =>
                                             setSpecForm((prev) => ({
@@ -403,10 +403,10 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                 {t.label}
                                             </option>
                                         ))}
-                                    </select>
+                                    </Select>
                                 </div>
 
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3">
                                     <input
                                         id="spec-required"
                                         type="checkbox"
@@ -417,7 +417,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                 isRequired: e.target.checked,
                                             }))
                                         }
-                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                     />
                                     <Label htmlFor="spec-required">Required</Label>
                                 </div>
@@ -436,16 +436,15 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                         }
                                     />
                                     {!specForm.id && (
-                                        <p className="text-xs text-gray-500">Default: {specs.length} (will be auto-set to {specs.length + 1} if left empty)</p>
+                                        <p className="text-xs text-[var(--color-foreground-tertiary)]">Default: {specs.length} (will be auto-set to {specs.length + 1} if left empty)</p>
                                     )}
                                 </div>
 
                                 {/* Dependency Selector */}
                                 <div className="space-y-2">
                                     <Label htmlFor="spec-depends-on">Depends On (Optional)</Label>
-                                    <select
+                                    <Select
                                         id="spec-depends-on"
-                                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                         value={specForm.dependsOn?.specificationSlug || ''}
                                         onChange={(e) => {
                                             const parentSlug = e.target.value;
@@ -498,7 +497,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                     {parentSpec.name} ({parentSpec.slug}) - Order {parentSpec.displayOrder}
                                                 </option>
                                             ))}
-                                    </select>
+                                    </Select>
                                     {specForm.dependsOn && (
                                         <div className="flex items-center gap-2">
                                             <input
@@ -516,7 +515,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                             : null,
                                                     }))
                                                 }
-                                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                             />
                                             <Label htmlFor="spec-depends-required" className="text-sm">
                                                 Required dependency (hide this spec if parent not selected)
@@ -524,13 +523,13 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                         </div>
                                     )}
                                     {specForm.dependsOn && (
-                                        <p className="text-xs text-gray-500">
+                                        <p className="text-xs leading-relaxed text-[var(--color-foreground-tertiary)]">
                                             This specification will only be shown when "{specs.find((s) => s.slug === specForm.dependsOn?.specificationSlug)?.name}" is selected.
                                         </p>
                                     )}
                                 </div>
 
-                                <div className="flex justify-end gap-2">
+                                <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-4">
                                     {specForm.id && (
                                         <Button
                                             type="button"
@@ -547,28 +546,28 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                 </div>
                             </form>
 
-                            <div className="mt-6 space-y-2">
-                                <h3 className="text-sm font-semibold text-gray-700">Existing Specifications</h3>
+                            <div className="mt-6 space-y-3 border-t border-[var(--color-border)] pt-5">
+                                <h3 className="text-[13px] font-semibold text-[var(--color-foreground)]">Existing specifications</h3>
                                 {specs.length === 0 ? (
-                                    <p className="text-xs text-gray-500">
+                                    <p className="text-xs text-[var(--color-foreground-tertiary)]">
                                         No specifications yet. Create the first one using the form above.
                                     </p>
                                 ) : (
-                                    <div className="space-y-2 max-h-80 overflow-auto">
+                                    <div className="max-h-80 space-y-2 overflow-auto">
                                         {specs
                                             .slice()
                                             .sort((a, b) => a.displayOrder - b.displayOrder)
                                             .map((spec) => (
                                                 <div
                                                     key={spec.id}
-                                                    className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                                                    className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3.5 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
                                                 >
-                                                    <div>
-                                                        <div className="font-medium text-gray-900">
+                                                    <div className="min-w-0">
+                                                        <div className="font-semibold text-[var(--color-foreground)]">
                                                             {spec.name}{' '}
-                                                            <span className="text-xs text-gray-500">({spec.slug})</span>
+                                                            <span className="text-xs font-normal text-[var(--color-foreground-tertiary)]">({spec.slug})</span>
                                                         </div>
-                                                        <div className="text-xs text-gray-500">
+                                                        <div className="mt-1 text-xs leading-relaxed text-[var(--color-foreground-secondary)]">
                                                             {spec.type} • {spec.isRequired ? 'Required' : 'Optional'} • Order{' '}
                                                             {spec.displayOrder}
                                                             {spec.dependsOn && (
@@ -576,7 +575,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                             )}
                                                         </div>
                                                     </div>
-                                                    <div className="flex gap-2">
+                                                    <div className="flex flex-wrap gap-2 sm:shrink-0">
                                                         <Button
                                                             size="sm"
                                                             variant={selectedSpecId === spec.id ? 'default' : 'outline'}
@@ -614,12 +613,12 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                         </CardHeader>
                         <CardContent className="space-y-4">
                             {!selectedSpecId ? (
-                                <p className="text-sm text-gray-500">
+                                <p className="rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)] bg-[var(--color-background)] px-4 py-8 text-center text-[13px] text-[var(--color-foreground-tertiary)]">
                                     Select a specification to manage its options.
                                 </p>
                             ) : (
                                 <>
-                                    <form onSubmit={handleSubmitOption} className="space-y-3">
+                                    <form onSubmit={handleSubmitOption} className="space-y-4">
                                         <div className="space-y-2">
                                             <Label htmlFor="opt-label">Label</Label>
                                             <Input
@@ -744,7 +743,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                             </p>
                                         </div>
 
-                                        <div className="flex justify-end gap-2">
+                                        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-4">
                                             {optionForm.id && (
                                                 <Button
                                                     type="button"
@@ -761,8 +760,8 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                         </div>
                                     </form>
 
-                                    <div className="mt-6 space-y-2">
-                                        <h3 className="text-sm font-semibold text-gray-700">Existing Options</h3>
+                                    <div className="mt-6 space-y-3 border-t border-[var(--color-border)] pt-5">
+                                        <h3 className="text-[13px] font-semibold text-[var(--color-foreground)]">Existing options</h3>
                                         {loadingOptions ? (
                                             <p className="text-xs text-gray-500">Loading options...</p>
                                         ) : options.length === 0 ? (
@@ -770,17 +769,17 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                 No options yet. Add options using the form above.
                                             </p>
                                         ) : (
-                                            <div className="space-y-2 max-h-80 overflow-auto">
+                                            <div className="max-h-80 space-y-2 overflow-auto">
                                                 {options
                                                     .slice()
                                                     .sort((a, b) => a.displayOrder - b.displayOrder)
                                                     .map((opt) => (
                                                         <div
                                                             key={opt.id}
-                                                            className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                                                            className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3.5 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
                                                         >
-                                                            <div>
-                                                                <div className="font-medium text-gray-900">
+                                                            <div className="min-w-0">
+                                                                <div className="font-semibold text-[var(--color-foreground)]">
                                                                     {opt.label}{' '}
                                                                     <span className="text-xs text-gray-500">({opt.value})</span>
                                                                 </div>
@@ -821,7 +820,7 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
                                                                     })()}
                                                                 </div>
                                                             </div>
-                                                            <div className="flex gap-2">
+                                                            <div className="flex shrink-0 gap-2">
                                                                 <Button
                                                                     size="sm"
                                                                     variant="outline"
@@ -851,5 +850,4 @@ export function CategorySpecifications({ categoryId }: CategorySpecificationsPro
         </>
     );
 }
-
 

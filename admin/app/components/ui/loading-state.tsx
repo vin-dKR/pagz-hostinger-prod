@@ -22,15 +22,15 @@ export function LoadingState({
     };
 
     const content = (
-        <div className="flex flex-col items-center justify-center py-8">
-            <Loader2 className={`${sizeClasses[size]} animate-spin text-gray-400 mb-2`} />
-            <p className="text-sm text-gray-600">{message}</p>
+        <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className={`${sizeClasses[size]} mb-3 animate-spin text-[var(--color-primary)]`} />
+            <p className="text-[13px] text-[var(--color-foreground-secondary)]">{message}</p>
         </div>
     );
 
     if (fullScreen) {
         return (
-            <div className="fixed inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-50">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-background)]/80 backdrop-blur-sm">
                 {content}
             </div>
         );

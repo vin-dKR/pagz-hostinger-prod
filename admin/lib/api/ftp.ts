@@ -18,7 +18,6 @@
  *   The domain is prepended at render time via `getPublicFileUrl()`.
  */
 
-import { getAuthToken } from './api-client';
 import { extractPathFromUrl } from '../utils/fileUrl';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -52,10 +51,9 @@ export type FTPFolder = (typeof FTP_FOLDERS)[keyof typeof FTP_FOLDERS];
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
 
-/** Build auth headers — adds Bearer token when the user is signed in. */
+/** The admin FTP endpoints are intentionally authentication-free. */
 function buildAuthHeaders(): Record<string, string> {
-    const token = getAuthToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    return {};
 }
 
 interface RawFTPApiResponse {

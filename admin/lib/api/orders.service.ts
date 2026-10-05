@@ -543,9 +543,6 @@ export async function getOrderInvoice(orderId: string): Promise<string> {
         fullUrl,
         {
             method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${getAuthToken()}`,
-            },
         }
     );
 
@@ -587,16 +584,12 @@ export async function exportOrders(
     const queryString = queryParams.toString();
     const endpoint = `/admin/orders/export${queryString ? `?${queryString}` : ''}`;
 
-    const token = getAuthToken();
     const fullUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1'}${endpoint}`;
 
     const response = await fetch(
         fullUrl,
         {
             method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-            },
         }
     );
 
@@ -623,21 +616,5 @@ export async function exportOrders(
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
-}
-
-// Helper function to get auth token (from api-client)
-function getAuthToken(): string | null {
-    if (typeof window === 'undefined') {
-        return null;
-    }
-
-    const cookies = document.cookie.split(';');
-    const tokenCookie = cookies.find(cookie => cookie.trim().startsWith('admin_token='));
-
-    if (!tokenCookie) {
-        return null;
-    }
-
-    return tokenCookie.split('=')[1]?.trim() || null;
 }
 

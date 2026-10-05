@@ -332,11 +332,14 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
     ];
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
+        <div className="mx-auto max-w-[1560px] space-y-3 pb-10">
+            <div className="flex flex-wrap items-end justify-between gap-3 py-1">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">{category.name}</h1>
-                    <p className="mt-2 text-sm text-gray-600">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <h1 className="text-[var(--color-foreground)]">{category.name}</h1>
+                        <span className="rounded border border-[#e2e2e2] bg-[#f1f1f1] px-1.5 py-0.5 font-mono text-[9px] uppercase text-[#8a8a8a]">Catalog / Categories</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-[var(--color-foreground-secondary)]">
                         Manage category details, UI configuration, specifications, and pricing.
                     </p>
                 </div>
@@ -349,17 +352,17 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
             )}
 
             {/* Tabs */}
-            <div className="border-b border-gray-200">
-                <nav className="-mb-px flex space-x-8">
+            <div className="w-fit max-w-full overflow-x-auto rounded-[10px] border border-[#dedede] bg-[#ededed] p-1 shadow-[inset_0_1px_2px_#00000005]">
+                <nav className="flex min-w-max gap-1" aria-label="Category sections">
                     {tabs.map((tab) => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
                             className={`
-                whitespace-nowrap border-b-2 px-1 py-4 text-sm font-medium
+                whitespace-nowrap rounded-[7px] border px-3 py-2 text-xs font-medium
                 ${activeTab === tab.id
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                                    ? 'border-[#d8d8d8] bg-white text-[#252525] shadow-[0_1px_2px_#00000008]'
+                                    : 'border-transparent text-[#777] hover:bg-[#f5f5f5] hover:text-[#252525]'
                                 }
               `}
                         >
@@ -371,7 +374,7 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
             {/* Tab Content */}
             {activeTab === 'overview' && (
-                <div className="grid gap-6 md:grid-cols-2">
+                <div className="grid items-start gap-3 md:grid-cols-2">
                     {/* Basic info */}
                     <Card>
                         <CardHeader>
@@ -686,5 +689,3 @@ export function CategoryDetail({ categoryId }: CategoryDetailProps) {
         </div>
     );
 }
-
-

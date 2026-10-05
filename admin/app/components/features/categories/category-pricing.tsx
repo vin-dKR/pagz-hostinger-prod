@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
+import { Select } from '@/app/components/ui/select';
 import { Alert } from '@/app/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/app/components/ui/dialog';
 import {
@@ -774,7 +775,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                             <Label htmlFor="publish-description">Description (optional)</Label>
                             <textarea
                                 id="publish-description"
-                                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="min-h-24 w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-foreground)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e8e6ff]"
                                 value={publishFormData.description}
                                 onChange={(e) => setPublishFormData(prev => ({ ...prev, description: e.target.value }))}
                                 rows={3}
@@ -863,7 +864,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                             setSelectedAddonIds(prev => prev.filter(id => id !== addon.id));
                                                         }
                                                     }}
-                                                    className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    className="mt-1 h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                                 />
                                                 <label htmlFor={`addon-${addon.id}`} className="flex-1 text-sm cursor-pointer">
                                                     <div className="font-medium text-gray-900">
@@ -906,18 +907,18 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-            <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900">
+            <div className="space-y-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <h2 className="text-[15px] font-medium tracking-[-0.02em] text-[var(--color-foreground)]">
                         Pricing Rules - {category.name}
-                    </h1>
-                    <p className="mt-2 text-sm text-gray-600">
+                    </h2>
+                    <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
                         Configure how prices are calculated for this category based on specifications and
                         quantity.
                     </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         {!isFormVisible && (
                             <Button
                                 variant="outline"
@@ -946,52 +947,33 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
 
                 {error && <Alert variant="error">{error}</Alert>}
 
-                <div className="flex gap-6 relative items-start">
+                <div className="relative flex flex-col gap-5 2xl:flex-row 2xl:items-start">
                     {/* Rule form - Sidebar */}
                     <div className={`
-                        ${isFormVisible ? 'block' : 'hidden'}
-                        ${isFormVisible ? 'md:w-80' : 'md:w-0'}
-                        transition-all duration-300 ease-in-out
-                        overflow-hidden md:overflow-visible
-                        md:shrink-0 md:self-start md:sticky md:top-6
-                        ${isFormVisible ? 'md:opacity-100' : 'md:opacity-0 md:pointer-events-none'}
-                        ${isFormVisible ? 'fixed md:relative inset-0 md:inset-auto z-50 md:z-auto' : ''}
+                        ${isFormVisible ? 'block w-full 2xl:w-80' : 'hidden'}
+                        min-w-0 shrink-0 2xl:sticky 2xl:top-6
                     `}>
-                        {/* Mobile overlay */}
-                        {isFormVisible && (
-                            <div
-                                className="md:hidden fixed inset-0 bg-black/50 z-40"
-                                onClick={() => setIsFormVisible(false)}
-                            />
-                        )}
-                        <div className={`
-                            ${isFormVisible ? 'w-full md:w-full' : 'w-0'}
-                            transition-all duration-300
-                            ${isFormVisible ? 'opacity-100' : 'opacity-0'}
-                            ${isFormVisible ? 'fixed md:relative right-0 top-0 md:top-auto h-full md:h-auto z-50 md:z-auto bg-white md:bg-transparent overflow-y-auto md:overflow-visible' : ''}
-                            ${isFormVisible ? 'w-[90vw] sm:w-96 md:w-full' : ''}
-                        `}>
-                            <Card className="h-full md:h-auto md:max-h-[calc(100vh-3rem)] md:overflow-y-auto">
+                        <div className="w-full">
+                            <Card className="min-w-0 2xl:max-h-[calc(100dvh-8rem)] 2xl:overflow-y-auto">
                                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-                                <CardTitle>{form.id ? 'Edit Pricing Rule' : 'Add Pricing Rule'}</CardTitle>
+                                <CardTitle>{form.id ? 'Edit pricing rule' : 'Add pricing rule'}</CardTitle>
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-8 w-8"
+                                        className="hidden h-8 w-8 md:inline-flex"
                                         onClick={() => setIsFormVisible(false)}
                                         title="Hide form"
+                                        aria-label="Hide pricing rule form"
                                     >
-                                        <ChevronLeft className="h-4 w-4 md:block" />
-                                        <X className="h-4 w-4 md:hidden" />
+                                        <ChevronLeft className="h-4 w-4" />
                                     </Button>
                             </CardHeader>
                             <CardContent>
-                                <form onSubmit={handleSubmit} className="space-y-3">
+                                <form onSubmit={handleSubmit} className="space-y-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="rule-type">Rule Type</Label>
-                                        <select
+                                        <Select
                                             id="rule-type"
-                                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                             value={form.ruleType}
                                             onChange={(e) =>
                                                 setForm((prev) => ({
@@ -1005,13 +987,13 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                     {t.label}
                                                 </option>
                                             ))}
-                                        </select>
+                                        </Select>
                                     </div>
 
                                     {specs.length > 0 && (
                                         <div className="space-y-2">
                                             <Label>When these selections match (optional)</Label>
-                                            <div className="space-y-2 rounded-md border border-gray-100 bg-gray-50/60 p-3">
+                                            <div className="space-y-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] p-3">
                                                 {specs
                                                     .slice()
                                                     .sort((a, b) => a.displayOrder - b.displayOrder)
@@ -1082,8 +1064,8 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                <select
-                                                                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs md:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                                                <Select
+                                                                    className="h-8 text-xs"
                                                                     value={specFilters[spec.slug] ?? ''}
                                                                     onChange={(e) => handleChange(e.target.value)}
                                                                     disabled={!!(parentSlug && !specFilters[parentSlug])}
@@ -1094,7 +1076,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             {opt.label} ({opt.value})
                                                                         </option>
                                                                     ))}
-                                                                </select>
+                                                                </Select>
                                                             </div>
                                                         );
                                                     })}
@@ -1213,7 +1195,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                             fileMultiplier: e.target.checked ? false : prev.fileMultiplier,
                                                         }))
                                                     }
-                                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                                 />
                                                 <Label htmlFor="qty-multiplier">Multiply by quantity</Label>
                                             </div>
@@ -1229,7 +1211,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                             quantityMultiplier: e.target.checked ? false : prev.quantityMultiplier,
                                                         }))
                                                     }
-                                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                                 />
                                                 <Label htmlFor="file-multiplier">Multiply by files</Label>
                                             </div>
@@ -1245,7 +1227,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                 copyMultiplier: e.target.checked,
                                                             }))
                                                         }
-                                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                                     />
                                                     <Label
                                                         htmlFor="copy-multiplier"
@@ -1277,7 +1259,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                     perFileEvaluation: e.target.checked,
                                                                 }))
                                                             }
-                                                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                            className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                                         />
                                                         <Label htmlFor="per-file-evaluation">
                                                             Evaluate per uploaded file
@@ -1304,7 +1286,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                             isActive: e.target.checked,
                                                         }))
                                                     }
-                                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                                 />
                                                 <Label htmlFor="is-active">Active</Label>
                                             </div>
@@ -1312,7 +1294,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                     </div>
 
 
-                                    <div className="flex justify-end gap-2">
+                                    <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-4">
                                         {form.id && (
                                             <Button
                                                 type="button"
@@ -1334,18 +1316,14 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                     </div>
 
                     {/* Rules list */}
-                    <div className={`
-                        flex-1
-                        transition-all duration-300
-                        ${isFormVisible ? 'md:ml-0' : 'md:ml-0'}
-                    `}>
-                        <Card>
+                    <div className="min-w-0 flex-1">
+                        <Card className="min-w-0">
                             <CardHeader>
                                 <CardTitle>Existing Rules ({rules.length})</CardTitle>
                             </CardHeader>
                             <CardContent>
                                 {rules.length === 0 ? (
-                                    <p className="text-sm text-gray-500 py-8 text-center">
+                                    <p className="py-8 text-center text-[13px] text-[var(--color-foreground-tertiary)]">
                                         No pricing rules yet. Add rules to define how prices are calculated.
                                     </p>
                                 ) : (
@@ -1353,13 +1331,13 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                         {/* Render SPECIFICATION_COMBINATION rules first */}
                                         {groupedRules.SPECIFICATION_COMBINATION && groupedRules.SPECIFICATION_COMBINATION.length > 0 && (
                                             <div>
-                                                <h3 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">
+                                                <h3 className="mb-4 border-b border-[var(--color-border)] pb-2 text-[13px] font-semibold text-[var(--color-foreground)]">
                                                     Specification Combinations ({groupedRules.SPECIFICATION_COMBINATION.length})
                                                 </h3>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm">
+<div className="max-w-full overflow-x-auto rounded-[var(--radius-sm)] border border-[var(--color-border)]">
+<table className="w-full min-w-max text-[12px]">
                                             <thead>
-                                                <tr className="border-b-2 border-gray-300 bg-gray-50">
+<tr className="border-b border-[var(--color-border)] bg-[var(--color-background)]">
                                                     <th className="text-left py-3 px-3 font-semibold text-gray-700">Type</th>
                                                     {/* Dynamic specification columns */}
                                                     {specs.length > 0 && specs.map((spec) => (
@@ -1377,7 +1355,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                 <tr className="border-b border-gray-200 bg-gray-50/60">
                                                     <th className="py-2 px-2">
                                                         <select
-                                                            className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                            className="h-7 w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-2 text-[11px] text-[var(--color-foreground)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none"
                                                             value={specComboColFilters.type ?? ''}
                                                             onChange={(e) => setSpecComboColFilters((p) => ({ ...p, type: e.target.value }))}
                                                         >
@@ -1390,7 +1368,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                     {specs.map((spec) => (
                                                         <th key={spec.id} className="py-2 px-1">
                                                             <select
-                                                                className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                                className="h-7 w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-2 text-[11px] text-[var(--color-foreground)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none"
                                                                 value={specComboColFilters[`spec_${spec.slug}`] ?? ''}
                                                                 onChange={(e) => setSpecComboColFilters((p) => ({ ...p, [`spec_${spec.slug}`]: e.target.value }))}
                                                             >
@@ -1431,7 +1409,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                     </th>
                                                     <th className="py-2 px-2">
                                                         <select
-                                                            className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                            className="h-7 w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-2 text-[11px] text-[var(--color-foreground)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none"
                                                             value={specComboColFilters.status ?? ''}
                                                             onChange={(e) => setSpecComboColFilters((p) => ({ ...p, status: e.target.value }))}
                                                         >
@@ -1466,7 +1444,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                         return (
                                                             <tr
                                                                 key={rule.id}
-                                                                className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
+                                                                className="border-b border-[var(--color-border)] transition-colors hover:bg-[#fafbff]"
                                                             >
                                                                 {/* Rule Type */}
                                                                 <td className="py-3 px-3 align-top">
@@ -1487,7 +1465,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                     return (
                                                                         <td key={spec.id} className="py-3 px-2 align-top">
                                                                             {hasValue && option ? (
-                                                                                <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium border border-blue-300 max-w-full">
+                                                                                <div className="inline-flex max-w-full items-center rounded-[5px] border border-[#e5e5e5] bg-[#f5f5f5] px-2 py-1 text-[11px] font-medium text-[#626262]">
                                                                                     <span className="truncate" title={option.label}>
                                                                                         {option.label}
                                                                                     </span>
@@ -1540,18 +1518,18 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                 <td className="py-3 px-3 align-top">
                                                                     <div className="flex flex-col items-center gap-1.5">
                                                                         {rule.isActive ? (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[10px] font-medium border border-green-200">
+                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-[#e9f6f0] px-2 py-1 text-[10px] font-semibold text-[#217659]">
                                                                                 <CheckCircle2 className="h-3 w-3" />
                                                                                 Active
                                                                             </span>
                                                                         ) : (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[10px] font-medium border border-red-200">
+                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf0ef] px-2 py-1 text-[10px] font-semibold text-[#b83e3e]">
                                                                                 <XCircle className="h-3 w-3" />
                                                                                 Inactive
                                                                             </span>
                                                                         )}
                                                                         {rule.isPublished && (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-medium border border-purple-200">
+                                                                            <span className="inline-flex items-center gap-1 rounded-[5px] bg-[#efeff7] px-2 py-1 text-[10px] font-medium text-[#6463a4]">
                                                                                 <Package className="h-3 w-3" />
                                                                                 Published
                                                                             </span>
@@ -1569,7 +1547,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             className="h-8 w-8 p-0"
                                                                             title="Edit rule"
                                                                         >
-                                                                            <Edit2 className="h-4 w-4 text-blue-600" />
+                                                                            <Edit2 className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                         </Button>
                                                                         <Button
                                                                             size="sm"
@@ -1578,7 +1556,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             className="h-8 w-8 p-0"
                                                                             title="Duplicate rule"
                                                                         >
-                                                                            <Copy className="h-4 w-4 text-amber-600" />
+                                                                            <Copy className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                         </Button>
                                                                         {!rule.isPublished && rule.basePrice && (
                                                                             <Button
@@ -1588,7 +1566,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                 className="h-8 w-8 p-0"
                                                                                 title="Publish as product"
                                                                             >
-                                                                                <Upload className="h-4 w-4 text-green-600" />
+                                                                                <Upload className="h-4 w-4 text-[var(--color-success)]" />
                                                                             </Button>
                                                                         )}
                                                                         {rule.isPublished && rule.productId && (
@@ -1615,14 +1593,14 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                     className="h-8 w-8 p-0"
                                                                                     title="Sync product with category updates"
                                                                                 >
-                                                                                    <RefreshCw className="h-4 w-4 text-blue-600" />
+                                                                                    <RefreshCw className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                                 </Button>
                                                                                 <Link
                                                                                     href={`/products/${rule.productId}`}
                                                                                     className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-gray-100 transition-colors"
                                                                                     title="View product"
                                                                                 >
-                                                                                    <ExternalLink className="h-4 w-4 text-purple-600" />
+                                                                                    <ExternalLink className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                                 </Link>
                                                                             </>
                                                                         )}
@@ -1633,7 +1611,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             className="h-8 w-8 p-0"
                                                                             title="Delete rule"
                                                                         >
-                                                                            <Trash2 className="h-4 w-4 text-red-600" />
+                                                                            <Trash2 className="h-4 w-4 text-[var(--color-destructive)]" />
                                                                         </Button>
                                                                     </div>
                                                                 </td>
@@ -1649,13 +1627,13 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                         {/* Render ADDON rules second */}
                                         {groupedRules.ADDON && groupedRules.ADDON.length > 0 && (
                                             <div>
-                                                <h3 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">
+                                                <h3 className="mb-4 border-b border-[var(--color-border)] pb-2 text-[13px] font-semibold text-[var(--color-foreground)]">
                                                     Addons ({groupedRules.ADDON.length})
                                                 </h3>
-                                                <div className="overflow-x-auto">
-                                                    <table className="w-full text-sm">
+<div className="max-w-full overflow-x-auto rounded-[var(--radius-sm)] border border-[var(--color-border)]">
+<table className="w-full min-w-max text-[12px]">
                                                         <thead>
-                                                            <tr className="border-b-2 border-gray-300 bg-gray-50">
+<tr className="border-b border-[var(--color-border)] bg-[var(--color-background)]">
                                                                 <th className="text-left py-3 px-3 font-semibold text-gray-700">Type</th>
                                                                 {/* Dynamic specification columns */}
                                                                 {specs.length > 0 && specs.map((spec) => (
@@ -1673,7 +1651,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                             <tr className="border-b border-gray-200 bg-gray-50/60">
                                                                 <th className="py-2 px-2">
                                                                     <select
-                                                                        className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                                        className="h-7 w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-2 text-[11px] text-[var(--color-foreground)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none"
                                                                         value={addonColFilters.type ?? ''}
                                                                         onChange={(e) => setAddonColFilters((p) => ({ ...p, type: e.target.value }))}
                                                                     >
@@ -1686,7 +1664,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                 {specs.map((spec) => (
                                                                     <th key={spec.id} className="py-2 px-1">
                                                                         <select
-                                                                            className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                                            className="h-7 w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-2 text-[11px] text-[var(--color-foreground)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none"
                                                                             value={addonColFilters[`spec_${spec.slug}`] ?? ''}
                                                                             onChange={(e) => setAddonColFilters((p) => ({ ...p, [`spec_${spec.slug}`]: e.target.value }))}
                                                                         >
@@ -1727,7 +1705,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                 </th>
                                                                 <th className="py-2 px-2">
                                                                     <select
-                                                                        className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                                                        className="h-7 w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-2 text-[11px] text-[var(--color-foreground)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none"
                                                                         value={addonColFilters.status ?? ''}
                                                                         onChange={(e) => setAddonColFilters((p) => ({ ...p, status: e.target.value }))}
                                                                     >
@@ -1762,7 +1740,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                         return (
                                                             <tr
                                                                 key={rule.id}
-                                                                className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
+                                                                className="border-b border-[var(--color-border)] transition-colors hover:bg-[#fafbff]"
                                                             >
                                                                 {/* Rule Type */}
                                                                 <td className="py-3 px-3 align-top">
@@ -1778,7 +1756,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                         the edit form. */}
                                                                     {(rule as any).perFileEvaluation && (
                                                                         <div
-                                                                            className="mt-1 inline-flex items-center gap-1 whitespace-nowrap rounded bg-indigo-50 text-indigo-700 border border-indigo-200 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                                                                            className="mt-1 inline-flex items-center gap-1 whitespace-nowrap rounded bg-[#f1f1f1] text-[#6a6a6a] border border-[#e3e3e3] px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide"
                                                                             title="Addon evaluated separately for each uploaded file (per-file evaluation)"
                                                                         >
                                                                             Per file
@@ -1795,7 +1773,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                     return (
                                                                         <td key={spec.id} className="py-3 px-2 align-top">
                                                                             {hasValue && option ? (
-                                                                                <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium border border-blue-300 max-w-full">
+                                                                                <div className="inline-flex max-w-full items-center rounded-[5px] border border-[#e5e5e5] bg-[#f5f5f5] px-2 py-1 text-[11px] font-medium text-[#626262]">
                                                                                     <span className="truncate" title={option.label}>
                                                                                         {option.label}
                                                                                     </span>
@@ -1848,18 +1826,18 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                 <td className="py-3 px-3 align-top">
                                                                     <div className="flex flex-col items-center gap-1.5">
                                                                         {rule.isActive ? (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[10px] font-medium border border-green-200">
+                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-[#e9f6f0] px-2 py-1 text-[10px] font-semibold text-[#217659]">
                                                                                 <CheckCircle2 className="h-3 w-3" />
                                                                                 Active
                                                                             </span>
                                                                         ) : (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[10px] font-medium border border-red-200">
+                                                                            <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf0ef] px-2 py-1 text-[10px] font-semibold text-[#b83e3e]">
                                                                                 <XCircle className="h-3 w-3" />
                                                                                 Inactive
                                                                             </span>
                                                                         )}
                                                                         {rule.isPublished && (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-medium border border-purple-200">
+                                                                            <span className="inline-flex items-center gap-1 rounded-[5px] bg-[#efeff7] px-2 py-1 text-[10px] font-medium text-[#6463a4]">
                                                                                 <Package className="h-3 w-3" />
                                                                                 Published
                                                                             </span>
@@ -1877,7 +1855,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             className="h-8 w-8 p-0"
                                                                             title="Edit rule"
                                                                         >
-                                                                            <Edit2 className="h-4 w-4 text-blue-600" />
+                                                                            <Edit2 className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                         </Button>
                                                                         <Button
                                                                             size="sm"
@@ -1886,7 +1864,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             className="h-8 w-8 p-0"
                                                                             title="Duplicate rule"
                                                                         >
-                                                                            <Copy className="h-4 w-4 text-amber-600" />
+                                                                            <Copy className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                         </Button>
                                                                         {!rule.isPublished && rule.basePrice && (
                                                                             <Button
@@ -1896,7 +1874,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                 className="h-8 w-8 p-0"
                                                                                 title="Publish as product"
                                                                             >
-                                                                                <Upload className="h-4 w-4 text-green-600" />
+                                                                                <Upload className="h-4 w-4 text-[var(--color-success)]" />
                                                                             </Button>
                                                                         )}
                                                                         {rule.isPublished && rule.productId && (
@@ -1923,14 +1901,14 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                     className="h-8 w-8 p-0"
                                                                                     title="Sync product with category updates"
                                                                                 >
-                                                                                    <RefreshCw className="h-4 w-4 text-blue-600" />
+                                                                                    <RefreshCw className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                                 </Button>
                                                                                 <Link
                                                                                     href={`/products/${rule.productId}`}
                                                                                     className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-gray-100 transition-colors"
                                                                                     title="View product"
                                                                                 >
-                                                                                    <ExternalLink className="h-4 w-4 text-purple-600" />
+                                                                                    <ExternalLink className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                                 </Link>
                                                                             </>
                                                                         )}
@@ -1941,7 +1919,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             className="h-8 w-8 p-0"
                                                                             title="Delete rule"
                                                                         >
-                                                                            <Trash2 className="h-4 w-4 text-red-600" />
+                                                                            <Trash2 className="h-4 w-4 text-[var(--color-destructive)]" />
                                                                         </Button>
                                                                     </div>
                                                                 </td>
@@ -1957,13 +1935,13 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                         {/* Render other rule types if any */}
                                         {((groupedRules.BASE_PRICE && groupedRules.BASE_PRICE.length > 0) || (groupedRules.QUANTITY_TIER && groupedRules.QUANTITY_TIER.length > 0)) && (
                                             <div>
-                                                <h3 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">
+                                                <h3 className="mb-4 border-b border-[var(--color-border)] pb-2 text-[13px] font-semibold text-[var(--color-foreground)]">
                                                     Other Rules ({(groupedRules.BASE_PRICE?.length ?? 0) + (groupedRules.QUANTITY_TIER?.length ?? 0)})
                                                 </h3>
-                                                <div className="overflow-x-auto">
-                                                    <table className="w-full text-sm">
+<div className="max-w-full overflow-x-auto rounded-[var(--radius-sm)] border border-[var(--color-border)]">
+<table className="w-full min-w-max text-[12px]">
                                                         <thead>
-                                                            <tr className="border-b-2 border-gray-300 bg-gray-50">
+<tr className="border-b border-[var(--color-border)] bg-[var(--color-background)]">
                                                                 <th className="text-left py-3 px-3 font-semibold text-gray-700">Type</th>
                                                                 {/* Dynamic specification columns */}
                                                                 {specs.length > 0 && specs.map((spec) => (
@@ -1987,7 +1965,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                 return (
                                                                     <tr
                                                                         key={rule.id}
-                                                                        className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors"
+                                                                        className="border-b border-[var(--color-border)] transition-colors hover:bg-[#fafbff]"
                                                                     >
                                                                         {/* Rule Type */}
                                                                         <td className="py-3 px-3 align-top">
@@ -2008,7 +1986,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                             return (
                                                                                 <td key={spec.id} className="py-3 px-2 align-top">
                                                                                     {hasValue && option ? (
-                                                                                        <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium border border-blue-300 max-w-full">
+                                                                                        <div className="inline-flex max-w-full items-center rounded-[5px] border border-[#e5e5e5] bg-[#f5f5f5] px-2 py-1 text-[11px] font-medium text-[#626262]">
                                                                                             <span className="truncate" title={option.label}>
                                                                                                 {option.label}
                                                                                             </span>
@@ -2061,18 +2039,18 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                         <td className="py-3 px-3 align-top">
                                                                             <div className="flex flex-col items-center gap-1.5">
                                                                                 {rule.isActive ? (
-                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-[10px] font-medium border border-green-200">
+                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#e9f6f0] px-2 py-1 text-[10px] font-semibold text-[#217659]">
                                                                                         <CheckCircle2 className="h-3 w-3" />
                                                                                         Active
                                                                                     </span>
                                                                                 ) : (
-                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[10px] font-medium border border-red-200">
+                                                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#fdf0ef] px-2 py-1 text-[10px] font-semibold text-[#b83e3e]">
                                                                                         <XCircle className="h-3 w-3" />
                                                                                         Inactive
                                                                                     </span>
                                                                                 )}
                                                                                 {rule.isPublished && (
-                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-medium border border-purple-200">
+                                                                                    <span className="inline-flex items-center gap-1 rounded-[5px] bg-[#efeff7] px-2 py-1 text-[10px] font-medium text-[#6463a4]">
                                                                                         <Package className="h-3 w-3" />
                                                                                         Published
                                                                                     </span>
@@ -2090,7 +2068,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                     className="h-8 w-8 p-0"
                                                                                     title="Edit rule"
                                                                                 >
-                                                                                    <Edit2 className="h-4 w-4 text-blue-600" />
+                                                                                    <Edit2 className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                                 </Button>
                                                                                 <Button
                                                                                     size="sm"
@@ -2099,7 +2077,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                     className="h-8 w-8 p-0"
                                                                                     title="Duplicate rule"
                                                                                 >
-                                                                                    <Copy className="h-4 w-4 text-amber-600" />
+                                                                                    <Copy className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                                 </Button>
                                                                                 {!rule.isPublished && rule.basePrice && (
                                                                                     <Button
@@ -2109,7 +2087,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                         className="h-8 w-8 p-0"
                                                                                         title="Publish as product"
                                                                                     >
-                                                                                        <Upload className="h-4 w-4 text-green-600" />
+                                                                                        <Upload className="h-4 w-4 text-[var(--color-success)]" />
                                                                                     </Button>
                                                                                 )}
                                                                                 {rule.isPublished && rule.productId && (
@@ -2136,14 +2114,14 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                             className="h-8 w-8 p-0"
                                                                                             title="Sync product with category updates"
                                                                                         >
-                                                                                            <RefreshCw className="h-4 w-4 text-blue-600" />
+                                                                                            <RefreshCw className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                                         </Button>
                                                                                         <Link
                                                                                             href={`/products/${rule.productId}`}
                                                                                             className="inline-flex items-center justify-center h-8 w-8 rounded hover:bg-gray-100 transition-colors"
                                                                                             title="View product"
                                                                                         >
-                                                                                            <ExternalLink className="h-4 w-4 text-purple-600" />
+                                                                                            <ExternalLink className="h-4 w-4 text-[var(--color-foreground-secondary)]" />
                                                                                         </Link>
                                                                                     </>
                                                                                 )}
@@ -2154,7 +2132,7 @@ export function CategoryPricing({ categoryId }: CategoryPricingProps) {
                                                                                     className="h-8 w-8 p-0"
                                                                                     title="Delete rule"
                                                                                 >
-                                                                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                                                                    <Trash2 className="h-4 w-4 text-[var(--color-destructive)]" />
                                                                                 </Button>
                                                                             </div>
                                                                         </td>

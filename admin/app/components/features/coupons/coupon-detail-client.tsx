@@ -108,16 +108,17 @@ export function CouponDetailClient({
     const remainingUses = usageLimit ? Math.max(0, usageLimit - usageCount) : null;
 
     return (
-        <div className="space-y-6">
+        <div className="mx-auto max-w-[1560px] space-y-5 pb-12">
             {/* Header with Quick Info */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] pb-4">
+                <div className="flex min-w-0 items-start gap-4">
                     <Button variant="ghost" size="icon" onClick={() => router.back()} className="cursor-pointer">
                         <ArrowLeft className="h-4 w-4" />
                     </Button>
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">{displayCoupon.name}</h1>
-                        <div className="mt-2 flex items-center gap-3">
+                    <div className="min-w-0">
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-foreground-tertiary)]">Commerce / Promotions</p>
+                        <h1 className="break-words text-2xl font-semibold text-[var(--color-foreground)]">{displayCoupon.name}</h1>
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
                             <p className="font-mono text-lg font-semibold text-gray-700">
                                 {displayCoupon.code}
                             </p>
@@ -152,7 +153,7 @@ export function CouponDetailClient({
             </div>
 
             {/* Quick Stats Row */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <Card>
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
@@ -215,7 +216,7 @@ export function CouponDetailClient({
             </div>
 
             {/* Coupon Details & Analytics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
                 <Card>
                     <CardHeader>
                         <CardTitle>Coupon Details</CardTitle>
@@ -268,7 +269,7 @@ export function CouponDetailClient({
                         </CardHeader>
                         <CardContent>
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-blue-50 rounded-lg">
+                                <div className="rounded-lg border border-[var(--color-border)] bg-[#fafafa] p-4">
                                     <div className="flex items-center gap-2 mb-2">
                                         <TrendingUp className="h-5 w-5 text-blue-600" />
                                         <p className="text-sm text-gray-600">Total Uses</p>
@@ -282,9 +283,9 @@ export function CouponDetailClient({
                                     </div>
                                     <p className="text-2xl font-bold text-gray-900">{displayAnalytics.uniqueUsers}</p>
                                 </div>
-                                <div className="p-4 bg-purple-50 rounded-lg">
+                                <div className="rounded-lg border border-[var(--color-border)] bg-[#fafafa] p-4">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <DollarSign className="h-5 w-5 text-purple-600" />
+                                        <DollarSign className="h-5 w-5 text-[var(--color-foreground-secondary)]" />
                                         <p className="text-sm text-gray-600">Total Discount</p>
                                     </div>
                                     <p className="text-2xl font-bold text-gray-900">

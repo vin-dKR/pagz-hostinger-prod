@@ -4,20 +4,13 @@
  */
 
 import { CreateCategoryForm } from '@/app/components/features/categories/create-category-form';
+import { ManagementPage } from '@/app/components/layouts/management-page';
 
 export default function CreateCategoryPage() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Create Category</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Add a new service or product category
-        </p>
-      </div>
-
+    <ManagementPage section="Catalog / Categories" title="Create category" description="Add a new service or product category.">
       <CreateCategoryForm />
-    </div>
+    </ManagementPage>
   );
 }
-
 

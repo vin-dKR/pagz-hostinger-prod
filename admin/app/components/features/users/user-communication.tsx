@@ -149,20 +149,20 @@ The Team`,
     };
 
     return (
-        <div className="space-y-4">
-            <Card>
-                <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <Mail className="h-5 w-5" />
-                        Email Communication
+        <div className="grid gap-5 lg:grid-cols-2">
+            <Card className="h-full">
+                <CardContent className="p-5 sm:p-6">
+                    <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-[var(--color-foreground)]">
+                        <Mail className="h-4 w-4 text-[var(--color-foreground-tertiary)]" />
+                        Email communication
                     </h3>
                     <div className="space-y-3">
                         <div>
-                            <p className="text-sm text-gray-600 mb-2">
+                            <p className="mb-4 text-sm text-[var(--color-foreground-secondary)]">
                                 Send an email to {user.name || user.email}
                             </p>
-                            <Button onClick={() => setIsEmailModalOpen(true)}>
-                                <Send className="h-4 w-4 mr-2" />
+                            <Button size="sm" className="gap-2" onClick={() => setIsEmailModalOpen(true)}>
+                                <Send className="h-4 w-4" />
                                 Send Email
                             </Button>
                         </div>
@@ -170,28 +170,28 @@ The Team`,
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <Bell className="h-5 w-5" />
-                        Notification Preferences
+            <Card className="h-full">
+                <CardContent className="p-5 sm:p-6">
+                    <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-[var(--color-foreground)]">
+                        <Bell className="h-4 w-4 text-[var(--color-foreground-tertiary)]" />
+                        Notification preferences
                     </h3>
                     <div className="space-y-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3">
                             <div>
-                                <p className="text-sm font-medium">Email Notifications</p>
-                                <p className="text-xs text-gray-500">Receive email notifications</p>
+                                <p className="text-sm font-medium text-[var(--color-foreground)]">Email notifications</p>
+                                <p className="text-xs text-[var(--color-foreground-tertiary)]">Receive email notifications</p>
                             </div>
-                            <span className="text-sm">
+                            <span className="text-xs font-medium text-[var(--color-foreground-secondary)]">
                                 {preferences.emailNotifications ? 'Enabled' : 'Disabled'}
                             </span>
                         </div>
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-3">
                             <div>
-                                <p className="text-sm font-medium">SMS Notifications</p>
-                                <p className="text-xs text-gray-500">Receive SMS notifications</p>
+                                <p className="text-sm font-medium text-[var(--color-foreground)]">SMS notifications</p>
+                                <p className="text-xs text-[var(--color-foreground-tertiary)]">Receive SMS notifications</p>
                             </div>
-                            <span className="text-sm">
+                            <span className="text-xs font-medium text-[var(--color-foreground-secondary)]">
                                 {preferences.smsNotifications ? 'Enabled' : 'Disabled'}
                             </span>
                         </div>
@@ -348,4 +348,3 @@ The Team`,
         </div>
     );
 }
-

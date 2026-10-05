@@ -61,14 +61,14 @@ export function AddonBreakdownRows({
                 return (
                     <li
                         key={`${entry.fileUrl}-${idx}`}
-                        className="flex justify-between items-center text-[11px] text-purple-700 pl-4"
+                        className="flex items-center justify-between pl-4 text-[11px] text-[var(--color-foreground-secondary)]"
                     >
                         <span className="truncate min-w-0 mr-2" title={name}>
-                            <span className="text-purple-400">└</span>{' '}
-                            <span className="text-purple-800">{name}</span>
-                            <span className="text-purple-400">{pageHint}</span>
+                            <span className="text-[var(--color-foreground-tertiary)]">└</span>{' '}
+                            <span className="text-[var(--color-foreground)]">{name}</span>
+                            <span className="text-[var(--color-foreground-tertiary)]">{pageHint}</span>
                         </span>
-                        <span className="font-medium text-purple-900 shrink-0 tabular-nums">
+                        <span className="shrink-0 font-medium tabular-nums text-[var(--color-foreground)]">
                             {formatCurrency(entry.price)}
                         </span>
                     </li>

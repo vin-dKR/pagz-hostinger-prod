@@ -163,9 +163,9 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
     };
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="grid items-start gap-5 lg:grid-cols-2">
             {error && (
-                <Alert variant="error">{error}</Alert>
+                <Alert variant="error" className="lg:col-span-2">{error}</Alert>
             )}
 
             {/* Basic Information */}
@@ -176,8 +176,9 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                 <CardContent className="space-y-4">
                     <div className="space-y-2">
                         <Label htmlFor="code">Coupon Code *</Label>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row">
                             <Input
+                                className="min-w-0"
                                 id="code"
                                 value={formData.code}
                                 onChange={(e) =>
@@ -199,7 +200,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                                 </Button>
                             )}
                         </div>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs leading-relaxed text-[var(--color-foreground-tertiary)]">
                             Uppercase letters, numbers, and hyphens only. Cannot be changed after creation.
                         </p>
                     </div>
@@ -224,7 +225,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                                 setFormData({ ...formData, description: e.target.value })
                             }
                             placeholder="Get 20% off on all products"
-                            className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="min-h-[96px] w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-foreground)] placeholder:text-[var(--color-foreground-tertiary)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]/20"
                         />
                     </div>
                 </CardContent>
@@ -315,7 +316,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                                 }
                                 placeholder="1000"
                             />
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-[var(--color-foreground-tertiary)]">
                                 Caps the discount amount for percentage discounts
                             </p>
                         </div>
@@ -344,7 +345,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                             }
                             placeholder="100 (leave empty for unlimited)"
                         />
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-[var(--color-foreground-tertiary)]">
                             Leave empty for unlimited usage
                         </p>
                     </div>
@@ -366,7 +367,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                         />
                     </div>
 
-                    <div className="flex items-center space-x-2 pt-1">
+                    <div className="flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3">
                         <input
                             type="checkbox"
                             id="firstOrderOnly"
@@ -380,15 +381,15 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                                     usageLimitPerUser: e.target.checked ? 1 : formData.usageLimitPerUser,
                                 })
                             }
-                            className="rounded border-gray-300"
+                            className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                         />
                         <Label htmlFor="firstOrderOnly">First purchase only</Label>
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="-mt-2 pl-1 text-xs leading-relaxed text-[var(--color-foreground-tertiary)]">
                         When enabled, coupon is valid only for users with no previous non-cancelled orders.
                     </p>
 
-                    <div className="flex items-center space-x-2 pt-1">
+                    <div className="flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3">
                         <input
                             type="checkbox"
                             id="secondOrderOnly"
@@ -402,11 +403,11 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                                     usageLimitPerUser: e.target.checked ? 1 : formData.usageLimitPerUser,
                                 })
                             }
-                            className="rounded border-gray-300"
+                            className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                         />
                         <Label htmlFor="secondOrderOnly">Second purchase only</Label>
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="-mt-2 pl-1 text-xs leading-relaxed text-[var(--color-foreground-tertiary)]">
                         When enabled, coupon is valid only for users with exactly one previous non-cancelled order.
                     </p>
                 </CardContent>
@@ -465,7 +466,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                             <option value="CATEGORY">Specific Categories</option>
                             {/* <option value="PRODUCT">Specific Products</option> */}
                         </Select>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-[var(--color-foreground-tertiary)]">
                             Configure products or categories below based on your selection
                         </p>
                     </div>
@@ -474,21 +475,25 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
 
             {/* Products/Categories Selection - Show during creation (before coupon ID exists) */}
             {!isEditMode && !createdCouponId && formData.applicableTo !== 'ALL' && (
-                <CouponSelectionManager
-                    applicableTo={formData.applicableTo || 'ALL'}
-                    selectedProductIds={selectedProductIds}
-                    selectedCategoryIds={selectedCategoryIds}
-                    onProductIdsChange={setSelectedProductIds}
-                    onCategoryIdsChange={setSelectedCategoryIds}
-                />
+                <div className="lg:col-span-2">
+                    <CouponSelectionManager
+                        applicableTo={formData.applicableTo || 'ALL'}
+                        selectedProductIds={selectedProductIds}
+                        selectedCategoryIds={selectedCategoryIds}
+                        onProductIdsChange={setSelectedProductIds}
+                        onCategoryIdsChange={setSelectedCategoryIds}
+                    />
+                </div>
             )}
 
             {/* Products/Categories Manager - Show when editing or after creation */}
             {((isEditMode && initialData) || createdCouponId) && (
-                <CouponProductsManager
-                    couponId={initialData?.id || createdCouponId!}
-                    applicableTo={formData.applicableTo || 'ALL'}
-                />
+                <div className="lg:col-span-2">
+                    <CouponProductsManager
+                        couponId={initialData?.id || createdCouponId!}
+                        applicableTo={formData.applicableTo || 'ALL'}
+                    />
+                </div>
             )}
 
             {/* Status */}
@@ -497,13 +502,13 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
                     <CardTitle>Status</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3">
                         <input
                             type="checkbox"
                             id="isActive"
                             checked={formData.isActive}
                             onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                            className="rounded border-gray-300"
+                            className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                         />
                         <Label htmlFor="isActive">Active</Label>
                     </div>
@@ -511,7 +516,7 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
             </Card>
 
             {/* Submit Button */}
-            <div className="flex justify-end gap-4">
+            <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-5 lg:col-span-2">
                 {createdCouponId && formData.applicableTo !== 'ALL' && (
                     <Button
                         type="button"
@@ -537,4 +542,3 @@ export function CouponForm({ initialData, onSuccess }: CouponFormProps) {
         </form>
     );
 }
-

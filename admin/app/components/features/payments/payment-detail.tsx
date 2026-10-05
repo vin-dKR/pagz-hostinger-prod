@@ -92,21 +92,23 @@ export function PaymentDetail({ paymentId, initialPayment }: { paymentId: string
     const canRefund = payment.status === 'SUCCESS';
 
     return (
-        <div className="space-y-8 max-w-[1600px]">
+        <div className="mx-auto max-w-[1560px] space-y-5 pb-12">
             {/* Header */}
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] pb-4">
+                <div className="flex min-w-0 flex-wrap items-start gap-3">
                     <Button
                         variant="ghost"
+                        size="sm"
                         onClick={() => router.back()}
-                        className="flex-shrink-0"
+                        className="h-8 flex-shrink-0"
                     >
                         <ArrowLeft className="mr-2 h-4 w-4" />
                         Back
                     </Button>
-                    <div>
+                    <div className="min-w-0">
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-foreground-tertiary)]">Commerce / Payments</p>
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight">
+                            <h1 className="text-2xl font-semibold text-[var(--color-foreground)] tracking-tight">
                                 Payment Details
                             </h1>
                             <Button
@@ -119,7 +121,7 @@ export function PaymentDetail({ paymentId, initialPayment }: { paymentId: string
                                 Copy ID
                             </Button>
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--color-foreground-secondary)] font-mono">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 break-all text-xs text-[var(--color-foreground-secondary)] font-mono">
                             <span>{payment.id}</span>
                             <span>•</span>
                             <span>Created: {formatDateTime(payment.createdAt)}</span>
@@ -128,10 +130,10 @@ export function PaymentDetail({ paymentId, initialPayment }: { paymentId: string
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-2">
                     <PaymentStatusBadge status={payment.status} />
                     <PaymentMethodBadge method={payment.method} />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <Button variant="outline" onClick={handleRefresh}>
                             <RefreshCw className="h-4 w-4 mr-2" />
                             Refresh
@@ -158,7 +160,7 @@ export function PaymentDetail({ paymentId, initialPayment }: { paymentId: string
 
             {/* Main Content */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList>
+                <TabsList className="max-w-full justify-start overflow-x-auto">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="transaction">Transaction Details</TabsTrigger>
                     <TabsTrigger value="order">Related Order</TabsTrigger>
@@ -167,7 +169,7 @@ export function PaymentDetail({ paymentId, initialPayment }: { paymentId: string
 
                 {/* Overview Tab */}
                 <TabsContent value="overview" className="space-y-6">
-                    <div className="grid gap-6 md:grid-cols-2">
+                    <div className="grid items-start gap-6 md:grid-cols-2">
                         {/* Payment Information */}
                         <Card>
                             <CardHeader>

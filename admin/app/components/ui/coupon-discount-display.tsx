@@ -3,7 +3,6 @@
  * Displays discount value with proper formatting
  */
 
-import { Badge } from './badge';
 import { Percent, IndianRupee } from 'lucide-react';
 
 interface CouponDiscountDisplayProps {
@@ -32,16 +31,16 @@ export function CouponDiscountDisplay({
 
     return (
         <div className="flex items-center gap-2">
-            <span className={`${sizeClasses[size]} font-semibold text-blue-600`}>
+            <span className={`${sizeClasses[size]} font-semibold text-[var(--color-primary)]`}>
                 {displayValue}
             </span>
             {maxDiscountAmount && discountType === 'PERCENTAGE' && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-[var(--color-foreground-secondary)]">
                     (max ₹{maxDiscountAmount})
                 </span>
             )}
             {showIcon && (
-                <span className="text-gray-400">
+                <span className="text-[var(--color-foreground-tertiary)]">
                     {discountType === 'PERCENTAGE' ? (
                         <Percent className="h-4 w-4" />
                     ) : (
