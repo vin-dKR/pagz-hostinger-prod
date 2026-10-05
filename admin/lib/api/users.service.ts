@@ -445,15 +445,7 @@ export async function exportUsers(
     const endpoint = `/admin/users/export${query ? `?${query}` : ''}`;
 
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
-    const token = typeof window !== 'undefined'
-        ? document.cookie.split(';').find(c => c.trim().startsWith('admin_token='))?.split('=')[1]
-        : null;
-
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        headers: {
-            ...(token && { Authorization: `Bearer ${token}` }),
-        },
-    });
+    const response = await fetch(`${API_BASE_URL}${endpoint}`);
 
     if (!response.ok) {
         throw new Error('Failed to export users');

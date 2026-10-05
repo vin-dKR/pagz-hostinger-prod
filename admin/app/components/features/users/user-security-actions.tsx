@@ -93,31 +93,34 @@ export function UserSecurityActions({ userId, userName, isSuspended, onSuccess }
 
     return (
         <div className="space-y-2">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
                 <Button
                     variant="outline"
                     size="sm"
+                    className="gap-2"
                     onClick={() => setIsPasswordResetOpen(true)}
                 >
-                    <Key className="h-4 w-4 mr-2" />
+                    <Key className="h-4 w-4" />
                     Reset Password
                 </Button>
                 {isSuspended ? (
                     <Button
                         variant="outline"
                         size="sm"
+                        className="gap-2"
                         onClick={() => setIsActivateOpen(true)}
                     >
-                        <CheckCircle className="h-4 w-4 mr-2" />
+                        <CheckCircle className="h-4 w-4" />
                         Activate Account
                     </Button>
                 ) : (
                     <Button
                         variant="outline"
                         size="sm"
+                        className="gap-2 text-[var(--color-destructive)]"
                         onClick={() => setIsSuspendOpen(true)}
                     >
-                        <Ban className="h-4 w-4 mr-2" />
+                        <Ban className="h-4 w-4" />
                         Suspend Account
                     </Button>
                 )}
@@ -232,4 +235,3 @@ export function UserSecurityActions({ userId, userName, isSuspended, onSuccess }
         </div>
     );
 }
-

@@ -148,7 +148,7 @@ export function OrdersList() {
             {/* Statistics Dashboard */}
             <OrderStats />
 
-            <Card>
+            <Card className="overflow-hidden shadow-none hover:shadow-none">
                 <CardContent className="p-0">
                     {/* Bulk Actions Bar */}
                     <BulkActions
@@ -159,12 +159,16 @@ export function OrdersList() {
                     />
 
                     {/* Search and Filters */}
-                    <div className="border-b bg-gray-50/50 p-4">
-                        <div className="flex items-center justify-between gap-4 flex-nowrap">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="admin-toolbar border-b border-[var(--color-border)] px-4 py-3 sm:px-5">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div><h2 className="text-sm font-semibold text-[var(--color-foreground)]">Order ledger</h2><p className="mt-0.5 text-xs text-[var(--color-foreground-tertiary)]">Customer purchases and fulfillment</p></div>
+                            <span className="rounded-md border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs font-medium tabular-nums text-[var(--color-foreground)]">{total.toLocaleString()} orders</span>
+                        </div>
+                        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                                 {/* Filters */}
                                 <OrderFilters filters={filters} onFiltersChange={setFilters} />
-                                <div className="relative flex-1 max-w-md min-w-0">
+                                <div className="relative min-w-[220px] flex-1 xl:max-w-md">
                                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                                     <Input
                                         type="text"
@@ -176,11 +180,11 @@ export function OrdersList() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-2 flex-nowrap shrink-0">
-                                <div className="text-sm text-foreground-secondary whitespace-nowrap">
+                            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                                <div className="mr-1 whitespace-nowrap rounded-md border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs font-medium text-[var(--color-foreground-secondary)]">
                                     {total > 0 ? (
                                         <>
-                                            <span className="font-medium">{total}</span> result{total !== 1 ? 's' : ''} • Page{' '}
+                                            <span className="font-semibold">{total}</span> result{total !== 1 ? 's' : ''} • Page{' '}
                                             <span className="font-medium">{page}</span> of{' '}
                                             <span className="font-medium">{totalPages || 1}</span>
                                         </>
@@ -188,7 +192,7 @@ export function OrdersList() {
                                         'No results'
                                     )}
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex flex-wrap items-center gap-2">
                                     <Button
                                         variant="outline"
                                         size="sm"
@@ -241,7 +245,7 @@ export function OrdersList() {
                     {/* Table / empty state */}
                     <div className="relative">
                         {isLoading && hasLoadedOnce && (
-                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
+                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--color-background)]/70 backdrop-blur-[1px]">
                                 <div className="rounded-lg bg-white/90 px-4 py-2 text-sm text-gray-600 shadow-sm">
                                     Updating results...
                                 </div>
@@ -287,14 +291,14 @@ export function OrdersList() {
                                             order.items.flatMap((item) =>
                                                 item.product?.images?.map((img) => img.url) ?? []
                                             );
-                                        const visibleImages = orderImageUrls.slice(0, 4);
+                                        const visibleImages = orderImageUrls.slice(0, 1);
                                         const remainingImagesCount = Math.max(
                                             0,
                                             orderImageUrls.length - visibleImages.length
                                         );
 
                                         return (
-                                            <TableRow key={order.id} className={isSelected ? 'bg-blue-50' : ''}>
+                                            <TableRow key={order.id} className={isSelected ? 'bg-[#f1f1f1]' : ''}>
                                                 <TableCell>
                                                     <input
                                                         type="checkbox"
@@ -308,7 +312,7 @@ export function OrdersList() {
                                                         {visibleImages.map((imgUrl, idx) => (
                                                             <div
                                                                 key={`${order.id}-${idx}`}
-                                                                className="relative w-10 h-10 rounded border overflow-hidden bg-gray-100 shrink-0"
+                                                                className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-background-secondary)]"
                                                             >
                                                                 <Image
                                                                     src={getPublicS3Url(imgUrl)}
@@ -325,19 +329,19 @@ export function OrdersList() {
                                                             </div>
                                                         ))}
                                                         {remainingImagesCount > 0 && (
-                                                            <div className="w-10 h-10 rounded border border-dashed bg-gray-50 flex items-center justify-center text-xs text-gray-500">
+                                                            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-background-secondary)] text-[11px] text-[var(--color-foreground-secondary)]">
                                                                 +{remainingImagesCount}
                                                             </div>
                                                         )}
                                                         <div>
                                                             <Link
                                                                 href={`/orders/${order.id}`}
-                                                                className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                                                className="font-semibold text-[var(--color-foreground)] hover:text-[var(--color-primary)] hover:underline"
                                                                 title={order.id}
                                                             >
                                                                 {order.id.slice(0, 8)}…
                                                             </Link>
-                                                            <div className="text-xs text-gray-500">
+                                                            <div className="mt-0.5 text-[11px] text-[var(--color-foreground-tertiary)]">
                                                                 {formatDateTime(order.createdAt)}
                                                             </div>
                                                         </div>
@@ -345,14 +349,14 @@ export function OrdersList() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <div>
-                                                        <div className="font-medium">
+                                                        <div className="font-semibold text-[var(--color-foreground)]">
                                                             {order.user?.name || 'N/A'}
                                                         </div>
-                                                        <div className="text-sm text-gray-500">
+                                                        <div className="max-w-[180px] truncate text-xs text-[var(--color-foreground-secondary)]">
                                                             {order.user?.email}
                                                         </div>
                                                         {order.user?.phone && (
-                                                            <div className="text-xs text-gray-400">
+                                                            <div className="text-[11px] text-[var(--color-foreground-tertiary)]">
                                                                 {order.user.phone}
                                                             </div>
                                                         )}
@@ -360,17 +364,17 @@ export function OrdersList() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <div>
-                                                        <div className="font-medium">{order.items.length} item(s)</div>
-                                                        <div className="text-xs text-gray-500 max-w-[200px] truncate">
+                                                        <div className="font-medium tabular-nums">{order.items.length} item(s)</div>
+                                                        <div className="max-w-[150px] truncate text-xs text-[var(--color-foreground-tertiary)]">
                                                             {order.items?.[0]?.product?.name || 'Product'}
                                                             {order.items.length > 1 && ` +${order.items.length - 1} more`}
                                                         </div>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <div className="font-semibold">{formatCurrency(order.total)}</div>
+                                                    <div className="font-semibold tabular-nums">{formatCurrency(order.total)}</div>
                                                     {order.discountAmount && order.discountAmount > 0 && (
-                                                        <div className="text-xs text-green-600">
+                                                        <div className="text-xs tabular-nums text-[var(--color-success)]">
                                                             -{formatCurrency(order.discountAmount)} discount
                                                         </div>
                                                     )}
@@ -460,4 +464,3 @@ export function OrdersList() {
         </div>
     );
 }
-

@@ -3,8 +3,6 @@
  * Handles all HTTP requests to the backend API with proper error handling
  */
 
-import { toastError } from '../utils/toast';
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
 
 export interface ApiError {
@@ -28,111 +26,16 @@ function createApiClientError(message: string, statusCode = 0, errors?: Record<s
 }
 
 /**
- * Decode JWT token to get payload (without verification)
- */
-function decodeToken(token: string): { userId?: string; email?: string; type?: string; exp?: number; iat?: number } | null {
-    try {
-        const parts = token.split('.');
-        if (parts.length !== 3) {
-            return null; // Invalid JWT format
-        }
-        const base64Url = parts[1];
-        if (!base64Url) {
-            return null;
-        }
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(
-            atob(base64)
-                .split('')
-                .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                .join('')
-        );
-        return JSON.parse(jsonPayload);
-    } catch (error) {
-        console.error('[AUTH] Failed to decode token:', error);
-        return null;
-    }
-}
-
-/**
- * Check if token is expired
- */
-function isTokenExpired(token: string): boolean {
-    const decoded = decodeToken(token);
-    if (!decoded || !decoded.exp) {
-        return true; // If we can't decode or no exp, consider it expired
-    }
-    const expirationTime = decoded.exp * 1000; // Convert to milliseconds
-    const currentTime = Date.now();
-    return currentTime >= expirationTime;
-}
-
-/**
- * Get authentication token from cookies (server-side compatible)
+ * Compatibility export for legacy callers. The admin dashboard no longer
+ * authenticates requests, so it never reads cookies or returns a token.
  */
 export function getAuthToken(): string | null {
-    try {
-    if (typeof window === 'undefined') {
-        return null;
-    }
-
-    const cookies = document.cookie.split(';');
-    const tokenCookie = cookies.find(cookie => cookie.trim().startsWith('admin_token='));
-
-    if (!tokenCookie) {
-        return null;
-    }
-
-    const token = tokenCookie.split('=')[1]?.trim() || null;
-
-        if (!token) {
-            return null;
-        }
-
-    // Check if token is expired
-        try {
-            if (isTokenExpired(token)) {
-        console.warn('[AUTH] Token is expired, clearing it');
-                setAuthToken(undefined);
-                return null;
-            }
-        } catch (error) {
-            console.error('[AUTH] Error checking token expiration:', error);
-            // If we can't check expiration, clear the token to be safe
-        setAuthToken(undefined);
-        return null;
-    }
-
-    return token;
-    } catch (error) {
-        console.error('[AUTH] Error getting auth token:', error);
-        return null;
-    }
+    return null;
 }
 
-// Track if we're already redirecting to prevent multiple redirects
-let isRedirecting = false;
-
-/**
- * Set authentication token in cookies
- */
+/** Compatibility no-op; tokens are no longer persisted by the admin app. */
 export function setAuthToken(token: string | undefined): void {
-    try {
-    if (typeof window === 'undefined') {
-        return;
-    }
-
-    if (token) {
-        // Store token in cookie with 7 day expiration
-        const expires = new Date();
-        expires.setTime(expires.getTime() + 7 * 24 * 60 * 60 * 1000);
-        document.cookie = `admin_token=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
-    } else {
-        document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        }
-    } catch (error) {
-        console.error('[AUTH] Error setting auth token:', error);
-    }
+    void token;
 }
 
 /**
@@ -142,37 +45,10 @@ async function fetchAPI<T>(
     endpoint: string,
     options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
-    let token: string | null = null;
-    
-    try {
-        token = getAuthToken();
-    } catch (error) {
-        console.error('[AUTH] Error getting token for API call:', error);
-        // Continue without token - API will handle it
-    }
-
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string> || {}),
     };
-
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    // Log admin API calls with unique prefix for easy grepping
-    if (endpoint.startsWith('/admin/')) {
-        try {
-        const isExpired = token ? isTokenExpired(token) : true;
-
-        // Warn if using expired token
-        if (token && isExpired) {
-            console.error('[AUTH_WARNING] Making API call with expired token! This will likely fail.');
-            }
-        } catch (error) {
-            console.error('[AUTH] Error checking token expiration before API call:', error);
-        }
-    }
 
     try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -206,69 +82,6 @@ async function fetchAPI<T>(
         if (!response.ok) {
             const errorMessage = data.message || data.error || 'An error occurred';
             const error = createApiClientError(errorMessage, response.status, data.errors);
-
-            // Handle 401 Unauthorized errors
-            if (response.status === 401) {
-                const authEndpoints = ['/admin/auth/verify', '/admin/auth/profile', '/admin/auth/me'];
-                const isAuthEndpoint = authEndpoints.some(authPath => endpoint.includes(authPath));
-
-                // Check if this is an actual authentication error or an API error
-                const errorMessageLower = errorMessage.toLowerCase();
-                const isAuthError = 
-                    errorMessageLower.includes('token') ||
-                    errorMessageLower.includes('session') ||
-                    errorMessageLower.includes('expired') ||
-                    errorMessageLower.includes('login') ||
-                    errorMessageLower.includes('unauthorized') ||
-                    errorMessageLower.includes('authentication') ||
-                    errorMessageLower.includes('invalid') ||
-                    errorMessageLower.includes('missing');
-
-                if (isAuthEndpoint || isAuthError) {
-                    // This is a real authentication failure
-                    console.error('[AUTH_ERROR] Authentication failed:', {
-                        endpoint,
-                        error: errorMessage,
-                        isAuthEndpoint,
-                        isAuthError,
-                    });
-
-                    try {
-                    setAuthToken(undefined);
-                    } catch (tokenError) {
-                        console.error('[AUTH] Error clearing token:', tokenError);
-                    }
-
-                    // Prevent multiple simultaneous redirects
-                    if (typeof window !== 'undefined' && !isRedirecting && !window.location.pathname.includes('/login')) {
-                        isRedirecting = true;
-                        
-                        try {
-                        toastError('Session expired or invalid. Please login again.');
-                        } catch (toastError) {
-                            console.error('[AUTH] Error showing toast:', toastError);
-                        }
-
-                        // Use a single redirect without setTimeout to prevent race conditions
-                        setTimeout(() => {
-                            try {
-                            window.location.href = '/login';
-                            } catch (redirectError) {
-                                console.error('[AUTH] Error redirecting:', redirectError);
-                                isRedirecting = false;
-                            }
-                        }, 1000);
-                    }
-                } else {
-                    // This might be an API error that returned 401, not an auth issue
-                    console.error('[API_ERROR] API returned 401 but may not be auth issue:', {
-                        endpoint,
-                        error: errorMessage,
-                        suggestion: 'Check if this is an actual API error or authentication failure',
-                    });
-                    // Don't clear token or redirect - let the error propagate so the UI can handle it
-                }
-            }
 
             throw error;
         }
@@ -361,15 +174,6 @@ export async function uploadFile<T>(
     file: File,
     additionalData?: Record<string, string>
 ): Promise<ApiResponse<T>> {
-    let token: string | null = null;
-    
-    try {
-        token = getAuthToken();
-    } catch (error) {
-        console.error('[AUTH] Error getting token for file upload:', error);
-        // Continue without token - API will handle it
-    }
-
     const formData = new FormData();
     formData.append('file', file);
 
@@ -380,9 +184,6 @@ export async function uploadFile<T>(
     }
 
     const headers: Record<string, string> = {};
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
 
     try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -416,55 +217,6 @@ export async function uploadFile<T>(
             const errorMessage = data.message || data.error || 'An error occurred';
             const error = createApiClientError(errorMessage, response.status, data.errors);
 
-            // Handle 401 Unauthorized errors (same as fetchAPI)
-            if (response.status === 401) {
-                const authEndpoints = ['/admin/auth/verify', '/admin/auth/profile', '/admin/auth/me'];
-                const isAuthEndpoint = authEndpoints.some(authPath => endpoint.includes(authPath));
-
-                const errorMessageLower = errorMessage.toLowerCase();
-                const isAuthError = 
-                    errorMessageLower.includes('token') ||
-                    errorMessageLower.includes('session') ||
-                    errorMessageLower.includes('expired') ||
-                    errorMessageLower.includes('login') ||
-                    errorMessageLower.includes('unauthorized') ||
-                    errorMessageLower.includes('authentication') ||
-                    errorMessageLower.includes('invalid') ||
-                    errorMessageLower.includes('missing');
-
-                if (isAuthEndpoint || isAuthError) {
-                    console.error('[AUTH_ERROR] Authentication failed during file upload:', {
-                        endpoint,
-                        error: errorMessage,
-                    });
-
-                    try {
-                        setAuthToken(undefined);
-                    } catch (tokenError) {
-                        console.error('[AUTH] Error clearing token:', tokenError);
-                    }
-
-                    if (typeof window !== 'undefined' && !isRedirecting && !window.location.pathname.includes('/login')) {
-                        isRedirecting = true;
-                        
-                        try {
-                            toastError('Session expired or invalid. Please login again.');
-                        } catch (toastError) {
-                            console.error('[AUTH] Error showing toast:', toastError);
-                        }
-
-                        setTimeout(() => {
-                            try {
-                                window.location.href = '/login';
-                            } catch (redirectError) {
-                                console.error('[AUTH] Error redirecting:', redirectError);
-                                isRedirecting = false;
-                            }
-                        }, 1000);
-                    }
-                }
-            }
-
             throw error;
         }
 
@@ -488,4 +240,3 @@ export async function uploadFile<T>(
         );
     }
 }
-

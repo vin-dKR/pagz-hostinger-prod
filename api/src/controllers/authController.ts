@@ -94,12 +94,12 @@ export const sendOtp = async (req: Request, res: Response, next: NextFunction) =
 
 /**
  * POST /auth/register
- * Body: { name?, phone, email?, password, otp, isAdmin?, isSuperAdmin? }
+ * Body: { name?, phone, email?, password, otp }
  * Requires OTP previously issued with purpose=SIGNUP.
  */
 export const register = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { phone, email, password, name, otp, isAdmin, isSuperAdmin } = req.body || {};
+        const { phone, email, password, name, otp } = req.body || {};
 
         if (!phone) throw new ValidationError("Phone number is required");
         if (!password) throw new ValidationError("Password is required");
@@ -150,8 +150,8 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
                 email: normalizedEmail,
                 name: trimmedName,
                 passwordHash,
-                isAdmin: Boolean(isAdmin),
-                isSuperAdmin: Boolean(isSuperAdmin),
+                isAdmin: false,
+                isSuperAdmin: false,
             },
         });
 

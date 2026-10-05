@@ -15,7 +15,7 @@ import { PageLoading } from '@/app/components/ui/loading';
 import { getProduct, type Product } from '@/lib/api/products.service';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { getPublicFileUrl } from '@/lib/utils/fileUrl';
-import { ArrowLeft, Edit } from 'lucide-react';
+import { ArrowLeft, Edit, Boxes, ShoppingBag, Star, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 
 export function ProductDetail({ productId, initialProduct }: { productId: string; initialProduct?: Product }) {
@@ -72,53 +72,42 @@ export function ProductDetail({ productId, initialProduct }: { productId: string
     }, [product]);
 
     return (
-        <div className="space-y-8 max-w-[1600px]">
+        <div className="mx-auto max-w-[1560px] space-y-6 pb-12">
             {/* Header */}
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                    <Button variant="ghost" onClick={() => router.back()} className="flex-shrink-0">
-                        <ArrowLeft className="mr-2 h-4 w-4" />
-                        Back
-                    </Button>
-                    <div>
-                        <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight flex items-center gap-2 flex-wrap">
-                            {product.name}
+            <div className="border-b border-[var(--color-border)] pb-6">
+                <Button variant="ghost" size="sm" onClick={() => router.back()} className="-ml-2 mb-4 h-8 gap-1.5 text-[var(--color-foreground-secondary)]"><ArrowLeft className="h-4 w-4" />Products</Button>
+                <div className="flex flex-wrap items-end justify-between gap-4">
+                    <div className="min-w-0">
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-foreground-tertiary)]">Catalog / {product.category?.name || 'Unassigned'}</p>
+                        <h1 className="max-w-4xl text-2xl font-semibold leading-tight tracking-tight text-[var(--color-foreground)] sm:text-[30px]">{product.name}</h1>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-foreground-secondary)]">
+                            <span className="font-mono">{product.slug || '(auto-generated)'}</span>
+                            <span className="text-[var(--color-foreground-tertiary)]">·</span>
+                            <span>SKU {product.sku || '—'}</span>
+                            <span className="text-[var(--color-foreground-tertiary)]">·</span>
+                            <span>Updated {formatDate(product.updatedAt)}</span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
                             {product.isFeatured && <Badge>Featured</Badge>}
                             {product.isNewArrival && <Badge variant="outline">New</Badge>}
                             {product.isBestSeller && <Badge variant="outline">Best seller</Badge>}
-                        </h1>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--color-foreground-secondary)]">
-                            <span className="font-mono">
-                                slug: {product.slug || '(auto-generated)'}
-                            </span>
-                            <span>•</span>
-                            <span>Category: {product.category?.name || 'Unassigned'}</span>
-                            <span>•</span>
-                            <span>SKU: {product.sku || '—'}</span>
                         </div>
                     </div>
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                    <Badge variant={product.isActive ? 'success' : 'outline'}>
-                        {product.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                    <Link href={`/products/${product.id}/edit`}>
-                        <Button>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit product
-                        </Button>
-                    </Link>
+                    <div className="flex shrink-0 items-center gap-3">
+                        <Badge variant={product.isActive ? 'success' : 'outline'}>{product.isActive ? 'Active' : 'Inactive'}</Badge>
+                        <Link href={`/products/${product.id}/edit`}><Button className="gap-2"><Edit className="h-4 w-4" />Edit product</Button></Link>
+                    </div>
                 </div>
             </div>
 
             {/* Top visuals: Images + Quick stats */}
-            <div className="grid gap-6 lg:grid-cols-[minmax(320px,1fr),minmax(260px,0.8fr)]">
+            <div className="grid items-start gap-5 lg:grid-cols-[minmax(320px,1fr),minmax(320px,1fr)]">
                 <Card>
-                    <CardHeader>
-                        <CardTitle>Images</CardTitle>
+                    <CardHeader className="border-b border-[var(--color-border)] p-5">
+                        <CardTitle className="text-sm">Product media</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="aspect-square w-full max-w-[320px] mx-auto overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-background-secondary)] flex items-center justify-center">
+                    <CardContent className="space-y-4 p-5">
+                        <div className="mx-auto flex aspect-[4/3] w-full max-w-[420px] items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-background-secondary)]">
                             {selectedImage ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
@@ -131,7 +120,7 @@ export function ProductDetail({ productId, initialProduct }: { productId: string
                             )}
                         </div>
                         {product.images.length > 0 && (
-                            <div className="flex flex-wrap gap-2 justify-center">
+                            <div className="flex flex-wrap justify-center gap-2">
                                 {product.images.map((img) => {
                                     const isSelected = selectedImage === img.url;
                                     return (
@@ -157,38 +146,23 @@ export function ProductDetail({ productId, initialProduct }: { productId: string
                     </CardContent>
                 </Card>
 
-                {/* Quick Stats Card */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Quick Stats</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm">
-                        <div className="flex justify-between">
-                            <span className="text-[var(--color-foreground-secondary)]">Rating</span>
-                            <span className="font-medium text-[var(--color-foreground)]">{product.rating ?? '—'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-[var(--color-foreground-secondary)]">Reviews</span>
-                            <span className="font-medium text-[var(--color-foreground)]">{product.totalReviews}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-[var(--color-foreground-secondary)]">Total Sold</span>
-                            <span className="font-medium text-[var(--color-foreground)]">{product.totalSold}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-[var(--color-foreground-secondary)]">Stock</span>
-                            <span className={`font-medium ${product.stock > 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-destructive)]'}`}>
-                                {product.stock}
-                            </span>
-                        </div>
-                    </CardContent>
-                </Card>
+                <div className="grid grid-cols-2 gap-3">
+                    {[
+                        { label: 'Rating', value: product.rating ?? '—', icon: Star },
+                        { label: 'Reviews', value: product.totalReviews.toLocaleString(), icon: MessageSquare },
+                        { label: 'Total sold', value: product.totalSold.toLocaleString(), icon: ShoppingBag },
+                        { label: 'In stock', value: product.stock.toLocaleString(), icon: Boxes },
+                    ].map((metric) => {
+                        const Icon = metric.icon;
+                        return <div key={metric.label} className="admin-panel min-w-0"><div className="flex min-h-8 items-center justify-between gap-2 px-3 text-[11px] font-medium text-[var(--color-foreground-secondary)]"><span>{metric.label}</span><Icon className="h-3.5 w-3.5 shrink-0 text-[var(--color-foreground-tertiary)]" aria-hidden="true" /></div><p className="admin-panel-interior px-3 py-4 text-2xl font-semibold tracking-tight tabular-nums text-[var(--color-foreground)]">{metric.value}</p></div>;
+                    })}
+                </div>
             </div>
 
             {/* Main Content Area */}
             <div className="space-y-6">
                 {/* Pricing & Inventory - Top priority info */}
-                <div className="grid gap-6 md:grid-cols-2">
+                <div className="grid items-start gap-6 md:grid-cols-2">
                     <Card>
                         <CardHeader>
                             <CardTitle>Pricing</CardTitle>
@@ -422,5 +396,3 @@ export function ProductDetail({ productId, initialProduct }: { productId: string
         </div>
     );
 }
-
-

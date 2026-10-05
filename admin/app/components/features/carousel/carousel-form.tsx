@@ -7,9 +7,10 @@
 
 import { useState, FormEvent, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
+import { Select } from '@/app/components/ui/select';
 import { Label } from '@/app/components/ui/label';
 import { Alert } from '@/app/components/ui/alert';
 import {
@@ -206,51 +207,55 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
     };
 
     if (isLoadingCarousel) {
-        return <div className="text-center py-12">Loading carousel...</div>;
+        return <div className="py-12 text-center text-sm text-[var(--color-foreground-secondary)]">Loading carousel...</div>;
     }
 
     return (
-        <Card>
+        <Card className="w-full max-w-5xl">
             <CardHeader>
-                <CardTitle>{carouselId ? 'Edit Carousel Item' : 'Create Carousel Item'}</CardTitle>
+                <CardTitle>{carouselId ? 'Edit carousel item' : 'Create carousel item'}</CardTitle>
+                <CardDescription>Manage the image and placement shown in the storefront carousel.</CardDescription>
             </CardHeader>
             <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                     {error && (
-                        <Alert variant="error">
+                        <Alert variant="error" className="lg:col-span-2">
                             {error}
                         </Alert>
                     )}
 
                     {/* Image Upload */}
-                    <div className="space-y-2">
+                    <div className="space-y-2 lg:row-span-4">
                         <Label htmlFor="image">Image *</Label>
                         {formData.imageUrl ? (
-                            <div className="relative inline-block">
+                            <div className="relative inline-block max-w-full overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-background-tertiary)]">
                                 <Image
                                     src={getPublicFileUrl(formData.imageUrl)}
                                     alt={formData.alt || 'Carousel preview'}
                                     width={400}
                                     height={250}
-                                    className="rounded-lg object-cover border border-gray-200"
+                                    className="h-auto max-w-full object-cover"
                                 />
                                 <Button
                                     type="button"
                                     variant="destructive"
                                     size="sm"
                                     className="absolute top-2 right-2"
+                                    aria-label="Remove carousel image"
                                     onClick={() => setFormData((prev) => ({ ...prev, imageUrl: '' }))}
                                 >
                                     <X className="h-4 w-4" />
                                 </Button>
                             </div>
                         ) : (
-                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                                <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                                <p className="text-sm text-gray-600 mb-2">
-                                    Click to upload or drag and drop
+                            <div className="flex min-h-[250px] flex-col items-center justify-center rounded-[var(--radius-lg)] border border-dashed border-[var(--color-input)] bg-[var(--color-background)] p-6 text-center sm:p-8">
+                                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-card)]">
+                                    <Upload className="h-5 w-5 text-[var(--color-primary)]" />
+                                </div>
+                                <p className="mb-1 text-sm font-medium text-[var(--color-foreground)]">
+                                    Upload a carousel image
                                 </p>
-                                <p className="text-xs text-gray-500 mb-4">
+                                <p className="mb-4 text-xs text-[var(--color-foreground-tertiary)]">
                                     PNG, JPG, WebP, GIF up to 10MB
                                 </p>
                                 <Button
@@ -270,6 +275,7 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                                 </Button>
                                 <input
                                     ref={fileInputRef}
+                                    id="image"
                                     type="file"
                                     accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
                                     onChange={handleFileSelect}
@@ -280,7 +286,7 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                     </div>
 
                     {/* Alt Text */}
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                         <Label htmlFor="alt">Alt Text</Label>
                         <Input
                             id="alt"
@@ -288,19 +294,18 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                             onChange={(e) => setFormData((prev) => ({ ...prev, alt: e.target.value }))}
                             placeholder="Description for the image"
                         />
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-[var(--color-foreground-tertiary)]">
                             Optional: A brief description of the image for accessibility
                         </p>
                     </div>
 
                     {/* Category Link */}
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                         <Label htmlFor="categoryId">Link to Category (Optional)</Label>
-                        <select
+                        <Select
                             id="categoryId"
                             value={formData.categoryId}
                             onChange={(e) => setFormData((prev) => ({ ...prev, categoryId: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                             <option value="">No category link</option>
                             {categories.map((category) => (
@@ -308,14 +313,14 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                                     {category.name}
                                 </option>
                             ))}
-                        </select>
-                        <p className="text-xs text-gray-500">
+                        </Select>
+                        <p className="text-xs leading-relaxed text-[var(--color-foreground-tertiary)]">
                             When users click "Order Now", they will be redirected to this category page
                         </p>
                     </div>
 
                     {/* Display Order */}
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                         <Label htmlFor="displayOrder">Display Order</Label>
                         <Input
                             id="displayOrder"
@@ -324,19 +329,19 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                             onChange={(e) => setFormData((prev) => ({ ...prev, displayOrder: parseInt(e.target.value) || 0 }))}
                             min="0"
                         />
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-[var(--color-foreground-tertiary)]">
                             Lower numbers appear first. You can also reorder items from the list page.
                         </p>
                     </div>
 
                     {/* Active Status */}
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3 lg:col-start-2">
                         <input
                             type="checkbox"
                             id="isActive"
                             checked={formData.isActive}
                             onChange={(e) => setFormData((prev) => ({ ...prev, isActive: e.target.checked }))}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                         />
                         <Label htmlFor="isActive" className="cursor-pointer">
                             Active (visible on homepage)
@@ -344,7 +349,7 @@ export function CarouselForm({ carouselId }: CarouselFormProps) {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex gap-4 pt-4">
+                    <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-5 lg:col-span-2">
                         <Button
                             type="submit"
                             disabled={isLoading || uploadingImage || !formData.imageUrl}

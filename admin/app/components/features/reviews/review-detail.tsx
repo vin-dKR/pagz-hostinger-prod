@@ -281,20 +281,21 @@ export function ReviewDetail({ reviewId, initialReview }: ReviewDetailProps) {
     return (
         <>
             {ConfirmDialog}
-            <div className="space-y-6">
+            <div className="space-y-5">
                 {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] pb-4">
+                    <div className="flex min-w-0 flex-wrap items-start gap-4">
                         <Button variant="ghost" onClick={() => router.back()}>
                             <ArrowLeft className="h-4 w-4 mr-2" />
                             Back
                         </Button>
-                        <div>
-                            <h1 className="text-3xl font-bold">Review Details</h1>
-                            <p className="text-sm text-gray-600 mt-1">Review ID: {review.id}</p>
+                        <div className="min-w-0">
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-foreground-tertiary)]">Content / Reviews</p>
+                            <h1 className="text-2xl font-semibold">Review details</h1>
+                            <p className="mt-1 break-all text-xs text-[var(--color-foreground-secondary)]">Review ID: {review.id}</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={review.isApproved ? 'success' : 'secondary'}>
                             {review.isApproved ? 'Approved' : 'Pending'}
                         </Badge>
@@ -345,7 +346,7 @@ export function ReviewDetail({ reviewId, initialReview }: ReviewDetailProps) {
                 </div>
 
                 {/* Main Content Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
                     {/* Left Column - Review Information */}
                     <div className="lg:col-span-2 space-y-6">
                         {/* Review Content Card */}
@@ -888,4 +889,3 @@ function EditReviewModal({
         </div>
     );
 }
-

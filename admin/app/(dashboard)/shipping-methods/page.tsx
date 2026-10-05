@@ -60,6 +60,7 @@ import {
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { PageLoading } from '@/app/components/ui/loading';
+import { ManagementPage } from '@/app/components/layouts/management-page';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastError, toastSuccess } from '@/lib/utils/toast';
 import { formatCurrency } from '@/lib/utils/format';
@@ -280,21 +281,17 @@ export default function ShippingMethodsPage() {
     }
 
     return (
-        <div className="space-y-8 max-w-[1600px]">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight">
-                        Shipping Methods
-                    </h1>
-                    <p className="mt-2 text-sm text-[var(--color-foreground-secondary)]">
-                        Manage the delivery options shown to customers at checkout.
-                    </p>
-                </div>
+        <ManagementPage
+            section="Commerce / Fulfillment"
+            title="Shipping methods"
+            description="Manage the delivery options shown to customers at checkout."
+            actions={
                 <Button onClick={openCreateDialog}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add Shipping Method
                 </Button>
-            </div>
+            }
+        >
 
             {isLoading ? (
                 <PageLoading />
@@ -309,13 +306,13 @@ export default function ShippingMethodsPage() {
                 </Alert>
             ) : (
                 <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between mb-4">
+                    <CardContent className="p-0">
+                        <div className="admin-toolbar flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
                             <div>
-                                <h2 className="text-xl font-semibold text-[var(--color-foreground)]">
+                                <h2 className="text-sm font-semibold text-[var(--color-foreground)]">
                                     Shipping Methods ({methods.length})
                                 </h2>
-                                <p className="text-sm text-[var(--color-foreground-secondary)] mt-1">
+                                <p className="text-xs text-[var(--color-foreground-secondary)] mt-1">
                                     Use the arrows to change display order. Only one method can be marked default.
                                 </p>
                             </div>
@@ -338,135 +335,56 @@ export default function ShippingMethodsPage() {
                                 </Button>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-foreground-secondary)]">
-                                            <th className="py-3 pr-4 font-medium">Order</th>
-                                            <th className="py-3 pr-4 font-medium w-10">Icon</th>
-                                            <th className="py-3 pr-4 font-medium">Name</th>
-                                            <th className="py-3 pr-4 font-medium">Price</th>
-                                            <th className="py-3 pr-4 font-medium">Estimated</th>
-                                            <th className="py-3 pr-4 font-medium">Default</th>
-                                            <th className="py-3 pr-4 font-medium">Active</th>
-                                            <th className="py-3 pr-4 font-medium text-right">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {methods.map((method, index) => {
-                                            const isFirst = index === 0;
-                                            const isLast = index === methods.length - 1;
-                                            const isBusy = mutatingId === method.id || isReordering;
-                                            return (
-                                                <tr
-                                                    key={method.id}
-                                                    className="border-b border-[var(--color-border)] last:border-0"
-                                                >
-                                                    <td className="py-3 pr-4">
-                                                        <div className="inline-flex items-center gap-1">
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                onClick={() => handleMove(method, 'up')}
-                                                                disabled={isFirst || isBusy}
-                                                                title="Move up"
-                                                                className="h-8 w-8"
-                                                            >
-                                                                <ArrowUp className="h-4 w-4" />
-                                                            </Button>
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                onClick={() => handleMove(method, 'down')}
-                                                                disabled={isLast || isBusy}
-                                                                title="Move down"
-                                                                className="h-8 w-8"
-                                                            >
-                                                                <ArrowDown className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-3 pr-4">
-                                                        {method.icon ? (
-                                                            <span
-                                                                aria-hidden
-                                                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--color-border)]"
-                                                            >
-                                                                {renderShippingIcon(method.icon, method.iconColor, 18)}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-xs text-[var(--color-foreground-tertiary)]">—</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-3 pr-4">
-                                                        <div className="font-medium text-[var(--color-foreground)]">
-                                                            {method.name}
-                                                        </div>
-                                                        {method.description && (
-                                                            <div className="text-xs text-[var(--color-foreground-secondary)] mt-0.5">
-                                                                {method.description}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-3 pr-4 text-[var(--color-foreground)]">
-                                                        {formatCurrency(Number(method.price) || 0)}
-                                                    </td>
-                                                    <td className="py-3 pr-4 text-[var(--color-foreground-secondary)]">
-                                                        {method.estimatedDays || '—'}
-                                                    </td>
-                                                    <td className="py-3 pr-4">
-                                                        {method.isDefault ? (
-                                                            <Badge variant="success">Default</Badge>
-                                                        ) : (
-                                                            <span className="text-xs text-[var(--color-foreground-tertiary)]">—</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-3 pr-4">
-                                                        <label className="inline-flex items-center gap-2 cursor-pointer">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={method.isActive}
-                                                                disabled={isBusy}
-                                                                onChange={() => handleToggleActive(method)}
-                                                                className="h-4 w-4 rounded border-[var(--color-input)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-ring)]"
-                                                            />
-                                                            <span className="text-xs text-[var(--color-foreground-secondary)]">
-                                                                {method.isActive ? 'Active' : 'Inactive'}
-                                                            </span>
-                                                        </label>
-                                                    </td>
-                                                    <td className="py-3 pr-4">
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => openEditDialog(method)}
-                                                                disabled={isBusy}
-                                                                title="Edit"
-                                                            >
-                                                                <Edit className="h-4 w-4" />
-                                                            </Button>
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => handleDelete(method)}
-                                                                disabled={isBusy}
-                                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                                title="Delete"
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
+                            <div className="grid gap-3 bg-[#f5f5f5] p-3 lg:grid-cols-2">
+                                {methods.map((method, index) => {
+                                    const isBusy = mutatingId === method.id || isReordering;
+                                    return (
+                                        <div key={method.id} className="relative overflow-hidden rounded-[12px] border border-[#dedede] bg-[#f5f5f5] p-1 shadow-[var(--shadow-sm)]">
+                                            <div className="flex items-center justify-between px-3 py-2 font-mono text-[10px] uppercase tracking-[0.03em] text-[#878787]">
+                                                <span>Delivery configuration</span>
+                                                <span>Method {String(index + 1).padStart(2, '0')}</span>
+                                            </div>
+                                            <div className="relative rounded-[9px] border border-[#e7e7e7] bg-white p-4">
+                                                <div className="flex items-center gap-3">
+                                                    <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[#e1e1e1] bg-[linear-gradient(180deg,#fff,#f0f0f0)] text-[var(--color-primary)] shadow-[0_2px_3px_#00000007,inset_0_0_0_1px_#fff]">
+                                                        {method.icon ? renderShippingIcon(method.icon, method.iconColor, 20) : <Truck className="h-5 w-5" />}
+                                                    </span>
+                                                    <h3 className="text-[15px] font-medium tracking-tight text-[var(--color-foreground)]">{method.name}</h3>
+                                                    {method.isDefault && <Badge variant="success">Default</Badge>}
+                                                </div>
+                                                <p className="mt-3 text-xs leading-relaxed text-[var(--color-foreground-secondary)]">{method.description || 'Delivery option at checkout'}</p>
+                                                <div className="mt-4 grid grid-cols-2 gap-3 rounded-[8px] border border-[#e9e9e9] bg-[#fafafa] px-3 py-3">
+                                                    <div>
+                                                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--color-foreground-tertiary)]">Price</p>
+                                                        <p className="mt-1 text-lg font-semibold tabular-nums text-[var(--color-foreground)]">{formatCurrency(Number(method.price) || 0)}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--color-foreground-tertiary)]">Estimated delivery</p>
+                                                        <p className="mt-1 text-sm font-semibold text-[var(--color-foreground)]">{method.estimatedDays || '—'}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[var(--color-foreground-secondary)]">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={method.isActive}
+                                                            disabled={isBusy}
+                                                            onChange={() => handleToggleActive(method)}
+                                                            className="h-4 w-4 rounded border-[var(--color-input)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-ring)]"
+                                                        />
+                                                        {method.isActive ? 'Active' : 'Inactive'}
+                                                    </label>
+                                                    <div className="flex items-center gap-0.5">
+                                                        <Button type="button" variant="ghost" size="icon" onClick={() => handleMove(method, 'up')} disabled={index === 0 || isBusy} title="Move up" aria-label={`Move ${method.name} up`} className="h-8 w-8"><ArrowUp className="h-4 w-4" /></Button>
+                                                        <Button type="button" variant="ghost" size="icon" onClick={() => handleMove(method, 'down')} disabled={index === methods.length - 1 || isBusy} title="Move down" aria-label={`Move ${method.name} down`} className="h-8 w-8"><ArrowDown className="h-4 w-4" /></Button>
+                                                        <Button type="button" variant="ghost" size="icon" onClick={() => openEditDialog(method)} disabled={isBusy} title="Edit" aria-label={`Edit ${method.name}`} className="h-8 w-8"><Edit className="h-4 w-4" /></Button>
+                                                        <Button type="button" variant="ghost" size="icon" onClick={() => handleDelete(method)} disabled={isBusy} title="Delete" aria-label={`Delete ${method.name}`} className="h-8 w-8 text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </CardContent>
@@ -643,6 +561,6 @@ export default function ShippingMethodsPage() {
             </Dialog>
 
             {ConfirmDialog}
-        </div>
+        </ManagementPage>
     );
 }

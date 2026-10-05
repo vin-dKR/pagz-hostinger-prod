@@ -2,23 +2,17 @@
  * Invoice Service - PDF download and print functionality
  */
 
-import { getAuthToken } from './api-client';
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
 
 /**
  * Download invoice as PDF
  */
 export async function downloadInvoicePDF(orderId: string): Promise<void> {
-    const token = getAuthToken();
     const endpoint = `/admin/orders/${orderId}/invoice/pdf`;
     const fullUrl = `${API_BASE_URL}${endpoint}`;
     
     const response = await fetch(fullUrl, {
         method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-        },
     });
 
     if (!response.ok) {
@@ -47,27 +41,21 @@ export async function downloadInvoicePDF(orderId: string): Promise<void> {
  * Get invoice PDF URL for preview
  */
 export function getInvoicePDFUrl(orderId: string): string {
-    const token = getAuthToken();
     const endpoint = `/admin/orders/${orderId}/invoice/pdf`;
     const fullUrl = `${API_BASE_URL}${endpoint}`;
     
-    // Return URL with token in query param for iframe (or use blob URL)
-    return `${fullUrl}?token=${encodeURIComponent(token || '')}`;
+    return fullUrl;
 }
 
 /**
  * Get invoice PDF as blob URL for preview
  */
 export async function getInvoicePDFBlobUrl(orderId: string): Promise<string> {
-    const token = getAuthToken();
     const endpoint = `/admin/orders/${orderId}/invoice/pdf`;
     const fullUrl = `${API_BASE_URL}${endpoint}`;
     
     const response = await fetch(fullUrl, {
         method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-        },
     });
 
     if (!response.ok) {
@@ -82,15 +70,11 @@ export async function getInvoicePDFBlobUrl(orderId: string): Promise<string> {
  * Print invoice (opens PDF in new window for printing)
  */
 export async function printInvoice(orderId: string): Promise<void> {
-    const token = getAuthToken();
     const endpoint = `/admin/orders/${orderId}/invoice/pdf`;
     const fullUrl = `${API_BASE_URL}${endpoint}`;
     
     const response = await fetch(fullUrl, {
         method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-        },
     });
 
     if (!response.ok) {

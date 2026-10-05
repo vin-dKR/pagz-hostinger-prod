@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { cookies } from 'next/headers';
 import type { Coupon, CouponAnalytics, CouponUsage } from '../api/coupons.service';
 
 const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1';
@@ -10,32 +9,15 @@ const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1
  */
 export async function getCoupon(id: string): Promise<Coupon | null> {
     try {
-        let cookieStore;
-        try {
-            cookieStore = await cookies();
-        } catch (cookieError) {
-            console.error('[Coupons] Error accessing cookies:', cookieError);
-            return null;
-        }
-
-    const token = cookieStore.get('admin_token')?.value;
-
     try {
         const res = await fetch(`${baseUrl}/admin/coupons/${id}`, {
             headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             cache: 'no-store',
         });
 
         if (!res.ok) {
-                // Handle 401 Unauthorized (session expired/invalid)
-                if (res.status === 401) {
-                    console.error('[Coupons] Session expired or invalid (401). User needs to login again.');
-                    return null;
-                }
-
                 console.error(`[Coupons] API returned ${res.status} for coupon ${id}`);
                 return null;
             }
@@ -69,32 +51,15 @@ export async function getCoupon(id: string): Promise<Coupon | null> {
  */
 export async function getCouponAnalytics(id: string): Promise<CouponAnalytics | null> {
     try {
-        let cookieStore;
-        try {
-            cookieStore = await cookies();
-        } catch (cookieError) {
-            console.error('[Coupons] Error accessing cookies:', cookieError);
-            return null;
-        }
-
-    const token = cookieStore.get('admin_token')?.value;
-
     try {
         const res = await fetch(`${baseUrl}/admin/coupons/${id}/analytics`, {
             headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             cache: 'no-store',
         });
 
         if (!res.ok) {
-                // Handle 401 Unauthorized (session expired/invalid)
-                if (res.status === 401) {
-                    console.error('[Coupons] Session expired or invalid (401). User needs to login again.');
-                    return null;
-                }
-
                 console.error(`[Coupons] API returned ${res.status} for coupon analytics ${id}`);
                 return null;
             }
@@ -132,32 +97,15 @@ export async function getCouponUsages(
     limit: number = 20
 ): Promise<{ data: CouponUsage[]; pagination: any } | null> {
     try {
-        let cookieStore;
-        try {
-            cookieStore = await cookies();
-        } catch (cookieError) {
-            console.error('[Coupons] Error accessing cookies:', cookieError);
-            return null;
-        }
-
-    const token = cookieStore.get('admin_token')?.value;
-
     try {
         const res = await fetch(`${baseUrl}/admin/coupons/${id}/usages?page=${page}&limit=${limit}`, {
             headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             cache: 'no-store',
         });
 
         if (!res.ok) {
-                // Handle 401 Unauthorized (session expired/invalid)
-                if (res.status === 401) {
-                    console.error('[Coupons] Session expired or invalid (401). User needs to login again.');
-                    return null;
-                }
-
                 console.error(`[Coupons] API returned ${res.status} for coupon usages ${id}`);
                 return null;
             }
@@ -185,4 +133,3 @@ export async function getCouponUsages(
         return null;
     }
 }
-

@@ -29,7 +29,7 @@ import {
     type UserStatisticsResponse,
 } from '@/lib/api/users.service';
 import { formatDate } from '@/lib/utils/format';
-import { Edit, Trash2, Eye, Mail, Phone, Download, Filter, X, LayoutGrid, List, Table2 } from 'lucide-react';
+import { Edit, Trash2, Eye, Mail, Phone, Download, Filter, X, LayoutGrid, List, Table2, Search, UsersRound } from 'lucide-react';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { useRouter } from 'next/navigation';
 import { UserStats } from './user-stats';
@@ -208,7 +208,7 @@ export function UsersList() {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             {/* Statistics Dashboard */}
             {statistics && (
                 <>
@@ -217,55 +217,34 @@ export function UsersList() {
                 </>
             )}
 
-            <Card>
+            <Card className="overflow-hidden">
                 <CardContent className="p-0">
                     {/* Header: search + filters + view toggle */}
-                    <div className="flex items-center justify-between px-4 py-3 gap-4 border-b">
-                        <div className="flex items-center gap-2 flex-1">
-                            <Input
-                                className="max-w-sm"
-                                placeholder="Search by name, email, phone, or ID..."
-                                value={searchInput}
-                                onChange={(e) => {
-                                    setPage(1);
-                                    setSearchInput(e.target.value);
-                                }}
-                            />
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setShowFilters(!showFilters)}
-                            >
-                                <Filter className="h-4 w-4 mr-2" />
-                                Filters
-                                {Object.values(filters).some((v) => v !== undefined && v !== 'createdAt' && v !== 'desc') && (
-                                    <Badge variant="secondary" className="ml-2">
-                                        {Object.values(filters).filter((v) => v !== undefined && v !== 'createdAt' && v !== 'desc').length}
-                                    </Badge>
-                                )}
-                            </Button>
-                            {Object.values(filters).some((v) => v !== undefined && v !== 'createdAt' && v !== 'desc') && (
-                                <Button variant="ghost" size="sm" onClick={clearFilters}>
-                                    <X className="h-4 w-4 mr-2" />
-                                    Clear
-                                </Button>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2">
+                    <div className="admin-toolbar flex flex-col gap-3 border-b border-[var(--color-border)] p-4 sm:px-5 sm:py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <h2 className="text-sm font-semibold text-[var(--color-foreground)]">Directory</h2>
+                                <p className="mt-0.5 text-xs text-[var(--color-foreground-secondary)]">{statistics ? `${statistics.totalUsers.toLocaleString()} total accounts` : 'Browse accounts'}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={handleExport}
                                 disabled={isLoading}
+                                className="gap-2"
                             >
-                                <Download className="h-4 w-4 mr-2" />
+                                <Download className="h-4 w-4" />
                                 Export
                             </Button>
-                            <div className="flex items-center gap-1 border rounded-md">
+                            <div className="flex items-center gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-0.5" role="group" aria-label="User view">
                                 <Button
                                     variant={viewMode === 'table' ? 'default' : 'ghost'}
                                     size="sm"
                                     onClick={() => setViewMode('table')}
+                                    aria-label="Table view"
+                                    title="Table view"
+                                    className="h-8 w-8 px-0"
                                 >
                                     <Table2 className="h-4 w-4" />
                                 </Button>
@@ -273,6 +252,9 @@ export function UsersList() {
                                     variant={viewMode === 'card' ? 'default' : 'ghost'}
                                     size="sm"
                                     onClick={() => setViewMode('card')}
+                                    aria-label="Card view"
+                                    title="Card view"
+                                    className="h-8 w-8 px-0"
                                 >
                                     <LayoutGrid className="h-4 w-4" />
                                 </Button>
@@ -280,23 +262,46 @@ export function UsersList() {
                                     variant={viewMode === 'list' ? 'default' : 'ghost'}
                                     size="sm"
                                     onClick={() => setViewMode('list')}
+                                    aria-label="List view"
+                                    title="List view"
+                                    className="h-8 w-8 px-0"
                                 >
                                     <List className="h-4 w-4" />
                                 </Button>
                             </div>
                         </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="relative min-w-[220px] flex-1 sm:max-w-md">
+                                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+                                <Input
+                                    type="search"
+                                    aria-label="Search users"
+                                    className="h-9 rounded-lg bg-[var(--color-background)] pl-9"
+                                    placeholder="Search name, email, phone, or ID"
+                                    value={searchInput}
+                                    onChange={(e) => { setPage(1); setSearchInput(e.target.value); }}
+                                />
+                            </div>
+                            <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}>
+                                <Filter className="h-4 w-4" />
+                                Filters
+                                {Object.values(filters).some((v) => v !== undefined && v !== 'createdAt' && v !== 'desc') && <Badge variant="secondary">{Object.values(filters).filter((v) => v !== undefined && v !== 'createdAt' && v !== 'desc').length}</Badge>}
+                            </Button>
+                            {Object.values(filters).some((v) => v !== undefined && v !== 'createdAt' && v !== 'desc') && <Button variant="ghost" size="sm" className="gap-1.5" onClick={clearFilters}><X className="h-4 w-4" />Clear</Button>}
+                        </div>
                     </div>
 
                     {/* Filters Panel */}
                     {showFilters && (
-                        <div className="px-4 py-3 border-b bg-gray-50">
+                        <div className="border-b border-[var(--color-border)] bg-[var(--color-background-secondary)] px-4 py-4 sm:px-5">
                             <UserFilters filters={filters} onFilterChange={handleFilterChange} />
                         </div>
                     )}
 
                     {/* Bulk Actions */}
                     {selectedUsers.size > 0 && (
-                        <div className="px-4 py-2 border-b bg-blue-50">
+                        <div className="border-b border-[var(--color-border)] bg-[var(--color-accent)] px-4 py-3 sm:px-5">
                             <BulkActions
                                 selectedCount={selectedUsers.size}
                                 selectedUserIds={Array.from(selectedUsers)}
@@ -329,23 +334,21 @@ export function UsersList() {
                     {/* Table / Card / List View */}
                     <div className="relative">
                         {isLoading && hasLoadedOnce && (
-                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/5 text-xs text-gray-500">
-                                Updating results...
+                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--color-card)]/75 text-sm font-medium text-[var(--color-foreground-secondary)] backdrop-blur-[1px]">
+                                Updating results…
                             </div>
                         )}
 
                         {users.length === 0 && !isLoading && !error ? (
-                            <div className="px-4 pb-6 pt-6">
-                                <Card>
-                                    <CardContent className="py-8 text-center">
-                                        <p className="text-gray-600">
-                                            No users found. Try adjusting your search or filters.
-                                        </p>
-                                    </CardContent>
-                                </Card>
+                            <div className="flex flex-col items-center px-6 py-16 text-center">
+                                <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-background-secondary)] text-[var(--color-foreground-secondary)]"><UsersRound className="h-6 w-6" /></span>
+                                <h3 className="text-base font-semibold text-[var(--color-foreground)]">No users found</h3>
+                                <p className="mt-1 text-sm text-[var(--color-foreground-secondary)]">Try another search or adjust the filters.</p>
                             </div>
                         ) : viewMode === 'table' ? (
-                            <Table>
+                            <>
+                            <div className="hidden xl:block [&>div]:!rounded-none [&>div]:!border-0">
+                            <Table className="min-w-[1040px]">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead className="w-12">
@@ -366,7 +369,7 @@ export function UsersList() {
                                 </TableHeader>
                                 <TableBody>
                                     {users.map((user) => (
-                                        <TableRow key={user.id}>
+                                        <TableRow key={user.id} className="hover:bg-[var(--color-background-secondary)]">
                                             <TableCell>
                                                 <input
                                                     type="checkbox"
@@ -377,12 +380,12 @@ export function UsersList() {
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex items-center gap-3">
-                                                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-accent)] text-xs font-semibold text-[var(--color-primary)]">
                                                         {getInitials(user.name, user.email)}
                                                     </div>
                                                     <div>
-                                                        <div className="font-medium">{user.name || 'N/A'}</div>
-                                                        <div className="text-sm text-gray-500">{user.id.slice(0, 8)}...</div>
+                                                        <div className="font-semibold text-[var(--color-foreground)]">{user.name || 'N/A'}</div>
+                                                        <div className="mt-0.5 font-mono text-[11px] text-[var(--color-foreground-tertiary)]">{user.id.slice(0, 8)}...</div>
                                                     </div>
                                                 </div>
                                             </TableCell>
@@ -390,7 +393,7 @@ export function UsersList() {
                                                 <div className="space-y-1">
                                                     <a
                                                         href={`mailto:${user.email}`}
-                                                        className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                                                        className="flex items-center gap-1 text-xs text-[var(--color-foreground)] hover:text-[var(--color-primary)] hover:underline"
                                                     >
                                                         <Mail className="h-3 w-3" />
                                                         {user.email}
@@ -398,7 +401,7 @@ export function UsersList() {
                                                     {user.phone && (
                                                         <a
                                                             href={`tel:${user.phone}`}
-                                                            className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                                                            className="flex items-center gap-1 text-xs text-[var(--color-foreground-secondary)] hover:text-[var(--color-primary)] hover:underline"
                                                         >
                                                             <Phone className="h-3 w-3" />
                                                             {user.phone}
@@ -422,7 +425,7 @@ export function UsersList() {
                                                     </div>
                                                 )}
                                             </TableCell>
-                                            <TableCell>{formatDate(user.createdAt)}</TableCell>
+                                            <TableCell className="whitespace-nowrap text-xs text-[var(--color-foreground-secondary)]">{formatDate(user.createdAt)}</TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex justify-end gap-2">
                                                     <Button
@@ -448,40 +451,61 @@ export function UsersList() {
                                     ))}
                                 </TableBody>
                             </Table>
-                        ) : viewMode === 'card' ? (
-                            <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            </div>
+                            <div className="grid gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">
                                 {users.map((user) => (
-                                    <Card key={user.id}>
+                                    <article key={user.id} className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+                                        <div className="flex items-start gap-3">
+                                            <input type="checkbox" aria-label={`Select ${user.name || user.email}`} checked={selectedUsers.has(user.id)} onChange={() => handleSelectUser(user.id)} className="mt-3 rounded border-[var(--color-border)]" />
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-accent)] text-xs font-semibold text-[var(--color-primary)]">{getInitials(user.name, user.email)}</div>
+                                            <div className="min-w-0 flex-1"><button type="button" onClick={() => router.push(`/users/${user.id}`)} className="block max-w-full truncate text-left text-sm font-semibold text-[var(--color-foreground)] hover:text-[var(--color-primary)]">{user.name || 'N/A'}</button><p className="mt-0.5 truncate text-xs text-[var(--color-foreground-secondary)]">{user.email}</p></div>
+                                            {getRoleBadge(user)}
+                                        </div>
+                                        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--color-border)] pt-3 text-xs sm:grid-cols-4">
+                                            <div><p className="text-[var(--color-foreground-tertiary)]">Orders</p><p className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.statistics?.totalOrders ?? '—'}</p></div>
+                                            <div><p className="text-[var(--color-foreground-tertiary)]">Spent</p><p className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.statistics ? `₹${user.statistics.totalSpent.toLocaleString()}` : '—'}</p></div>
+                                            <div><p className="text-[var(--color-foreground-tertiary)]">Reviews</p><p className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.statistics?.totalReviews ?? '—'}</p></div>
+                                            <div><p className="text-[var(--color-foreground-tertiary)]">Created</p><p className="mt-1 font-semibold text-[var(--color-foreground)]">{formatDate(user.createdAt)}</p></div>
+                                        </div>
+                                        <div className="mt-3 flex justify-end gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`View ${user.name || user.email}`} onClick={() => router.push(`/users/${user.id}`)}><Eye className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${user.name || user.email}`} onClick={() => handleEdit(user)}><Edit className="h-4 w-4" /></Button></div>
+                                    </article>
+                                ))}
+                            </div>
+                            </>
+                        ) : viewMode === 'card' ? (
+                            <div className="grid gap-3 p-3 sm:grid-cols-2 sm:p-4 2xl:grid-cols-3">
+                                {users.map((user) => (
+                                    <Card key={user.id} className="min-w-0 shadow-none hover:border-[var(--color-primary)]">
                                         <CardContent className="p-4">
-                                            <div className="flex items-start justify-between mb-3">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                                            <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+                                                <div className="flex min-w-0 items-center gap-3">
+                                                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-accent)] text-xs font-semibold text-[var(--color-primary)]">
                                                         {getInitials(user.name, user.email)}
                                                     </div>
-                                                    <div>
-                                                        <div className="font-medium">{user.name || 'N/A'}</div>
-                                                        <div className="text-sm text-gray-500">{user.email}</div>
+                                                    <div className="min-w-0">
+                                                        <div className="truncate text-sm font-semibold text-[var(--color-foreground)]">{user.name || 'N/A'}</div>
+                                                        <div className="truncate text-xs text-[var(--color-foreground-secondary)]">{user.email}</div>
                                                     </div>
                                                 </div>
                                                 {getRoleBadge(user)}
                                             </div>
                                             {user.statistics && (
-                                                <div className="grid grid-cols-2 gap-2 mb-3 text-sm">
+                                                <div className="mb-4 grid grid-cols-2 gap-3 border-y border-[var(--color-border)] py-3 text-xs">
                                                     <div>
-                                                        <div className="text-gray-500">Orders</div>
-                                                        <div className="font-semibold">{user.statistics.totalOrders}</div>
+                                                        <div className="text-[var(--color-foreground-tertiary)]">Orders</div>
+                                                        <div className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.statistics.totalOrders}</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-gray-500">Spent</div>
-                                                        <div className="font-semibold">₹{user.statistics.totalSpent.toLocaleString()}</div>
+                                                        <div className="text-[var(--color-foreground-tertiary)]">Spent</div>
+                                                        <div className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">₹{user.statistics.totalSpent.toLocaleString()}</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-gray-500">Reviews</div>
-                                                        <div className="font-semibold">{user.statistics.totalReviews}</div>
+                                                        <div className="text-[var(--color-foreground-tertiary)]">Reviews</div>
+                                                        <div className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.statistics.totalReviews}</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-gray-500">Addresses</div>
-                                                        <div className="font-semibold">{user.statistics.addressesCount}</div>
+                                                        <div className="text-[var(--color-foreground-tertiary)]">Addresses</div>
+                                                        <div className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.statistics.addressesCount}</div>
                                                     </div>
                                                 </div>
                                             )}
@@ -495,7 +519,7 @@ export function UsersList() {
                                                     <Eye className="h-4 w-4 mr-2" />
                                                     View
                                                 </Button>
-                                                <Button variant="outline" size="sm">
+                                                <Button variant="outline" size="sm" aria-label={`Edit ${user.name || user.email}`}>
                                                     <Edit className="h-4 w-4" />
                                                 </Button>
                                             </div>
@@ -504,30 +528,30 @@ export function UsersList() {
                                 ))}
                             </div>
                         ) : (
-                            <div className="divide-y">
+                            <div className="divide-y divide-[var(--color-border)]">
                                 {users.map((user) => (
-                                    <div key={user.id} className="px-4 py-3 hover:bg-gray-50 flex items-center justify-between">
-                                        <div className="flex items-center gap-4 flex-1">
+                                    <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-[var(--color-background-secondary)] sm:px-5">
+                                        <div className="flex min-w-0 flex-1 items-center gap-3">
                                             <input
                                                 type="checkbox"
                                                 checked={selectedUsers.has(user.id)}
                                                 onChange={() => handleSelectUser(user.id)}
                                                 className="rounded border-gray-300"
                                             />
-                                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-accent)] text-xs font-semibold text-[var(--color-primary)]">
                                                 {getInitials(user.name, user.email)}
                                             </div>
-                                            <div className="flex-1">
-                                                <div className="font-medium">{user.name || 'N/A'}</div>
-                                                <div className="text-sm text-gray-500">{user.email}</div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="truncate text-sm font-semibold text-[var(--color-foreground)]">{user.name || 'N/A'}</div>
+                                                <div className="truncate text-xs text-[var(--color-foreground-secondary)]">{user.email}</div>
                                             </div>
                                             {getRoleBadge(user)}
                                             {user.statistics && (
-                                                <div className="text-sm text-gray-500">
+                                                <div className="hidden text-xs tabular-nums text-[var(--color-foreground-secondary)] lg:block">
                                                     {user.statistics.totalOrders} orders • ₹{user.statistics.totalSpent.toLocaleString()}
                                                 </div>
                                             )}
-                                            <div className="text-sm text-gray-500">{formatDate(user.createdAt)}</div>
+                                            <div className="hidden text-xs text-[var(--color-foreground-secondary)] lg:block">{formatDate(user.createdAt)}</div>
                                         </div>
                                         <div className="flex gap-2">
                                             <Button
@@ -552,12 +576,11 @@ export function UsersList() {
                     </div>
 
                     {/* Pagination */}
-                    <div className="flex items-center justify-between gap-4 flex-nowrap px-4 py-3 border-t">
-                        <div className="text-sm text-[var(--color-foreground-secondary)] whitespace-nowrap">
-                            Showing {users.length > 0 ? (page - 1) * 20 + 1 : 0} to {Math.min(page * 20, (page - 1) * 20 + users.length)} of{' '}
-                            {totalPages * 20} results
+                    <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-foreground-secondary)] sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                        <div className="tabular-nums">
+                            Showing {users.length > 0 ? (page - 1) * 20 + 1 : 0}–{Math.min(page * 20, (page - 1) * 20 + users.length)} · Page {page} of {Math.max(totalPages, 1)}
                         </div>
-                        <div className="flex items-center gap-2 flex-nowrap flex-shrink-0">
+                        <div className="flex shrink-0 items-center gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -567,9 +590,6 @@ export function UsersList() {
                             >
                                 Previous
                             </Button>
-                            <span className="text-sm text-[var(--color-foreground-secondary)] whitespace-nowrap">
-                                Page {page} of {Math.max(totalPages, 1)}
-                            </span>
                             <Button
                                 variant="outline"
                                 size="sm"

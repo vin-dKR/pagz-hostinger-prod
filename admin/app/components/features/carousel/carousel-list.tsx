@@ -68,15 +68,16 @@ function SortableItem({ carousel, onEdit, onDelete, onToggleActive }: SortableIt
         <div
             ref={setNodeRef}
             style={style}
-            className={`bg-white rounded-lg border border-gray-200 p-4 mb-3 ${
-                isDragging ? 'shadow-lg' : ''
+            className={`group relative overflow-hidden rounded-xl border border-[#dedede] bg-[linear-gradient(180deg,#fff,#fafafa)] p-3 shadow-[0_1px_3px_#00000005,inset_0_0_0_1px_#fff] transition-[border-color,transform,box-shadow] hover:border-[#c4c4c4] ${
+                isDragging ? 'relative z-10 shadow-[var(--shadow-md)]' : ''
             } ${!carousel.isActive ? 'opacity-60' : ''}`}
         >
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap sm:gap-4">
                 <div
                     {...attributes}
                     {...listeners}
-                    className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600"
+                    className="flex h-12 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-md border border-[#e9e9e9] bg-[#f6f6f6] text-[#b1b1b1] shadow-[inset_0_1px_1px_#fff] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] active:cursor-grabbing"
+                    aria-label={`Reorder ${carousel.alt || 'carousel item'}`}
                 >
                     <GripVertical className="h-5 w-5" />
                 </div>
@@ -86,40 +87,43 @@ function SortableItem({ carousel, onEdit, onDelete, onToggleActive }: SortableIt
                         alt={carousel.alt || 'Carousel image'}
                         width={120}
                         height={80}
-                        className="rounded-md object-cover"
+                        className="h-[70px] w-[108px] rounded-lg border border-[var(--color-border)] object-cover ring-[3px] ring-[#f0f0f0] sm:h-[78px] sm:w-[138px]"
                     />
                 </div>
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-medium text-gray-900 truncate">
+                <div className="min-w-[150px] flex-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--color-foreground-tertiary)]">Order {carousel.displayOrder}</span>
+                        <span className={`inline-flex items-center gap-1.5 rounded-[5px] px-2 py-0.5 text-[10px] font-medium ${carousel.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-[var(--color-background-tertiary)] text-[var(--color-foreground-secondary)]'}`}>
+                            <span aria-hidden className={`h-1 w-1 rounded-full ${carousel.isActive ? 'bg-emerald-500' : 'bg-[#aaa]'}`} />
+                            {carousel.isActive ? 'Live' : 'Inactive'}
+                        </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-[15px] font-semibold text-[var(--color-foreground)]">
                             {carousel.alt || 'Carousel Item'}
                         </h3>
                         {carousel.category && (
-                            <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
+                            <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-background-tertiary)] px-2 py-0.5 text-[11px] text-[var(--color-foreground-secondary)]">
                                 {carousel.category.name}
                             </span>
                         )}
-                        {!carousel.isActive && (
-                            <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
-                                Inactive
-                            </span>
-                        )}
                     </div>
-                    <p className="text-sm text-gray-500">
-                        Order: {carousel.displayOrder} • Created: {formatDate(carousel.createdAt)}
+                    <p className="mt-1.5 text-xs text-[var(--color-foreground-secondary)]">
+                        Created {formatDate(carousel.createdAt)}
                     </p>
                     {carousel.category && (
-                        <p className="text-xs text-gray-400 mt-1">
-                            Links to: /services/{carousel.category.slug}
+                        <p className="mt-1 truncate font-mono text-[11px] text-[var(--color-foreground-tertiary)]">
+                            /services/{carousel.category.slug}
                         </p>
                     )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="ml-auto flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-background-tertiary)] p-1 sm:ml-0">
                     <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => onToggleActive(carousel)}
                         title={carousel.isActive ? 'Deactivate' : 'Activate'}
+                        aria-label={carousel.isActive ? 'Deactivate carousel item' : 'Activate carousel item'}
                     >
                         {carousel.isActive ? (
                             <Eye className="h-4 w-4" />
@@ -131,6 +135,8 @@ function SortableItem({ carousel, onEdit, onDelete, onToggleActive }: SortableIt
                         variant="ghost"
                         size="sm"
                         onClick={() => onEdit(carousel)}
+                        title="Edit carousel item"
+                        aria-label="Edit carousel item"
                     >
                         <Edit className="h-4 w-4" />
                     </Button>
@@ -139,6 +145,8 @@ function SortableItem({ carousel, onEdit, onDelete, onToggleActive }: SortableIt
                         size="sm"
                         onClick={() => onDelete(carousel)}
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        title="Delete carousel item"
+                        aria-label="Delete carousel item"
                     >
                         <Trash2 className="h-4 w-4" />
                     </Button>
@@ -279,13 +287,13 @@ export function CarouselList() {
     return (
         <>
             <Card>
-                <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-6">
+                <CardContent className="p-0">
+                    <div className="admin-toolbar flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
                         <div>
-                            <h2 className="text-xl font-semibold text-gray-900">
+                            <h2 className="text-sm font-semibold text-[var(--color-foreground)]">
                                 Carousel Items ({carousels.length})
                             </h2>
-                            <p className="text-sm text-gray-500 mt-1">
+                            <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
                                 Drag items to reorder. Changes are saved automatically.
                             </p>
                         </div>
@@ -298,7 +306,7 @@ export function CarouselList() {
                     </div>
 
                     {carousels.length === 0 ? (
-                        <div className="text-center py-12">
+                        <div className="px-5 py-16 text-center">
                             <p className="text-gray-500 mb-4">
                                 No carousel items found. Create your first carousel item to get started.
                             </p>
@@ -319,21 +327,23 @@ export function CarouselList() {
                                 items={carousels.map((c) => c.id)}
                                 strategy={verticalListSortingStrategy}
                             >
-                                {carousels.map((carousel) => (
-                                    <SortableItem
-                                        key={carousel.id}
-                                        carousel={carousel}
-                                        onEdit={handleEdit}
-                                        onDelete={handleDelete}
-                                        onToggleActive={handleToggleActive}
-                                    />
-                                ))}
+                                <div className="space-y-2.5 bg-[#f3f3f3] p-3">
+                                    {carousels.map((carousel) => (
+                                        <SortableItem
+                                            key={carousel.id}
+                                            carousel={carousel}
+                                            onEdit={handleEdit}
+                                            onDelete={handleDelete}
+                                            onToggleActive={handleToggleActive}
+                                        />
+                                    ))}
+                                </div>
                             </SortableContext>
                         </DndContext>
                     )}
 
                     {isReordering && (
-                        <div className="mt-4 text-sm text-gray-500 text-center">
+                        <div className="border-t border-[var(--color-border)] px-5 py-3 text-center text-xs text-[var(--color-foreground-secondary)]">
                             Saving order...
                         </div>
                     )}

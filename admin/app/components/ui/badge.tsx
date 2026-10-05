@@ -12,19 +12,19 @@ export interface BadgeProps extends HTMLAttributes<HTMLDivElement> {
 const Badge = forwardRef<HTMLDivElement, BadgeProps>(
     ({ className, variant = 'default', ...props }, ref) => {
         const variants = {
-            default: 'bg-[var(--color-primary)] text-[var(--color-primary-foreground)]',
+            default: 'bg-[#efeff7] text-[#6463a4]',
             secondary: 'bg-[var(--color-secondary)] text-[var(--color-secondary-foreground)]',
-            destructive: 'bg-[var(--color-destructive)] text-[var(--color-destructive-foreground)]',
-            outline: 'text-[var(--color-foreground)] border border-[var(--color-border)] bg-transparent',
-            success: 'bg-[var(--color-success)] text-[var(--color-success-foreground)]',
-            warning: 'bg-[var(--color-warning)] text-[var(--color-warning-foreground)]',
+            destructive: 'bg-[#fdf0ef] text-[#b83e3e]',
+            outline: 'border border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-foreground-secondary)]',
+            success: 'bg-[#e9f6f0] text-[#217659]',
+            warning: 'bg-[#fff5e8] text-[#9a6217]',
         };
 
         return (
             <div
                 ref={ref}
                 className={cn(
-                    'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors',
+                    'inline-flex items-center whitespace-nowrap rounded-[5px] px-2 py-1 text-[11px] font-medium leading-none tracking-[-0.01em] transition-colors',
                     variants[variant],
                     className
                 )}
@@ -36,4 +36,3 @@ const Badge = forwardRef<HTMLDivElement, BadgeProps>(
 Badge.displayName = 'Badge';
 
 export { Badge };
-

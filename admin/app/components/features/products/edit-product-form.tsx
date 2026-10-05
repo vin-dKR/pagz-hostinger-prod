@@ -227,15 +227,16 @@ export function EditProductForm({ productId }: EditProductFormProps) {
     return (
         <>
             {ConfirmDialog}
-            <div className="space-y-8 max-w-[1600px]">
+            <div className="mx-auto max-w-[1260px] space-y-6 pb-12">
                 {/* Header */}
-                <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] pb-6">
                     <div>
-                        <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight">
-                            Edit Product
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-foreground-tertiary)]">Catalog / Products</p>
+                        <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-foreground)]">
+                            Edit product
                         </h1>
-                        <p className="mt-2 text-sm text-[var(--color-foreground-secondary)]">
-                            Update product details and settings
+                        <p className="mt-1.5 text-sm text-[var(--color-foreground-secondary)]">
+                            Update product details, media, pricing, and availability.
                         </p>
                     </div>
                 </div>
@@ -246,7 +247,7 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                         </Alert>
                     )}
 
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="space-y-5">
                     {/* Images */}
                     <Card>
                         <CardHeader>
@@ -571,7 +572,7 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                     </Card>
 
                     {/* Classification & Pricing */}
-                    <div className="grid gap-6 md:grid-cols-2">
+                    <div className="grid items-start gap-6 md:grid-cols-2">
                         <Card>
                             <CardHeader>
                                 <CardTitle>Pricing</CardTitle>
@@ -1244,7 +1245,7 @@ export function EditProductForm({ productId }: EditProductFormProps) {
                     )}
 
                     {/* Footer actions */}
-                    <div className="flex items-center justify-between pt-4">
+                    <div className="flex items-center justify-end border-t border-[var(--color-border)] pt-5">
                         <div />
                         <div className="flex gap-2">
                             <Button
@@ -1317,5 +1318,3 @@ function mapProductToFormData(product: Product): CreateProductData {
         })),
     };
 }
-
-

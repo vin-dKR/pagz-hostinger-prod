@@ -132,7 +132,7 @@ export function PaymentsList() {
             {/* Statistics Dashboard */}
             <PaymentStats />
 
-            <Card>
+            <Card className="overflow-hidden shadow-none hover:shadow-none">
                 <CardContent className="p-0">
                     {/* Bulk Actions Bar */}
                     <BulkActions
@@ -143,12 +143,16 @@ export function PaymentsList() {
                     />
 
                     {/* Search and Filters */}
-                    <div className="border-b bg-gray-50/50 p-4">
-                        <div className="flex items-center justify-between gap-4 flex-nowrap">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="admin-toolbar border-b border-[var(--color-border)] px-4 py-3 sm:px-5">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div><h2 className="text-sm font-semibold text-[var(--color-foreground)]">Transaction ledger</h2><p className="mt-0.5 text-xs text-[var(--color-foreground-tertiary)]">Payments, methods, and settlement status</p></div>
+                            <span className="rounded-md border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs font-medium tabular-nums text-[var(--color-foreground)]">{total.toLocaleString()} payments</span>
+                        </div>
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                                 {/* Filters */}
                                 <PaymentFilters filters={filters} onFiltersChange={setFilters} />
-                                <div className="relative flex-1 max-w-md min-w-0">
+                                <div className="relative min-w-[220px] flex-1 lg:max-w-md">
                                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                                     <Input
                                         type="text"

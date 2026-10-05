@@ -1,24 +1,18 @@
-/**
- * Products Page
-    * Apple-inspired products list page
- */
-
 import { ProductsList } from '@/app/components/features/products/products-list';
+import { Button } from '@/app/components/ui/button';
+import { ManagementPage } from '@/app/components/layouts/management-page';
+import { Plus } from 'lucide-react';
+import Link from 'next/link';
 
 export default function ProductsPage() {
     return (
-        <div className="space-y-8 max-w-[1600px]">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight">Products</h1>
-                    <p className="mt-2 text-sm text-[var(--color-foreground-secondary)]">
-                        Manage your product catalog
-                    </p>
-                </div>
-            </div>
-
+        <ManagementPage
+            section="Catalog"
+            title="Products"
+            description="Manage pricing, inventory, and visibility across your catalog."
+            actions={<Link href="/products/new"><Button className="gap-2"><Plus className="h-4 w-4" />Add product</Button></Link>}
+        >
             <ProductsList />
-        </div>
+        </ManagementPage>
     );
 }
-

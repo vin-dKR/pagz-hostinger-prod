@@ -18,18 +18,18 @@ interface EmptyStateProps {
 
 export function EmptyState({ title, description, icon: Icon, action }: EmptyStateProps) {
     return (
-        <div className="py-12 text-center">
+        <div className="flex flex-col items-center px-4 py-14 text-center">
             {Icon && (
-                <div className="flex justify-center mb-4">
-                    <div className="rounded-full bg-gray-100 p-4">
-                        <Icon className="h-8 w-8 text-gray-400" />
+                <div className="mb-4 flex justify-center">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-card)] shadow-[var(--shadow-sm)]">
+                        <Icon className="h-5 w-5 text-[var(--color-foreground-tertiary)]" />
                     </div>
                 </div>
             )}
-            <h3 className="text-lg font-medium text-gray-900 mb-2">{title}</h3>
-            {description && <p className="text-gray-600 mb-4">{description}</p>}
+            <h3 className="text-sm font-semibold text-[var(--color-foreground)]">{title}</h3>
+            {description && <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">{description}</p>}
             {action && (
-                <div>
+                <div className="mt-5">
                     {action.href ? (
                         <a href={action.href}>
                             <Button>{action.label}</Button>

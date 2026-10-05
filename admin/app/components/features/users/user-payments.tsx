@@ -64,8 +64,9 @@ export function UserPayments({ userId }: UserPaymentsProps) {
 
     return (
         <div className="space-y-4">
-            <Card>
+            <Card className="overflow-hidden">
                 <CardContent className="p-0">
+                    <div className="border-b border-[var(--color-border)] px-5 py-4"><h2 className="text-sm font-semibold text-[var(--color-foreground)]">Payment history</h2><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Transactions associated with this customer</p></div>
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -81,20 +82,20 @@ export function UserPayments({ userId }: UserPaymentsProps) {
                         <TableBody>
                             {payments.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                                    <TableCell colSpan={7} className="py-12 text-center text-sm text-[var(--color-foreground-secondary)]">
                                         No payments found
                                     </TableCell>
                                 </TableRow>
                             ) : (
                                 payments.map((payment) => (
                                     <TableRow key={payment.id}>
-                                        <TableCell className="font-mono text-sm">{payment.id.slice(0, 8)}...</TableCell>
+                                        <TableCell className="font-mono text-xs text-[var(--color-foreground-secondary)]">{payment.id.slice(0, 8)}...</TableCell>
                                         <TableCell>{formatDate(payment.createdAt)}</TableCell>
                                         <TableCell>
                                             {payment.order ? (
                                                 <button
                                                     onClick={() => router.push(`/orders/${payment.order.id}`)}
-                                                    className="text-blue-600 hover:underline font-mono text-sm"
+                                                    className="font-mono text-xs text-[var(--color-primary)] hover:underline"
                                                 >
                                                     {payment.order.id.slice(0, 8)}...
                                                 </button>
@@ -102,14 +103,15 @@ export function UserPayments({ userId }: UserPaymentsProps) {
                                                 'N/A'
                                             )}
                                         </TableCell>
-                                        <TableCell>{formatCurrency(Number(payment.amount))}</TableCell>
+                                        <TableCell className="font-semibold tabular-nums">{formatCurrency(Number(payment.amount))}</TableCell>
                                         <TableCell>{getMethodBadge(payment.method)}</TableCell>
                                         <TableCell>{getStatusBadge(payment.status)}</TableCell>
                                         <TableCell className="text-right">
                                             {payment.order && (
                                                 <button
                                                     onClick={() => router.push(`/orders/${payment.order.id}`)}
-                                                    className="text-blue-600 hover:underline"
+                                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-primary)]"
+                                                    aria-label={`View order ${payment.order.id}`}
                                                 >
                                                     <Eye className="h-4 w-4" />
                                                 </button>
@@ -125,4 +127,3 @@ export function UserPayments({ userId }: UserPaymentsProps) {
         </div>
     );
 }
-

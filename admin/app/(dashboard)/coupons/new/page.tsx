@@ -6,6 +6,7 @@
 
 import { useRouter } from 'next/navigation';
 import { CouponForm } from '@/app/components/features/coupons/coupon-form';
+import { ManagementPage } from '@/app/components/layouts/management-page';
 
 export default function CreateCouponPage() {
     const router = useRouter();
@@ -15,16 +16,8 @@ export default function CreateCouponPage() {
     };
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold text-gray-900">Create Coupon</h1>
-                <p className="mt-2 text-sm text-gray-600">
-                    Create a new discount coupon for your customers
-                </p>
-            </div>
-
+        <ManagementPage section="Commerce / Promotions" title="Create coupon" description="Create a new discount coupon for your customers.">
             <CouponForm onSuccess={handleSuccess} />
-        </div>
+        </ManagementPage>
     );
 }
-

@@ -15,11 +15,11 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
 const Alert = forwardRef<HTMLDivElement, AlertProps>(
     ({ className, variant = 'default', onClose, children, ...props }, ref) => {
         const variants = {
-            default: 'bg-[var(--color-background-secondary)] border-[var(--color-border)] text-[var(--color-foreground)]',
-            success: 'bg-[var(--color-success)]/10 border-[var(--color-success)]/30 text-[var(--color-success)]',
-            error: 'bg-[var(--color-destructive)]/10 border-[var(--color-destructive)]/30 text-[var(--color-destructive)]',
-            warning: 'bg-[var(--color-warning)]/10 border-[var(--color-warning)]/30 text-[var(--color-warning)]',
-            info: 'bg-[var(--color-primary)]/10 border-[var(--color-primary)]/30 text-[var(--color-primary)]',
+            default: 'bg-[var(--color-card)] border-[var(--color-border)] text-[var(--color-foreground)]',
+            success: 'bg-[#f0faf5] border-[#d7eee3] text-[#217659]',
+            error: 'bg-[#fdf2f1] border-[#f3dddd] text-[#b83e3e]',
+            warning: 'bg-[#fff8ed] border-[#f3e5cc] text-[#946018]',
+            info: 'bg-[#f5f5fa] border-[#e4e4ec] text-[#64638b]',
         };
 
         const icons = {
@@ -34,7 +34,7 @@ const Alert = forwardRef<HTMLDivElement, AlertProps>(
             <div
                 ref={ref}
                 className={cn(
-                    'relative w-full rounded-[var(--radius-lg)] border p-4 transition-all duration-200',
+                    'relative w-full rounded-[var(--radius-lg)] border p-4',
                     variants[variant],
                     className
                 )}
@@ -45,6 +45,8 @@ const Alert = forwardRef<HTMLDivElement, AlertProps>(
                     <div className="flex-1 text-sm leading-relaxed">{children}</div>
                     {onClose && (
                         <button
+                            type="button"
+                            aria-label="Dismiss alert"
                             onClick={onClose}
                             className="ml-auto rounded-[var(--radius-sm)] opacity-70 hover:opacity-100 transition-opacity p-1"
                         >
@@ -59,4 +61,3 @@ const Alert = forwardRef<HTMLDivElement, AlertProps>(
 Alert.displayName = 'Alert';
 
 export { Alert };
-

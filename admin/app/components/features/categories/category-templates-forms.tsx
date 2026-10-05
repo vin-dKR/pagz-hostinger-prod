@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
+import { Select } from '@/app/components/ui/select';
 import { Alert } from '@/app/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/app/components/ui/dialog';
 import {
@@ -313,19 +314,19 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
     if (loading) {
         return (
             <div className="flex min-h-[200px] items-center justify-center">
-                <p className="text-sm text-gray-500">Loading templates...</p>
+                <p className="text-sm text-[var(--color-foreground-secondary)]">Loading templates...</p>
             </div>
         );
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             {error && <Alert variant="error">{error}</Alert>}
 
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-2xl font-semibold">Templates & Forms</h2>
-                    <p className="mt-1 text-sm text-gray-600">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <h2 className="text-xl font-semibold tracking-[-0.02em] text-[var(--color-foreground)]">Templates &amp; forms</h2>
+                    <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
                         Create templates and configure dynamic forms for users to fill when selecting templates.
                     </p>
                 </div>
@@ -337,10 +338,12 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
 
             {templates.length === 0 ? (
                 <Card>
-                    <CardContent className="py-12 text-center">
-                        <FileText className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-4 text-lg font-medium text-gray-900">No templates yet</h3>
-                        <p className="mt-2 text-sm text-gray-500">
+                    <CardContent className="flex flex-col items-center py-12 text-center">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-background)]">
+                            <FileText className="h-5 w-5 text-[var(--color-foreground-tertiary)]" />
+                        </div>
+                        <h3 className="mt-4 text-sm font-semibold text-[var(--color-foreground)]">No templates yet</h3>
+                        <p className="mt-1 text-[13px] text-[var(--color-foreground-secondary)]">
                             Get started by creating your first template for this category.
                         </p>
                         <Button className="mt-4" onClick={() => openTemplateModal()}>
@@ -350,7 +353,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                     </CardContent>
                 </Card>
             ) : (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {templates.map((template) => (
                         <Card key={template.id}>
                             <CardHeader>
@@ -358,16 +361,16 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                     <img
                                         src={getPublicFileUrl(template.previewImageUrl)}
                                         alt={template.name}
-                                        className="mb-4 h-32 w-full rounded-lg object-cover"
+                                        className="mb-3 aspect-[16/9] w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] object-cover"
                                     />
                                 )}
-                                <CardTitle className="text-lg">{template.name}</CardTitle>
+                                <CardTitle className="text-[15px]">{template.name}</CardTitle>
                                 {template.description && (
-                                    <p className="mt-2 text-sm text-gray-600">{template.description}</p>
+                                    <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">{template.description}</p>
                                 )}
                             </CardHeader>
                             <CardContent>
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                     <Button
                                         variant="outline"
                                         size="sm"
@@ -381,6 +384,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                         variant="outline"
                                         size="sm"
                                         onClick={() => openTemplateModal(template)}
+                                        aria-label={`Edit ${template.name}`}
                                     >
                                         <Edit className="h-4 w-4" />
                                     </Button>
@@ -388,12 +392,14 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                         variant="outline"
                                         size="sm"
                                         onClick={() => handleDeleteTemplate(template)}
+                                        aria-label={`Delete ${template.name}`}
+                                        className="text-[var(--color-destructive)] hover:text-[var(--color-destructive)]"
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </div>
                                 {template.form && (
-                                    <div className="mt-3 text-xs text-gray-500">
+                                    <div className="mt-3 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-foreground-tertiary)]">
                                         {template.form.fields?.length || 0} field(s) configured
                                         {template.form.requiresImageUpload && ' • Image upload enabled'}
                                     </div>
@@ -411,7 +417,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                     <DialogHeader>
                         <DialogTitle>{editingTemplate ? 'Edit Template' : 'Create Template'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={handleSaveTemplate} className="space-y-4">
+                    <form onSubmit={handleSaveTemplate} className="space-y-5">
                         <div>
                             <Label htmlFor="template-name">Name *</Label>
                             <Input
@@ -429,7 +435,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                             <Label htmlFor="template-description">Description</Label>
                             <textarea
                                 id="template-description"
-                                className="min-h-[100px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="mt-1.5 min-h-[100px] w-full rounded-[var(--radius-sm)] border border-[var(--color-input)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-foreground)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e8e6ff]"
                                 value={templateForm.description}
                                 onChange={(e) =>
                                     setTemplateForm({ ...templateForm, description: e.target.value })
@@ -445,11 +451,11 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                     <img
                                         src={getPublicFileUrl(templateForm.previewImageUrl)}
                                         alt="Template preview"
-                                        className="h-24 w-24 rounded-md border object-cover bg-gray-50"
+                                        className="h-24 w-24 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] object-cover"
                                     />
                                     <div className="flex flex-col gap-2">
                                         <label
-                                            className={`inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-gray-50 ${uploadingPreview ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                                            className={`inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-xs font-medium text-[var(--color-foreground)] hover:bg-[var(--color-background)] ${uploadingPreview ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                                         >
                                             <input
                                                 type="file"
@@ -480,7 +486,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                     </div>
                                 </div>
                             ) : (
-                                <label className="mt-1 flex h-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-gray-300 bg-gray-50 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                                <label className="mt-1.5 flex min-h-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-dashed border-[var(--color-input)] bg-[var(--color-background)] px-3 py-4 text-center text-xs text-[var(--color-foreground-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]">
                                     <input
                                         type="file"
                                         accept={TEMPLATE_PREVIEW_MIME.join(',')}
@@ -494,14 +500,14 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                     />
                                     <ImageIcon className="h-5 w-5" />
                                     <span>{uploadingPreview ? 'Uploading…' : 'Click to upload preview image'}</span>
-                                    <span className="text-[10px] text-gray-400">
+                                    <span className="text-[10px] text-[var(--color-foreground-tertiary)]">
                                         JPG, PNG, WebP, GIF · max {TEMPLATE_PREVIEW_MAX_MB}MB
                                     </span>
                                 </label>
                             )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-4 sm:grid-cols-2">
                             <div>
                                 <Label htmlFor="template-order">Display Order</Label>
                                 <Input
@@ -516,7 +522,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                     }
                                 />
                             </div>
-                            <div className="flex items-center gap-2 pt-6">
+                            <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 sm:mt-5">
                                 <input
                                     id="template-active"
                                     type="checkbox"
@@ -524,13 +530,13 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                     onChange={(e) =>
                                         setTemplateForm({ ...templateForm, isActive: e.target.checked })
                                     }
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                 />
                                 <Label htmlFor="template-active">Active</Label>
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-5">
                             <Button
                                 type="button"
                                 variant="outline"
@@ -556,11 +562,11 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                         </DialogTitle>
                     </DialogHeader>
 
-                    <div className="space-y-6">
+                    <div className="space-y-5">
                         {/* Form Fields List */}
                         <div>
-                            <div className="mb-4 flex items-center justify-between">
-                                <h3 className="text-lg font-medium">Form Fields</h3>
+                            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                <h3 className="text-sm font-semibold text-[var(--color-foreground)]">Form fields</h3>
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -573,21 +579,21 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                             </div>
 
                             {formFields.length === 0 ? (
-                                <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center">
-                                    <p className="text-sm text-gray-500">No fields yet. Add your first field.</p>
+                                <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)] bg-[var(--color-background)] p-8 text-center">
+                                    <p className="text-[13px] text-[var(--color-foreground-tertiary)]">No fields yet. Add your first field.</p>
                                 </div>
                             ) : (
                                 <div className="space-y-2">
                                     {formFields.map((field, index) => (
                                         <div
                                             key={index}
-                                            className="flex items-center gap-2 rounded-lg border border-gray-200 p-3"
+                                            className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] p-3"
                                         >
-                                            <GripVertical className="h-5 w-5 text-gray-400" />
-                                            <div className="flex-1">
+                                            <GripVertical className="h-4 w-4 shrink-0 text-[var(--color-foreground-tertiary)]" />
+                                            <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-medium">{field.label}</span>
-                                                    <span className="text-xs text-gray-500">
+                                                    <span className="text-[13px] font-semibold text-[var(--color-foreground)]">{field.label}</span>
+                                                    <span className="text-xs text-[var(--color-foreground-tertiary)]">
                                                         ({field.type})
                                                     </span>
                                                     {field.isRequired && (
@@ -595,13 +601,14 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="flex gap-1">
+                                            <div className="flex shrink-0 flex-wrap gap-1 max-sm:w-full max-sm:pl-6">
                                                 <Button
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
                                                     onClick={() => moveField(index, 'up')}
                                                     disabled={index === 0}
+                                                    aria-label={`Move ${field.label} up`}
                                                 >
                                                     ↑
                                                 </Button>
@@ -611,6 +618,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                                     size="sm"
                                                     onClick={() => moveField(index, 'down')}
                                                     disabled={index === formFields.length - 1}
+                                                    aria-label={`Move ${field.label} down`}
                                                 >
                                                     ↓
                                                 </Button>
@@ -619,6 +627,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                                     variant="outline"
                                                     size="sm"
                                                     onClick={() => openFieldModal(index)}
+                                                    aria-label={`Edit ${field.label}`}
                                                 >
                                                     <Edit className="h-4 w-4" />
                                                 </Button>
@@ -627,6 +636,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                                     variant="outline"
                                                     size="sm"
                                                     onClick={() => handleDeleteField(index)}
+                                                    aria-label={`Delete ${field.label}`}
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
@@ -638,8 +648,8 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                         </div>
 
                         {/* Image Upload Configuration */}
-                        <div className="rounded-lg border border-gray-200 p-4">
-                            <h3 className="mb-4 text-lg font-medium">Image Upload Configuration</h3>
+                        <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] p-4">
+                            <h3 className="mb-4 text-[13px] font-semibold text-[var(--color-foreground)]">Image upload configuration</h3>
                             <div className="space-y-3">
                                 <div className="flex items-center gap-2">
                                     <input
@@ -652,7 +662,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                                 setImageUploadRequired(false);
                                             }
                                         }}
-                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                     />
                                     <Label htmlFor="requires-image-upload">Require Image Upload</Label>
                                 </div>
@@ -663,7 +673,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                             type="checkbox"
                                             checked={imageUploadRequired}
                                             onChange={(e) => setImageUploadRequired(e.target.checked)}
-                                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                         />
                                         <Label htmlFor="image-upload-required">
                                             Image Upload is Mandatory
@@ -673,7 +683,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-5">
                             <Button
                                 type="button"
                                 variant="outline"
@@ -698,12 +708,12 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                             {editingFieldIndex !== null ? 'Edit Field' : 'Add Field'}
                         </DialogTitle>
                     </DialogHeader>
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                         <div>
                             <Label htmlFor="field-type">Field Type *</Label>
-                            <select
+                            <Select
                                 id="field-type"
-                                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="mt-1.5"
                                 value={fieldForm.type}
                                 onChange={(e) =>
                                     setFieldForm({
@@ -718,7 +728,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                         {type.label}
                                     </option>
                                 ))}
-                            </select>
+                            </Select>
                         </div>
 
                         <div>
@@ -749,10 +759,11 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                         {fieldForm.type === 'select' && (
                             <div>
                                 <Label>Options *</Label>
-                                <div className="space-y-2">
+                                <div className="mt-1.5 space-y-2">
                                     {(fieldForm.options || []).map((option, index) => (
-                                        <div key={index} className="flex gap-2">
+                                        <div key={index} className="flex flex-col gap-2 sm:flex-row">
                                             <Input
+                                                className="min-w-0"
                                                 placeholder="Label"
                                                 value={option.label}
                                                 onChange={(e) => {
@@ -764,6 +775,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                                 }}
                                             />
                                             <Input
+                                                className="min-w-0"
                                                 placeholder="Value"
                                                 value={option.value}
                                                 onChange={(e) => {
@@ -778,6 +790,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
+                                                aria-label={`Remove option ${index + 1}`}
                                                 onClick={() => {
                                                     const newOptions = (fieldForm.options || []).filter(
                                                         (_, i) => i !== index
@@ -807,7 +820,7 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                             </div>
                         )}
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3">
                             <input
                                 id="field-required"
                                 type="checkbox"
@@ -815,12 +828,12 @@ export function CategoryTemplatesForms({ categoryId }: CategoryTemplatesFormsPro
                                 onChange={(e) =>
                                     setFieldForm({ ...fieldForm, isRequired: e.target.checked })
                                 }
-                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                             />
                             <Label htmlFor="field-required">Required</Label>
                         </div>
 
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-5">
                             <Button
                                 type="button"
                                 variant="outline"

@@ -198,7 +198,7 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
             <>
                 {ConfirmDialog}
                 <div className="flex min-h-[200px] items-center justify-center">
-                    <p className="text-sm text-gray-500">Loading images...</p>
+                    <p className="text-sm text-[var(--color-foreground-secondary)]">Loading images...</p>
                 </div>
             </>
         );
@@ -207,10 +207,10 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
     return (
         <>
             {ConfirmDialog}
-            <div className="space-y-6">
+            <div className="space-y-5">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Category Images</h2>
-                    <p className="mt-1 text-sm text-gray-600">
+                    <h2 className="text-xl font-semibold tracking-[-0.02em] text-[var(--color-foreground)]">Category images</h2>
+                    <p className="mt-1 text-[13px] text-[var(--color-foreground-secondary)]">
                         Upload and manage images for this category. Set a primary image for display in listings.
                     </p>
                 </div>
@@ -223,8 +223,8 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
                         <CardTitle>Add New Image</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form onSubmit={handleFileUpload} className="space-y-4">
-                            <div className="space-y-2">
+                        <form onSubmit={handleFileUpload} className="space-y-5">
+                            <div className="space-y-1.5">
                                 <Label htmlFor="image-files">Select Images (Multiple)</Label>
                                 <Input
                                     id="image-files"
@@ -233,27 +233,28 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
                                     onChange={handleFileChange}
                                     multiple
                                     required
+                                    className="h-auto min-h-10 py-2"
                                 />
-                                <p className="text-xs text-gray-500">
+                                <p className="text-xs leading-relaxed text-[var(--color-foreground-tertiary)]">
                                     Supported formats: JPG, PNG, WebP, GIF. Max size per file: 10MB. You can select multiple images at once.
                                 </p>
                             </div>
 
                             {/* File List with Individual Settings */}
                             {selectedFiles.length > 0 && (
-                                <div className="space-y-4 rounded-md border p-4">
-                                    <p className="text-sm font-medium text-gray-700">
+                                <div className="space-y-4 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] p-4">
+                                    <p className="text-[13px] font-semibold text-[var(--color-foreground)]">
                                         Configure {selectedFiles.length} image{selectedFiles.length !== 1 ? 's' : ''}:
                                     </p>
                                     <div className="space-y-4">
                                         {selectedFiles.map((file, index) => {
                                             const metadata = fileMetadata.get(index) || { alt: '', isPrimary: false };
                                             return (
-                                                <div key={index} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                                <div key={index} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
                                                     <div className="mb-3 flex items-start justify-between">
                                                         <div className="flex-1">
-                                                            <p className="text-sm font-medium text-gray-900">{file.name}</p>
-                                                            <p className="text-xs text-gray-500">
+                                                            <p className="break-all text-[13px] font-medium text-[var(--color-foreground)]">{file.name}</p>
+                                                            <p className="text-xs text-[var(--color-foreground-tertiary)]">
                                                                 {(file.size / 1024 / 1024).toFixed(2)} MB
                                                             </p>
                                                         </div>
@@ -277,7 +278,7 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
                                                                 type="checkbox"
                                                                 checked={metadata.isPrimary}
                                                                 onChange={(e) => updateFileMetadata(index, { isPrimary: e.target.checked })}
-                                                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                className="h-4 w-4 rounded border-[var(--color-input)] accent-[var(--color-primary)]"
                                                             />
                                                             <Label htmlFor={`primary-${index}`} className="text-sm cursor-pointer">
                                                                 Set as primary image
@@ -304,17 +305,17 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
                     </CardHeader>
                     <CardContent>
                         {images.length === 0 ? (
-                            <div className="py-8 text-center text-gray-500">
+                            <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)] bg-[var(--color-background)] py-10 text-center text-[13px] text-[var(--color-foreground-tertiary)]">
                                 <p>No images added yet. Add your first image above.</p>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                                 {images.map((image, index) => (
                                     <div
                                         key={image.id || `image-${index}-${image.url || 'temp'}-${index}`}
-                                        className="group relative overflow-hidden rounded-lg border border-gray-200 bg-white"
+                                        className="group relative overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-card)] shadow-[var(--shadow-sm)]"
                                     >
-                                        <div className="relative aspect-square w-full bg-gray-100">
+                                        <div className="relative aspect-square w-full bg-[var(--color-background-tertiary)]">
                                             <Image
                                                 src={getPublicFileUrl(image.url || '')}
                                                 alt={image.alt || 'Category image'}
@@ -323,13 +324,13 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
                                                 unoptimized
                                             />
                                             {image.isPrimary && (
-                                                <div className="absolute top-2 left-2 rounded bg-[#008ECC] px-2 py-1 text-xs font-medium text-white">
+                                                <div className="absolute top-2 left-2 rounded-full bg-[var(--color-primary)] px-2.5 py-1 text-[11px] font-semibold text-white">
                                                     Primary
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="p-3">
-                                            <p className="text-xs text-gray-500">
+                                        <div className="p-3.5">
+                                            <p className="truncate text-xs text-[var(--color-foreground-secondary)]" title={image.alt || 'No alt text'}>
                                                 Order: {image.displayOrder} • {image.alt || 'No alt text'}
                                             </p>
                                             <div className="mt-2 flex gap-2">
@@ -360,7 +361,8 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
                                                     size="sm"
                                                     onClick={() => handleDelete(image.id)}
                                                     isLoading={deleting === image.id}
-                                                    className="text-red-600 hover:text-red-700"
+                                                    aria-label={`Delete image ${index + 1}`}
+                                                    className="text-[var(--color-destructive)] hover:text-[var(--color-destructive)]"
                                                 >
                                                     <Trash2 className="h-3 w-3" />
                                                 </Button>
@@ -396,4 +398,3 @@ export function CategoryImages({ categoryId }: CategoryImagesProps) {
         </>
     );
 }
-

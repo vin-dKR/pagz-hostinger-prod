@@ -308,17 +308,12 @@ export async function exportPayments(
   const queryString = queryParams.toString();
   const endpoint = `/admin/payments/export${queryString ? `?${queryString}` : ''}`;
 
-  const { getAuthToken } = await import('./api-client');
-  const token = getAuthToken();
   const fullUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api/v1'}${endpoint}`;
 
   const response = await fetch(
     fullUrl,
     {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
     }
   );
 

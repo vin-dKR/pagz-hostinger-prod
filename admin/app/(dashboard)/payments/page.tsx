@@ -4,19 +4,12 @@
  */
 
 import { PaymentsList } from '@/app/components/features/payments/payments-list';
+import { ManagementPage } from '@/app/components/layouts/management-page';
 
 export default function PaymentsPage() {
     return (
-        <div className="space-y-8 max-w-[1600px]">
-            <div>
-                <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight">Payments</h1>
-                <p className="mt-2 text-sm text-[var(--color-foreground-secondary)]">
-                    View and manage payment transactions
-                </p>
-            </div>
-
+        <ManagementPage section="Commerce / Payments" title="Payments" description="Review transactions, payment status, and refunds.">
             <PaymentsList />
-        </div>
+        </ManagementPage>
     );
 }
-

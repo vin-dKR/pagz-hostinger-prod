@@ -1,144 +1,140 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+import { useState } from 'react';
+import type { PointerEvent } from 'react';
 import type { DashboardOverviewResponse } from '@/lib/api/dashboard.service';
+import { useChartWidth } from './use-chart-width';
 
 interface RevenueChartProps {
     data: DashboardOverviewResponse['timeSeries']['revenueLast30Days'];
     loading?: boolean;
 }
 
-function formatDate(dateStr: string): string {
-    try {
-        const date = new Date(dateStr);
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = String(date.getFullYear()).slice(-2);
-        return `${day}-${month}-${year}`;
-    } catch {
-        return dateStr;
-    }
+function formatDate(value: string) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(date);
+}
+
+function formatAxis(value: number) {
+    return '₹' + new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }
 
 export function RevenueChart({ data, loading }: RevenueChartProps) {
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-    const tooltipRef = useRef<HTMLDivElement>(null);
-
-    const maxRevenue = data.length > 0 ? Math.max(...data.map((d) => d.revenue), 1) : 1;
-    const totalRevenue = data.reduce((sum, d) => sum + d.revenue, 0);
-    
-    // Format dates and ensure today is last
-    const formattedData = [...data].map(d => ({
-        ...d,
-        formattedDate: formatDate(d.date),
+    const { ref, width } = useChartWidth();
+    const chart = { width, height: 228, left: 48, right: 12, top: 14, bottom: 30 };
+    const plotWidth = chart.width - chart.left - chart.right;
+    const plotHeight = chart.height - chart.top - chart.bottom;
+    const totalRevenue = data.reduce((sum, item) => sum + item.revenue, 0);
+    const largest = Math.max(1, ...data.map((item) => item.revenue));
+    const unit = Math.pow(10, Math.floor(Math.log10(largest / 4)));
+    const ceiling = Math.ceil(largest / 4 / unit) * unit * 4;
+    const points = data.map((item, index) => ({
+        x: chart.left + (data.length === 1 ? plotWidth / 2 : (index / (data.length - 1)) * plotWidth),
+        y: chart.top + plotHeight - (item.revenue / ceiling) * plotHeight,
     }));
-    
-    // Get today's date formatted
-    const today = formatDate(new Date().toISOString());
-    
-    // Ensure last date is today
-    const lastItem = formattedData[formattedData.length - 1];
-    if (lastItem) {
-        lastItem.formattedDate = today;
-    }
+    const line = points.map((point, index) => (index === 0 ? 'M ' : 'L ') + point.x + ' ' + point.y).join(' ');
+    const baseline = chart.top + plotHeight;
+    const firstPoint = points[0];
+    const lastPoint = points.at(-1);
+    const area = firstPoint && lastPoint ? line + ' L ' + lastPoint.x + ' ' + baseline + ' L ' + firstPoint.x + ' ' + baseline + ' Z' : '';
+    const active = hoveredIndex !== null ? points[hoveredIndex] : null;
+    const activeItem = hoveredIndex !== null ? data[hoveredIndex] : null;
+    const labelIndices = [...new Set([0, Math.floor((data.length - 1) / 2), data.length - 1])];
+
+    const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+        if (!data.length) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const x = (event.clientX - bounds.left) / bounds.width * chart.width;
+        const index = Math.round((x - chart.left) / plotWidth * (data.length - 1));
+        setHoveredIndex(Math.max(0, Math.min(data.length - 1, index)));
+    };
 
     return (
-        <Card className="shadow-sm border border-gray-200 hover:shadow-md transition-shadow" aria-label="Revenue last 30 days chart">
-            <CardHeader>
-                <div className="flex items-center justify-between">
-                    <CardTitle className="text-xl font-semibold">Revenue (Last 30 days)</CardTitle>
-                    <div className="text-sm text-gray-600">
-                        Total: <span className="font-semibold text-gray-900">₹{totalRevenue.toLocaleString('en-IN')}</span>
-                    </div>
-                </div> 
-            </CardHeader>
-            <CardContent>
-                {loading && !data.length ? (
-                    <div className="h-64 animate-pulse rounded-md bg-gray-100" />
-                ) : !data.length ? (
-                    <p className="text-sm text-gray-600 text-center py-8">
-                        No revenue data available yet
+        <div className="min-w-0 rounded-[9px] border border-[#dbdbdb] bg-[#ededed] p-[5px] shadow-[inset_0_1px_0_#ffffff,0_2px_5px_#00000008]" aria-label="Revenue for the last 30 days">
+            <div className="flex min-h-[65px] flex-wrap items-center justify-between gap-2 px-2.5 py-2">
+                <div>
+                    <p className="font-mono text-[10px] font-medium uppercase tracking-[0.09em] text-[#737373]">01 / Sales performance</p>
+                    <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.03em] text-[#252525]">Daily revenue</h2>
+                </div>
+                <div className="text-right">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-[#777]">30-day total</p>
+                    <p className="mt-0.5 text-[21px] font-semibold leading-none tracking-[-0.04em] tabular-nums text-[#252525]">
+                        ₹{totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                     </p>
+                </div>
+            </div>
+
+            <div className="rounded-[6px] border border-[#e1e1e1] bg-white p-3 shadow-[inset_0_1px_0_#ffffff,0_1px_2px_#0000000a] sm:px-4">
+                <div ref={ref}>
+                <div className="mb-1 flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.09em] text-[#929292]"><span>Last 30 days</span><span>INR / day</span></div>
+                {loading && !data.length ? (
+                    <div className="h-[228px] animate-pulse rounded-[4px] bg-[#f4f4f4]" />
+                ) : !data.length ? (
+                    <div className="flex h-[228px] items-center justify-center text-sm text-[#858585]">
+                        No revenue data available yet
+                    </div>
                 ) : (
-                    <div className="relative w-full">
-                        {/* Tooltip */}
-                        {hoveredIndex !== null && formattedData[hoveredIndex] && (
+                    <div className="min-w-0">
+                    <div className="relative min-w-0">
+                        {active && activeItem && (
                             <div
-                                ref={tooltipRef}
-                                className="absolute z-20 bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg pointer-events-none whitespace-nowrap"
-                                style={{
-                                    left: `${(hoveredIndex / formattedData.length) * 100}%`,
-                                    top: '-60px',
-                                    transform: 'translateX(-50%)',
-                                }}
+                                className="pointer-events-none absolute z-10 min-w-28 rounded-[5px] bg-[#252525] px-3 py-2 text-xs text-white shadow-lg"
+                                style={{ left: Math.min(88, Math.max(12, active.x / chart.width * 100)) + '%', top: '12px', transform: 'translateX(-50%)' }}
                             >
-                                <div className="font-semibold mb-1">{formattedData[hoveredIndex].formattedDate}</div>
-                                <div className="text-emerald-300">
-                                    ₹{formattedData[hoveredIndex].revenue.toLocaleString('en-IN')}
-                                </div>
+                                <p className="opacity-70">{formatDate(activeItem.date)}</p>
+                                <p className="mt-1 font-semibold tabular-nums">₹{activeItem.revenue.toLocaleString('en-IN')}</p>
                             </div>
                         )}
-                        
-                        {/* Chart with Y-axis */}
-                        <div className="flex gap-2">
-                            {/* Y-axis labels */}
-                            <div className="flex flex-col justify-between text-xs text-gray-500 h-64 py-3">
-                                <span className="font-semibold">₹{maxRevenue.toLocaleString('en-IN')}</span>
-                                <span>₹{Math.round(maxRevenue * 0.75).toLocaleString('en-IN')}</span>
-                                <span>₹{Math.round(maxRevenue * 0.5).toLocaleString('en-IN')}</span>
-                                <span>₹{Math.round(maxRevenue * 0.25).toLocaleString('en-IN')}</span>
-                                <span>₹0</span>
-                            </div>
-                            
-                            {/* Chart bars */}
-                            <div className="flex-1 relative">
-                                <div 
-                                    className="flex h-64 items-end justify-between gap-1 rounded-md bg-gradient-to-b from-gray-50 to-gray-100 p-3"
-                                    style={{ height: '256px' }}
-                                >
-                                    {formattedData.map((point, index) => {
-                                        // Calculate height in pixels (container is 256px - 24px padding = 232px usable)
-                                        const usableHeight = 232;
-                                        const barHeight = maxRevenue > 0 
-                                            ? Math.max((point.revenue / maxRevenue) * usableHeight, point.revenue > 0 ? 3 : 0)
-                                            : 0;
-                                        const isHovered = hoveredIndex === index;
-                                        
-                                        return (
-                                            <div
-                                                key={point.date}
-                                                className="relative flex-1 group cursor-pointer flex items-end"
-                                                style={{ height: '100%' }}
-                                                onMouseEnter={() => setHoveredIndex(index)}
-                                                onMouseLeave={() => setHoveredIndex(null)}
-                                            >
-                                                <div
-                                                    className={`w-full bg-gradient-to-t from-emerald-600 to-emerald-500 rounded-t transition-all duration-200 ${
-                                                        isHovered ? 'opacity-100 ring-2 ring-emerald-400 ring-offset-2' : 'opacity-80 hover:opacity-100'
-                                                    }`}
-                                                    style={{ 
-                                                        height: `${barHeight}px`,
-                                                    }}
-                                                />
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                
-                                {/* X-axis labels */}
-                                <div className="flex justify-between mt-2 text-xs text-gray-500 px-3">
-                                    <span>{formattedData[0]?.formattedDate}</span>
-                                    <span>{formattedData[Math.floor(formattedData.length / 2)]?.formattedDate}</span>
-                                    <span className="font-semibold">{today}</span>
-                                </div>
-                            </div>
+                        <svg
+                            viewBox={`0 0 ${chart.width} ${chart.height}`}
+                            className="block h-auto w-full"
+                            role="img"
+                            aria-label="Daily revenue for the last 30 days"
+                            onPointerMove={handlePointerMove}
+                            onPointerLeave={() => setHoveredIndex(null)}
+                        >
+                            <defs>
+                                <pattern id="dashboard-revenue-hatch" patternUnits="userSpaceOnUse" width="6" height="6">
+                                    <path d="M 0 6 L 6 0" fill="none" stroke="#7879e8" strokeWidth="0.7" opacity="0.18" />
+                                </pattern>
+                            </defs>
+                            {[0, 1, 2, 3, 4].map((tick) => {
+                                const y = chart.top + tick * plotHeight / 4;
+                                return (
+                                    <g key={tick}>
+                                        <line x1={chart.left} x2={chart.width - chart.right} y1={y} y2={y} stroke="#e7e7e7" strokeDasharray={tick === 4 ? undefined : '2 5'} />
+                                        <text x={chart.left - 12} y={y + 4} textAnchor="end" fill="#919191" fontSize="10" fontFamily="ui-monospace, SFMono-Regular, monospace">
+                                            {formatAxis(ceiling * (4 - tick) / 4)}
+                                        </text>
+                                    </g>
+                                );
+                            })}
+                            <path d={area} fill="#7879e8" opacity="0.045" />
+                            <path d={area} fill="url(#dashboard-revenue-hatch)" />
+                            <path d={line} fill="none" stroke="#7879e8" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+                            {points.map((point, index) => data[index]?.revenue ? <circle key={index} cx={point.x} cy={point.y} r="2" fill="#7879e8" stroke="white" strokeWidth="1" /> : null)}
+                            {active && (
+                                <g>
+                                    <line x1={active.x} x2={active.x} y1={chart.top} y2={baseline} stroke="#7879e8" opacity="0.38" strokeDasharray="4 5" />
+                                    <circle cx={active.x} cy={active.y} r="5" fill="white" stroke="#7879e8" strokeWidth="2" />
+                                </g>
+                            )}
+                            {labelIndices.map((index, position) => {
+                                const point = points[index];
+                                const item = data[index];
+                                if (!point || !item) return null;
+                                return <text key={index} x={point.x} y={chart.height - 5} textAnchor={position === 0 ? 'start' : position === labelIndices.length - 1 ? 'end' : 'middle'} fill="#919191" fontSize="10" fontFamily="ui-monospace, SFMono-Regular, monospace">{formatDate(item.date)}</text>;
+                            })}
+                        </svg>
+                        <div className="sr-only">
+                            {data.map((item) => <span key={item.date}>{formatDate(item.date)}: ₹{item.revenue.toLocaleString('en-IN')}. </span>)}
                         </div>
                     </div>
+                    </div>
                 )}
-            </CardContent>
-        </Card>
+                </div>
+            </div>
+        </div>
     );
 }
-
-

@@ -3,20 +3,14 @@
  */
 
 import { CarouselForm } from '@/app/components/features/carousel/carousel-form';
+import { ManagementPage } from '@/app/components/layouts/management-page';
 
 export default async function EditCarouselPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     
     return (
-        <div className="space-y-8 max-w-[1200px]">
-            <div>
-                <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight">Edit Carousel Item</h1>
-                <p className="mt-2 text-sm text-[var(--color-foreground-secondary)]">
-                    Update carousel item details
-                </p>
-            </div>
-
+        <ManagementPage section="Content / Homepage" title="Edit carousel item" description="Update carousel item details.">
             <CarouselForm carouselId={id} />
-        </div>
+        </ManagementPage>
     );
 }

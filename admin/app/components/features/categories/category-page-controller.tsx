@@ -6,6 +6,7 @@ import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
+import { Select } from '@/app/components/ui/select';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { toastSuccess } from '@/lib/utils/toast';
 import {
@@ -178,11 +179,11 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
     };
 
     if (loading) {
-        return <div className="text-sm text-gray-500">Loading page controller...</div>;
+        return <div className="py-10 text-sm text-[var(--color-foreground-secondary)]">Loading page controller...</div>;
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             {ConfirmDialog}
 
             {error && <Alert variant="error">{error}</Alert>}
@@ -192,11 +193,12 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                     <CardTitle>Page Controller Rules</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
-                        <div className="md:col-span-2 flex items-center gap-2">
+                    <form onSubmit={handleSubmit} className="grid gap-5 sm:grid-cols-2">
+                        <div className="flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3 sm:col-span-2">
                             <input
                                 id="independent"
                                 type="checkbox"
+                                className="h-4 w-4 rounded accent-[var(--color-primary)]"
                                 checked={form.independent}
                                 onChange={(e) =>
                                     setForm((prev) => ({
@@ -214,9 +216,9 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                             <>
                                 <div>
                                     <Label htmlFor="spec">Specification</Label>
-                                    <select
+                                    <Select
                                         id="spec"
-                                        className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm"
+                                        className="mt-1.5"
                                         value={form.specificationSlug}
                                         onChange={(e) =>
                                             setForm((prev) => ({ ...prev, specificationSlug: e.target.value, optionValue: '' }))
@@ -229,9 +231,9 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                                                 {spec.name}
                                             </option>
                                         ))}
-                                    </select>
+                                    </Select>
                                     {eligibleSpecs.length === 0 && (
-                                        <p className="mt-1 text-xs text-amber-700">
+                                        <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-warning)]">
                                             No selectable specifications found. Add options to a SELECT or MULTI_SELECT specification first.
                                         </p>
                                     )}
@@ -239,9 +241,9 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
 
                                 <div>
                                     <Label htmlFor="option">Option</Label>
-                                    <select
+                                    <Select
                                         id="option"
-                                        className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm"
+                                        className="mt-1.5"
                                         value={form.optionValue}
                                         onChange={(e) => setForm((prev) => ({ ...prev, optionValue: e.target.value }))}
                                         required
@@ -252,7 +254,7 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                                                 {opt.label}
                                             </option>
                                         ))}
-                                    </select>
+                                    </Select>
                                 </div>
                             </>
                         )}
@@ -279,17 +281,18 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                             />
                         </div>
 
-                        <div className="md:col-span-2 flex items-center gap-2">
+                        <div className="flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3 sm:col-span-2">
                             <input
                                 id="isActive"
                                 type="checkbox"
+                                className="h-4 w-4 rounded accent-[var(--color-primary)]"
                                 checked={form.isActive}
                                 onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.checked }))}
                             />
                             <Label htmlFor="isActive">Active</Label>
                         </div>
 
-                        <div className="md:col-span-2 flex gap-2 justify-end">
+                        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-5 sm:col-span-2">
                             {editingId && (
                                 <Button type="button" variant="outline" onClick={resetForm}>
                                     Cancel
@@ -307,11 +310,12 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                     <CardTitle>Page Controller UI Settings</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <form onSubmit={handleSettingsSave} className="grid gap-4 md:grid-cols-2">
-                        <div className="md:col-span-2 flex items-center gap-2">
+                    <form onSubmit={handleSettingsSave} className="grid gap-5 sm:grid-cols-2">
+                        <div className="flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3 sm:col-span-2">
                             <input
                                 id="showBulkToggle"
                                 type="checkbox"
+                                className="h-4 w-4 rounded accent-[var(--color-primary)]"
                                 checked={settingsForm.showBulkToggle}
                                 onChange={(e) =>
                                     setSettingsForm((prev) => ({ ...prev, showBulkToggle: e.target.checked }))
@@ -341,7 +345,7 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                                 placeholder="Number of Quantity/Copies"
                             />
                         </div>
-                        <div className="md:col-span-2 flex justify-end">
+                        <div className="flex justify-end border-t border-[var(--color-border)] pt-5 sm:col-span-2">
                             <Button type="submit" isLoading={settingsSaving}>
                                 Save UI Settings
                             </Button>
@@ -356,22 +360,22 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                 </CardHeader>
                 <CardContent>
                     {rules.length === 0 ? (
-                        <p className="text-sm text-gray-500">No rules configured.</p>
+                        <p className="py-6 text-center text-sm text-[var(--color-foreground-tertiary)]">No rules configured.</p>
                     ) : (
                         <div className="space-y-3">
                             {rules.map((rule) => (
-                                <div key={rule.id} className="rounded-md border p-3 flex items-center justify-between">
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-900">
+                                <div key={rule.id} className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-background)] p-3.5 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0">
+                                        <p className="text-[13px] font-semibold text-[var(--color-foreground)]">
                                             {!rule.specificationSlug
                                                 ? 'Independent rule'
                                                 : `${rule.specificationSlug}: ${rule.optionValue}`}
                                         </p>
-                                        <p className="text-xs text-gray-600">
-                                            maxPages={rule.maxPages}, order={rule.displayOrder}, active={String(rule.isActive)}
+                                        <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
+                                            Max pages: {rule.maxPages} · Display order: {rule.displayOrder} · {rule.isActive ? 'Active' : 'Inactive'}
                                         </p>
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex shrink-0 gap-2">
                                         <Button type="button" variant="outline" size="sm" onClick={() => startEdit(rule)}>
                                             Edit
                                         </Button>
@@ -380,6 +384,7 @@ export function CategoryPageController({ categoryId }: CategoryPageControllerPro
                                             variant="outline"
                                             size="sm"
                                             onClick={() => void handleDelete(rule.id)}
+                                            className="text-[var(--color-destructive)] hover:text-[var(--color-destructive)]"
                                         >
                                             Delete
                                         </Button>

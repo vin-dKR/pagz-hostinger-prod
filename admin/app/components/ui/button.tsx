@@ -1,8 +1,3 @@
-/**
- * Button Component
- * Button with subtle styling and smooth interactions
- */
-
 import { type ButtonHTMLAttributes, forwardRef } from 'react';
 import { cn } from '@/lib/utils/cn';
 
@@ -14,22 +9,22 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ({ className, variant = 'default', size = 'default', isLoading, disabled, children, ...props }, ref) => {
-        const baseStyles = 'inline-flex items-center justify-center rounded-[var(--radius)] font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed active:scale-[0.98]';
+        const baseStyles = 'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-sm)] border border-transparent font-semibold tracking-[-0.01em] shadow-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 active:translate-y-px';
 
         const variants = {
-            default: 'bg-[var(--color-primary)] text-[var(--color-primary-foreground)] hover:bg-[var(--color-primary-hover)] shadow-sm hover:shadow',
-            destructive: 'bg-[var(--color-destructive)] text-[var(--color-destructive-foreground)] hover:bg-[var(--color-destructive-hover)] shadow-sm hover:shadow',
-            outline: 'border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-foreground)] hover:bg-[var(--color-accent)] hover:border-[var(--color-foreground-secondary)]',
-            secondary: 'bg-[var(--color-secondary)] text-[var(--color-secondary-foreground)] hover:bg-[var(--color-secondary-hover)]',
-            ghost: 'text-[var(--color-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]',
-            link: 'text-[var(--color-primary)] underline-offset-4 hover:underline p-0 h-auto',
+            default: 'border-[#242424] bg-[linear-gradient(180deg,#414141,#252525)] text-[var(--color-primary-foreground)] hover:brightness-110 shadow-[0_1px_2px_#00000020,inset_0_1px_0_#ffffff25]',
+            destructive: 'bg-[var(--color-destructive)] text-[var(--color-destructive-foreground)] hover:bg-[var(--color-destructive-hover)]',
+            outline: 'border-[#dcdcdc] bg-[linear-gradient(180deg,#ffffff,#f5f5f5)] text-[var(--color-foreground)] hover:border-[#c7c7c7] shadow-[0_1px_2px_#00000008,inset_0_0_0_1px_#ffffff]',
+            secondary: 'border-[#dedede] bg-[linear-gradient(180deg,#f6f6f6,#eeeeee)] text-[var(--color-secondary-foreground)] hover:bg-[var(--color-secondary-hover)] shadow-[inset_0_1px_0_#ffffff]',
+            ghost: 'text-[var(--color-foreground-secondary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]',
+            link: 'h-auto border-0 p-0 text-[var(--color-primary)] underline-offset-4 hover:underline',
         };
 
         const sizes = {
-            default: 'h-10 px-4 py-2 text-sm',
-            sm: 'h-9 px-3 py-1.5 text-sm',
-            lg: 'h-11 px-6 py-2.5 text-base',
-            icon: 'h-10 w-10',
+            default: 'h-9 px-3.5 text-[13px]',
+            sm: 'h-8 px-3 text-xs',
+            lg: 'h-10 px-5 text-sm',
+            icon: 'h-9 w-9',
         };
 
         return (
@@ -79,4 +74,3 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = 'Button';
 
 export { Button };
-

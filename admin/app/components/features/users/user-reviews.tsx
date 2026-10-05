@@ -63,8 +63,9 @@ export function UserReviews({ userId }: UserReviewsProps) {
 
     return (
         <div className="space-y-4">
-            <Card>
+            <Card className="overflow-hidden">
                 <CardContent className="p-0">
+                    <div className="border-b border-[var(--color-border)] px-5 py-4"><h2 className="text-sm font-semibold text-[var(--color-foreground)]">Review history</h2><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Product feedback from this customer</p></div>
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -79,7 +80,7 @@ export function UserReviews({ userId }: UserReviewsProps) {
                         <TableBody>
                             {reviews.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                                    <TableCell colSpan={6} className="py-12 text-center text-sm text-[var(--color-foreground-secondary)]">
                                         No reviews found
                                     </TableCell>
                                 </TableRow>
@@ -90,7 +91,7 @@ export function UserReviews({ userId }: UserReviewsProps) {
                                             {review.product ? (
                                                 <button
                                                     onClick={() => router.push(`/products/${review.product.id}`)}
-                                                    className="text-blue-600 hover:underline"
+                                                    className="text-[var(--color-primary)] hover:underline"
                                                 >
                                                     {review.product.name}
                                                 </button>
@@ -114,7 +115,8 @@ export function UserReviews({ userId }: UserReviewsProps) {
                                             {review.product && (
                                                 <button
                                                     onClick={() => router.push(`/products/${review.product.id}`)}
-                                                    className="text-blue-600 hover:underline"
+                                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-primary)]"
+                                                    aria-label={`View product ${review.product.name}`}
                                                 >
                                                     <Eye className="h-4 w-4" />
                                                 </button>
@@ -130,4 +132,3 @@ export function UserReviews({ userId }: UserReviewsProps) {
         </div>
     );
 }
-

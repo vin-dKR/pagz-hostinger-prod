@@ -6,7 +6,7 @@
 
 import { useState, FormEvent, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -105,9 +105,10 @@ export function CreateCategoryForm() {
   };
 
   return (
-    <Card>
+    <Card className="w-full max-w-4xl">
       <CardHeader>
-        <CardTitle>Create Category</CardTitle>
+        <CardTitle>Category details</CardTitle>
+        <CardDescription>Set up the name, hierarchy, and display order for this category.</CardDescription>
       </CardHeader>
       <CardContent>
         {error && (
@@ -116,8 +117,8 @@ export function CreateCategoryForm() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-1.5">
             <Label htmlFor="name">Name *</Label>
             <Input
               id="name"
@@ -131,10 +132,10 @@ export function CreateCategoryForm() {
               placeholder="e.g. PDF Printing"
               required
             />
-            <p className="text-xs text-gray-500">Slug will be auto-generated from the name</p>
+            <p className="text-xs text-[var(--color-foreground-tertiary)]">Slug will be auto-generated from the name</p>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label htmlFor="description">Description</Label>
             <Input
               id="description"
@@ -156,8 +157,8 @@ export function CreateCategoryForm() {
             placeholder="Search for a parent category..."
           />
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
+          <div className="grid gap-5 border-t border-[var(--color-border)] pt-5 sm:grid-cols-2">
+            <div className="space-y-1.5">
               <Label htmlFor="priority">Display Order</Label>
               <Input
                 id="priority"
@@ -172,12 +173,12 @@ export function CreateCategoryForm() {
                 placeholder="Auto-calculated"
                 min="0"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs leading-relaxed text-[var(--color-foreground-tertiary)]">
                 Lower values appear first. Auto-set to {autoDisplayOrder} (max + 1), but you can customize it.
               </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="minCartValue">Minimum Cart Value</Label>
               <Input
                 id="minCartValue"
@@ -188,7 +189,7 @@ export function CreateCategoryForm() {
                 min="0"
                 step="0.01"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs leading-relaxed text-[var(--color-foreground-tertiary)]">
                 Optional. Customers cannot check out unless the total for items
                 in this category reaches this amount. Leave blank (or 0) to
                 disable.
@@ -196,7 +197,7 @@ export function CreateCategoryForm() {
             </div>
           </div>
 
-          <div className="flex justify-end gap-4">
+          <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-5">
             <Button
               type="button"
               variant="outline"
@@ -214,5 +215,4 @@ export function CreateCategoryForm() {
     </Card>
   );
 }
-
 

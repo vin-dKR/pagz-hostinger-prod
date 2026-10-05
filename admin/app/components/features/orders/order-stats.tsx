@@ -1,161 +1,76 @@
-/**
- * Order Statistics Dashboard Component
- * Displays order statistics at the top of the orders page
- */
-
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, CardContent } from '@/app/components/ui/card';
-import { Spinner } from '@/app/components/ui/loading';
 import { getOrderStatistics, type OrderStatistics } from '@/lib/api/orders.service';
 import { formatCurrency } from '@/lib/utils/format';
-import { AlertCircle, DollarSign, Package, TrendingUp, Clock } from 'lucide-react';
-import { Badge } from '@/app/components/ui/badge';
+import { MetricStrip, MetricTile } from '@/app/components/features/management/metric-tile';
 
 export function OrderStats() {
     const [stats, setStats] = useState<OrderStatistics | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        loadStats();
+        const loadStats = async () => {
+            try {
+                setStats(await getOrderStatistics());
+            } catch {
+                // The order list remains usable if summary data is unavailable.
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        void loadStats();
     }, []);
 
-    const loadStats = async () => {
-        try {
-            setIsLoading(true);
-            setError(null);
-            const data = await getOrderStatistics();
-            setStats(data);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load statistics');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
     if (isLoading) {
-        return (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
-                {[1, 2, 3, 4].map((i) => (
-                    <Card key={i}>
-                        <CardContent className="p-6">
-                            <div className="flex items-center justify-center h-20">
-                                <Spinner size="sm" />
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
-        );
+        return <div className="h-32 animate-pulse rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-card)]" />;
     }
-
-    if (error || !stats) {
-        return null;
-    }
+    if (!stats) return null;
 
     return (
-        <div className="space-y-6 mb-6">
-            {/* Main Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-600">Total Orders</p>
-                                <p className="text-3xl font-bold mt-2">{stats.totalOrders}</p>
-                                <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                                    <span>Today: {stats.orders.today}</span>
-                                    <span>Week: {stats.orders.week}</span>
-                                    <span>Month: {stats.orders.month}</span>
-                                </div>
-                            </div>
-                            <Package className="h-8 w-8 text-blue-500" />
-                        </div>
-                    </CardContent>
-                </Card>
+        <section className="space-y-4" aria-label="Order summary">
+            <MetricStrip>
+                <MetricTile
+                    label="Total orders"
+                    value={stats.totalOrders.toLocaleString()}
+                    detail={`${stats.orders.today} today · ${stats.orders.week} this week`}
+                />
+                <MetricTile
+                    label="Total revenue"
+                    value={formatCurrency(stats.totalRevenue)}
+                    detail={`${formatCurrency(stats.revenue.today)} today · ${formatCurrency(stats.revenue.month)} this month`}
+                />
+                <MetricTile
+                    label="Average order value"
+                    value={formatCurrency(stats.averageOrderValue)}
+                    detail="Based on successful payments"
+                />
+                <MetricTile
+                    label="Requires attention"
+                    value={stats.ordersRequiringAttention.toLocaleString()}
+                    detail="Pending review or failed payments"
+                    emphasis={stats.ordersRequiringAttention > 0 ? 'warning' : 'default'}
+                />
+            </MetricStrip>
 
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-600">Total Revenue</p>
-                                <p className="text-3xl font-bold mt-2">{formatCurrency(stats.totalRevenue)}</p>
-                                <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                                    <span>Today: {formatCurrency(stats.revenue.today)}</span>
-                                    <span>Week: {formatCurrency(stats.revenue.week)}</span>
-                                    <span>Month: {formatCurrency(stats.revenue.month)}</span>
-                                </div>
-                            </div>
-                            <DollarSign className="h-8 w-8 text-green-500" />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-600">Avg Order Value</p>
-                                <p className="text-3xl font-bold mt-2">{formatCurrency(stats.averageOrderValue)}</p>
-                                <p className="text-xs text-gray-500 mt-2">Based on successful payments</p>
-                            </div>
-                            <TrendingUp className="h-8 w-8 text-purple-500" />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-600">Requires Attention</p>
-                                <p className="text-3xl font-bold mt-2 text-orange-600">{stats.ordersRequiringAttention}</p>
-                                <p className="text-xs text-gray-500 mt-2">Pending review or failed payments</p>
-                            </div>
-                            <AlertCircle className="h-8 w-8 text-orange-500" />
-                        </div>
-                    </CardContent>
-                </Card>
+            <div className="admin-panel">
+                <div className="admin-panel-interior flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="mr-1 text-[11px] font-medium text-[var(--color-foreground-tertiary)]">By status</span>
+                    {stats.ordersByStatus.map((item) => (
+                        <span key={item.status} className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[#fafafa] px-2.5 py-1 text-xs text-[var(--color-foreground-secondary)]">
+                            <span className="capitalize">{item.status.replace(/_/g, ' ').toLowerCase()}</span>
+                            <strong className="font-semibold tabular-nums text-[var(--color-foreground)]">{item.count}</strong>
+                        </span>
+                    ))}
+                </div>
+                {stats.pendingPaymentsCount > 0 && (
+                    <p className="shrink-0 text-xs font-medium text-[var(--color-warning)]">
+                        {stats.pendingPaymentsCount} pending payment{stats.pendingPaymentsCount !== 1 ? 's' : ''}
+                    </p>
+                )}
+                </div>
             </div>
-
-            {/* Orders by Status */}
-            <Card>
-                <CardContent className="p-6">
-                    <h3 className="text-lg font-semibold mb-4">Orders by Status</h3>
-                    <div className="flex flex-wrap gap-3">
-                        {stats.ordersByStatus.map((item) => (
-                            <Badge
-                                key={item.status}
-                                variant="secondary"
-                                className="px-4 py-2 text-sm"
-                            >
-                                <span className="capitalize">{item.status.replace(/_/g, ' ').toLowerCase()}</span>
-                                <span className="ml-2 font-bold">{item.count}</span>
-                            </Badge>
-                        ))}
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Pending Payments */}
-            {stats.pendingPaymentsCount > 0 && (
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-3">
-                            <Clock className="h-5 w-5 text-yellow-500" />
-                            <div>
-                                <p className="font-medium">Pending Payments</p>
-                                <p className="text-sm text-gray-600">
-                                    {stats.pendingPaymentsCount} order{stats.pendingPaymentsCount !== 1 ? 's' : ''} with pending payments
-                                </p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-        </div>
+        </section>
     );
 }
-

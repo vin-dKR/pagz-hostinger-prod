@@ -225,13 +225,13 @@ export function OrphanPaymentsList() {
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm">
+            <div className="admin-panel flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="flex items-center gap-3 text-sm text-[var(--color-foreground-secondary)]">
                     <AlertTriangle
                         size={16}
                         className={orphans.length > 0 ? 'text-amber-600' : 'text-emerald-600'}
                     />
-                    <span className="font-medium">
+                    <span className="font-semibold text-[var(--color-foreground)]">
                         {loading
                             ? 'Loading…'
                             : `${orphans.length} orphan payment${orphans.length === 1 ? '' : 's'} in the last 30 days`}
@@ -244,39 +244,41 @@ export function OrphanPaymentsList() {
             </div>
 
             {error && (
-                <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <div className="rounded-[var(--radius-lg)] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                     {error}
                 </div>
             )}
 
             {!loading && orphans.length === 0 && !error && (
-                <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-4 text-sm text-emerald-800">
+                <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-card)] px-5 py-10 text-center text-sm text-[var(--color-foreground-secondary)]">
                     No orphan payments. Every captured Razorpay payment has a matching order.
                 </div>
             )}
 
             {orphans.length > 0 && (
-                <div className="overflow-hidden rounded border border-[var(--color-border)]">
-                    <table className="w-full text-sm">
+                <div className="admin-panel">
+                    <div className="admin-panel-interior overflow-x-auto">
+                    <div className="admin-toolbar flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3"><h2 className="text-sm font-semibold text-[var(--color-foreground)]">Payments to reconcile</h2><span className="text-xs font-medium tabular-nums text-[var(--color-foreground-secondary)]">{orphans.length} records</span></div>
+                    <table className="min-w-[780px] w-full text-sm">
                         <thead className="bg-[var(--color-background-secondary)] text-left text-xs uppercase tracking-wide text-[var(--color-foreground-secondary)]">
                             <tr>
-                                <th className="px-3 py-2">Merchant Order ID</th>
-                                <th className="px-3 py-2">Amount</th>
-                                <th className="px-3 py-2">Items</th>
-                                <th className="px-3 py-2">User</th>
-                                <th className="px-3 py-2">Created</th>
-                                <th className="px-3 py-2" />
+                                <th className="px-5 py-3">Merchant Order ID</th>
+                                <th className="px-5 py-3">Amount</th>
+                                <th className="px-5 py-3">Items</th>
+                                <th className="px-5 py-3">User</th>
+                                <th className="px-5 py-3">Created</th>
+                                <th className="px-5 py-3" />
                             </tr>
                         </thead>
                         <tbody>
                             {orphans.map((o) => (
                                 <tr key={o.merchantOrderId} className="border-t border-[var(--color-border)]">
-                                    <td className="px-3 py-2 font-mono text-xs">{o.merchantOrderId}</td>
-                                    <td className="px-3 py-2 font-medium">{formatCurrency(o.amount)}</td>
-                                    <td className="px-3 py-2">{o.itemCount}</td>
-                                    <td className="px-3 py-2 font-mono text-xs">{o.userId.slice(0, 8)}…</td>
-                                    <td className="px-3 py-2 text-xs">{formatDate(o.createdAt)}</td>
-                                    <td className="px-3 py-2 text-right">
+                                    <td className="px-5 py-3 font-mono text-xs text-[var(--color-foreground)]">{o.merchantOrderId}</td>
+                                    <td className="px-5 py-3 font-medium tabular-nums">{formatCurrency(o.amount)}</td>
+                                    <td className="px-5 py-3">{o.itemCount}</td>
+                                    <td className="px-5 py-3 font-mono text-xs text-[var(--color-foreground-secondary)]">{o.userId.slice(0, 8)}…</td>
+                                    <td className="px-5 py-3 text-xs text-[var(--color-foreground-secondary)]">{formatDate(o.createdAt)}</td>
+                                    <td className="px-5 py-3 text-right">
                                         <Button
                                             size="sm"
                                             onClick={() => {
@@ -291,6 +293,7 @@ export function OrphanPaymentsList() {
                             ))}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             )}
 

@@ -16,7 +16,7 @@ import {
     TableRow,
 } from '@/app/components/ui/table';
 import { Badge } from '@/app/components/ui/badge';
-import { Spinner, PageLoading } from '@/app/components/ui/loading';
+import { Spinner } from '@/app/components/ui/loading';
 import { Alert } from '@/app/components/ui/alert';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -55,6 +55,7 @@ import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { toastError, toastPromise, toastSuccess } from '@/lib/utils/toast';
 import { useConfirm } from '@/lib/hooks/use-confirm';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 export function ReviewsListEnhanced() {
     const router = useRouter();
@@ -315,109 +316,88 @@ export function ReviewsListEnhanced() {
     };
 
     if (isLoading && !hasLoadedOnce) {
-        return <PageLoading />;
+        return (
+            <div className="space-y-5" aria-label="Loading reviews">
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                    {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-28 animate-pulse rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)]" />)}
+                </div>
+                <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+                    <div className="mb-6 h-9 w-full max-w-md animate-pulse rounded-md bg-[var(--color-background-secondary)]" />
+                    {Array.from({ length: 6 }).map((_, index) => <div key={index} className="mb-3 h-12 animate-pulse rounded-md bg-[var(--color-background-secondary)]" />)}
+                </div>
+            </div>
+        );
     }
 
     return (
         <>
             {ConfirmDialog}
-            <div className="space-y-6">
+            <div className="space-y-5">
                 {/* Statistics Dashboard */}
                 {!isLoadingStats && statistics && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-sm font-medium text-gray-600">
-                                    Total Reviews
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-3xl font-bold">{statistics.totalReviews}</div>
-                                <p className="text-xs text-gray-500 mt-1">
-                                    {statistics.approvedReviews} approved, {statistics.pendingReviews} pending
-                                </p>
+                    <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+                        <Card className="rounded-[10px] shadow-none hover:shadow-none">
+                            <CardHeader className="p-4 pb-0"><CardTitle className="text-xs font-medium text-[var(--color-foreground-secondary)]">Total reviews</CardTitle></CardHeader>
+                            <CardContent className="p-4 pt-3">
+                                <div className="text-[27px] font-semibold leading-none tracking-[-0.04em] tabular-nums">{statistics.totalReviews}</div>
+                                <p className="mt-2 text-xs text-[var(--color-foreground-tertiary)]">{statistics.approvedReviews} approved · {statistics.pendingReviews} pending</p>
                             </CardContent>
                         </Card>
-
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-sm font-medium text-gray-600">
-                                    Average Rating
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex items-center gap-2">
-                                    <div className="text-3xl font-bold">
-                                        {statistics.avgRating.toFixed(1)}
-                                    </div>
-                                    <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
+                        <Card className="rounded-[10px] shadow-none hover:shadow-none">
+                            <CardHeader className="p-4 pb-0"><CardTitle className="text-xs font-medium text-[var(--color-foreground-secondary)]">Average rating</CardTitle></CardHeader>
+                            <CardContent className="p-4 pt-3">
+                                <div className="flex items-center gap-2 text-[27px] font-semibold leading-none tracking-[-0.04em] tabular-nums">
+                                    {statistics.avgRating.toFixed(1)} <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />
                                 </div>
-                                <p className="text-xs text-gray-500 mt-1">
-                                    Approval rate: {statistics.approvalRate.toFixed(1)}%
-                                </p>
+                                <p className="mt-2 text-xs text-[var(--color-foreground-tertiary)]">{statistics.approvalRate.toFixed(1)}% approval rate</p>
                             </CardContent>
                         </Card>
-
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-sm font-medium text-gray-600">
-                                    Pending Reviews
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-3xl font-bold text-orange-600">
-                                    {statistics.pendingReviews}
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1">Awaiting moderation</p>
+                        <Card className="rounded-[10px] shadow-none hover:shadow-none">
+                            <CardHeader className="p-4 pb-0"><CardTitle className="text-xs font-medium text-[var(--color-foreground-secondary)]">Pending reviews</CardTitle></CardHeader>
+                            <CardContent className="p-4 pt-3">
+                                <div className="text-[27px] font-semibold leading-none tracking-[-0.04em] tabular-nums">{statistics.pendingReviews}</div>
+                                <p className="mt-2 text-xs text-[var(--color-foreground-tertiary)]">Awaiting moderation</p>
                             </CardContent>
                         </Card>
-
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-sm font-medium text-gray-600">
-                                    Verified Purchases
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-3xl font-bold text-green-600">
-                                    {statistics.verifiedPercentage.toFixed(0)}%
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1">Of approved reviews</p>
+                        <Card className="rounded-[10px] shadow-none hover:shadow-none">
+                            <CardHeader className="p-4 pb-0"><CardTitle className="text-xs font-medium text-[var(--color-foreground-secondary)]">Verified purchases</CardTitle></CardHeader>
+                            <CardContent className="p-4 pt-3">
+                                <div className="text-[27px] font-semibold leading-none tracking-[-0.04em] tabular-nums">{statistics.verifiedPercentage.toFixed(0)}%</div>
+                                <p className="mt-2 text-xs text-[var(--color-foreground-tertiary)]">Of approved reviews</p>
                             </CardContent>
                         </Card>
                     </div>
                 )}
 
                 {/* Main Reviews Table */}
-                <Card>
+                <Card className="overflow-hidden rounded-[10px] shadow-none hover:shadow-none">
                     <CardContent className="p-0">
-                        <div className="border-b bg-gray-50/50 p-4">
-                            <div className="mb-3 flex items-center justify-between gap-4 flex-wrap">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="admin-toolbar border-b border-[var(--color-border)] p-4 sm:px-5">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex min-w-0 w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-1">
                                     <Button
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setShowFilters(!showFilters)}
-                                        className="h-10 flex-shrink-0"
+                                        className="h-9 flex-shrink-0"
                                     >
-                                        <Filter className="h-4 w-4 mr-2" />
+                                        <Filter className="mr-2 h-4 w-4" />
                                         Filters
                                     </Button>
-                                    <div className="relative flex-1 min-w-[250px]">
-                                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                    <div className="relative min-w-0 flex-1 basis-full sm:basis-64">
+                                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" />
                                         <Input
                                             type="text"
-                                            placeholder="Search reviews by title, comment, product, or user..."
+                                            placeholder="Search reviews, products or users..."
                                             value={searchInput}
                                             onChange={(e) => setSearchInput(e.target.value)}
-                                            className="pl-10 h-10"
+                                            className="h-9 pl-9"
                                         />
                                     </div>
                                 </div>
 
                                 <div className="flex items-center gap-2">
-
-                                    <div className="text-sm text-gray-600">
+                                    <div className="whitespace-nowrap text-xs tabular-nums text-[var(--color-foreground-tertiary)]">
                                         {totalItems > 0 ? (
                                             <>
                                                 <span className="font-medium">{totalItems}</span> result
@@ -434,10 +414,10 @@ export function ReviewsListEnhanced() {
 
                             {/* Filters Panel */}
                             {showFilters && (
-                                <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200 space-y-3">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="mt-4 space-y-3 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-3 sm:p-4">
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            <label className="mb-1.5 block text-xs font-medium text-[var(--color-foreground-secondary)]">
                                                 Approval Status
                                             </label>
                                             <select
@@ -450,7 +430,8 @@ export function ReviewsListEnhanced() {
                                                                 : e.target.value === 'true',
                                                     })
                                                 }
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                                aria-label="Approval status"
+                                                className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-3 text-xs text-[var(--color-foreground)]"
                                             >
                                                 <option value="">All</option>
                                                 <option value="true">Approved</option>
@@ -459,7 +440,7 @@ export function ReviewsListEnhanced() {
                                         </div>
 
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            <label className="mb-1.5 block text-xs font-medium text-[var(--color-foreground-secondary)]">
                                                 Rating
                                             </label>
                                             <select
@@ -469,7 +450,8 @@ export function ReviewsListEnhanced() {
                                                         rating: e.target.value ? parseInt(e.target.value) : undefined,
                                                     })
                                                 }
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                                aria-label="Rating"
+                                                className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-3 text-xs text-[var(--color-foreground)]"
                                             >
                                                 <option value="">All Ratings</option>
                                                 <option value="5">5 Stars</option>
@@ -481,7 +463,7 @@ export function ReviewsListEnhanced() {
                                         </div>
 
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            <label className="mb-1.5 block text-xs font-medium text-[var(--color-foreground-secondary)]">
                                                 Verified Purchase
                                             </label>
                                             <select
@@ -494,7 +476,8 @@ export function ReviewsListEnhanced() {
                                                                 : e.target.value === 'true',
                                                     })
                                                 }
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                                aria-label="Verified purchase"
+                                                className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-3 text-xs text-[var(--color-foreground)]"
                                             >
                                                 <option value="">All</option>
                                                 <option value="true">Verified Only</option>
@@ -503,7 +486,7 @@ export function ReviewsListEnhanced() {
                                         </div>
 
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            <label className="mb-1.5 block text-xs font-medium text-[var(--color-foreground-secondary)]">
                                                 Category
                                             </label>
                                             <select
@@ -513,7 +496,8 @@ export function ReviewsListEnhanced() {
                                                         categoryId: e.target.value || undefined,
                                                     })
                                                 }
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                                aria-label="Category"
+                                                className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-3 text-xs text-[var(--color-foreground)]"
                                             >
                                                 <option value="">All Categories</option>
                                                 {categories.map((category) => (
@@ -545,16 +529,16 @@ export function ReviewsListEnhanced() {
 
                             {/* Bulk Actions */}
                             {selectedReviews.size > 0 && (
-                                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
-                                    <span className="text-sm font-medium text-blue-900">
+                                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-primary)]/15 bg-[var(--color-primary)]/5 p-3">
+                                    <span className="text-xs font-semibold text-[var(--color-foreground)]">
                                         {selectedReviews.size} review(s) selected
                                     </span>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <Button
                                             variant="outline"
                                             size="sm"
                                             onClick={handleBulkApprove}
-                                            className="text-green-700 border-green-300 hover:bg-green-50"
+                                            className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                                         >
                                             <Check className="h-4 w-4 mr-1" />
                                             Approve
@@ -563,7 +547,7 @@ export function ReviewsListEnhanced() {
                                             variant="outline"
                                             size="sm"
                                             onClick={handleBulkReject}
-                                            className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                                            className="border-amber-200 text-amber-700 hover:bg-amber-50"
                                         >
                                             <X className="h-4 w-4 mr-1" />
                                             Reject
@@ -572,7 +556,7 @@ export function ReviewsListEnhanced() {
                                             variant="outline"
                                             size="sm"
                                             onClick={handleBulkDelete}
-                                            className="text-red-700 border-red-300 hover:bg-red-50"
+                                            className="border-red-200 text-red-700 hover:bg-red-50"
                                         >
                                             <Trash2 className="h-4 w-4 mr-1" />
                                             Delete
@@ -605,32 +589,73 @@ export function ReviewsListEnhanced() {
                             </div>
                         )}
 
-                        <div className="relative">
+                        <div className="relative [&>div]:rounded-none [&>div]:border-0 [&>div]:shadow-none">
                             {isLoading && hasLoadedOnce && (
-                                <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-sm py-4 text-xs text-gray-500">
+                                <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--color-card)]/80 py-4 text-xs text-[var(--color-foreground-secondary)] backdrop-blur-[2px]">
                                     <Spinner size="md" />
                                     <span className="ml-2">Updating results...</span>
                                 </div>
                             )}
 
                             {reviews.length === 0 && !isLoading && !error ? (
-                                <div className="px-4 pb-6 pt-8">
-                                    <Card>
-                                        <CardContent className="py-8 text-center">
-                                            <p className="text-gray-600">
-                                                No reviews found. Try adjusting your search or filters.
-                                            </p>
-                                        </CardContent>
-                                    </Card>
+                                <div className="px-4 py-14 text-center">
+                                    <Star className="mx-auto h-5 w-5 text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+                                    <p className="mt-3 text-sm font-medium text-[var(--color-foreground)]">No reviews found</p>
+                                    <p className="mt-1 text-xs text-[var(--color-foreground-tertiary)]">Try adjusting your search or filters.</p>
                                 </div>
                             ) : (
-                                <Table>
+                                <>
+                                <div className="divide-y divide-[var(--color-border)] sm:hidden">
+                                    <div className="bg-[var(--color-background-secondary)] px-4 py-2.5">
+                                        <button onClick={toggleSelectAll} className="inline-flex items-center gap-2 text-xs font-medium text-[var(--color-foreground-secondary)]" aria-label="Select all reviews on this page">
+                                            {selectedReviews.size === reviews.length && reviews.length > 0 ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                                            Select all on this page
+                                        </button>
+                                    </div>
+                                    {reviews.map((review) => (
+                                        <article key={review.id} className="p-4" data-state={selectedReviews.has(review.id) ? 'selected' : undefined}>
+                                            <div className="flex items-start gap-3">
+                                                <button onClick={() => toggleSelectReview(review.id)} aria-label={'Select review ' + review.id} className="mt-0.5 shrink-0 text-[var(--color-foreground-secondary)]">
+                                                    {selectedReviews.has(review.id) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                                                </button>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate text-xs font-semibold text-[var(--color-foreground)]" title={review.product?.name || undefined}>{review.product?.name || review.category?.name || 'Review'}</p>
+                                                    <p className="mt-1 truncate text-[11px] text-[var(--color-foreground-tertiary)]">{review.user?.name || 'Anonymous'}{review.user?.email ? ' · ' + review.user.email : ''}</p>
+                                                </div>
+                                                <Badge variant={review.isApproved ? 'success' : 'secondary'}>{review.isApproved ? 'Approved' : 'Pending'}</Badge>
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-foreground-tertiary)]">
+                                                <span className="inline-flex items-center gap-1 font-semibold text-[var(--color-foreground)]"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{review.rating}</span>
+                                                <span>·</span><span>{formatDate(review.createdAt)}</span>
+                                                {review.isVerifiedPurchase && <Badge variant="success" className="px-1.5 text-[10px]">Verified purchase</Badge>}
+                                            </div>
+                                            {review.title && <p className="mt-3 text-xs font-semibold text-[var(--color-foreground)]">{review.title}</p>}
+                                            <p className="mt-1 line-clamp-3 text-xs leading-5 text-[var(--color-foreground-secondary)]">{review.comment || '—'}</p>
+                                            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+                                                <span className="min-w-0 truncate text-[11px] text-[var(--color-foreground-tertiary)]">{review.category?.name || 'No category'}</span>
+                                                {!!review.images?.length && <span className="text-[11px] text-[var(--color-foreground-tertiary)]">· {review.images.length} image{review.images.length === 1 ? '' : 's'}</span>}
+                                                <div className="ml-auto flex items-center gap-0.5">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push(`/reviews/${review.id}`)} title="View details" aria-label={'View review ' + review.id}><Eye className="h-4 w-4" /></Button>
+                                                    {!review.isApproved ? (
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-700" onClick={() => handleApprove(review.id)} disabled={updatingId === review.id} title="Approve" aria-label={'Approve review ' + review.id}>{updatingId === review.id ? <Spinner size="sm" /> : <Check className="h-4 w-4" />}</Button>
+                                                    ) : (
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-700" onClick={() => handleReject(review.id)} disabled={updatingId === review.id} title="Reject" aria-label={'Reject review ' + review.id}>{updatingId === review.id ? <Spinner size="sm" /> : <X className="h-4 w-4" />}</Button>
+                                                    )}
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-[var(--color-destructive)]" onClick={() => handleDelete(review.id)} disabled={updatingId === review.id} title="Delete" aria-label={'Delete review ' + review.id}>{updatingId === review.id ? <Spinner size="sm" /> : <Trash2 className="h-4 w-4" />}</Button>
+                                                </div>
+                                            </div>
+                                        </article>
+                                    ))}
+                                </div>
+                                <div className="hidden sm:block">
+                                <Table className="min-w-[1260px]">
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead className="w-12">
                                                 <button
                                                     onClick={toggleSelectAll}
-                                                    className="flex items-center justify-center"
+                                                    className="flex items-center justify-center text-[var(--color-foreground-secondary)]"
+                                                    aria-label="Select all reviews on this page"
                                                 >
                                                     {selectedReviews.size === reviews.length &&
                                                         reviews.length > 0 ? (
@@ -653,11 +678,12 @@ export function ReviewsListEnhanced() {
                                     </TableHeader>
                                     <TableBody>
                                         {reviews.map((review) => (
-                                            <TableRow key={review.id}>
+                                            <TableRow key={review.id} data-state={selectedReviews.has(review.id) ? 'selected' : undefined}>
                                                 <TableCell>
                                                     <button
                                                         onClick={() => toggleSelectReview(review.id)}
-                                                        className="flex items-center justify-center"
+                                                        className="flex items-center justify-center text-[var(--color-foreground-secondary)]"
+                                                        aria-label={'Select review ' + review.id}
                                                     >
                                                         {selectedReviews.has(review.id) ? (
                                                             <CheckSquare className="h-4 w-4" />
@@ -667,69 +693,71 @@ export function ReviewsListEnhanced() {
                                                     </button>
                                                 </TableCell>
                                                 <TableCell className="font-medium">
-                                                    <div className="flex items-center gap-2">
-                                                        <Package className="h-4 w-4 text-gray-400" />
-                                                        {review.product?.name || '—'}
+                                                    <div className="flex max-w-[180px] items-center gap-2">
+                                                        <Package className="h-4 w-4 shrink-0 text-[var(--color-foreground-tertiary)]" />
+                                                        <span className="truncate" title={review.product?.name || undefined}>{review.product?.name || '—'}</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="font-medium">
-                                                    <div className="flex items-center gap-2">
-                                                        <FolderTree className="h-4 w-4 text-gray-400" />
-                                                        {review.category?.name ?? '—'}
+                                                    <div className="flex max-w-[145px] items-center gap-2">
+                                                        <FolderTree className="h-4 w-4 shrink-0 text-[var(--color-foreground-tertiary)]" />
+                                                        <span className="truncate" title={review.category?.name || undefined}>{review.category?.name ?? '—'}</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <div className="flex items-center gap-2">
-                                                        <User className="h-4 w-4 text-gray-400" />
-                                                        <div>
-                                                            <div className="font-medium">
+                                                    <div className="flex max-w-[210px] items-center gap-2">
+                                                        <User className="h-4 w-4 shrink-0 text-[var(--color-foreground-tertiary)]" />
+                                                        <div className="min-w-0">
+                                                            <div className="truncate font-medium" title={review.user?.name || undefined}>
                                                                 {review.user?.name || 'Anonymous'}
                                                             </div>
-                                                            <div className="text-xs text-gray-500">
+                                                            <div className="truncate text-[11px] text-[var(--color-foreground-tertiary)]" title={review.user?.email || undefined}>
                                                                 {review.user?.email}
                                                             </div>
                                                         </div>
                                                         {review.isVerifiedPurchase && (
-                                                            <Badge variant="success" className="text-xs">
+                                                            <Badge variant="success" className="px-1.5 text-[10px]">
                                                                 Verified
                                                             </Badge>
                                                         )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <div className="flex items-center gap-1">
-                                                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                                                        <span className="font-medium">{review.rating}</span>
+                                                    <div className="flex items-center gap-1.5 tabular-nums">
+                                                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                                        <span className="font-semibold">{review.rating}</span>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="max-w-md">
+                                                <TableCell className="max-w-[250px]">
                                                     {review.title && (
-                                                        <div className="font-medium mb-1 truncate">
+                                                        <div className="mb-0.5 truncate font-medium" title={review.title}>
                                                             {review.title}
                                                         </div>
                                                     )}
-                                                    <div className="text-sm text-gray-600 line-clamp-2">
+                                                    <div className="line-clamp-2 text-xs text-[var(--color-foreground-secondary)]">
                                                         {review.comment || '-'}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
                                                     {review.images && review.images.length > 0 ? (
                                                         <div className="flex items-center gap-1">
-                                                            <div className="relative w-10 h-10 rounded border overflow-hidden">
-                                                                <img
+                                                            <div className="relative h-9 w-9 overflow-hidden rounded-md border border-[var(--color-border)]">
+                                                                <Image
                                                                     src={getPublicFileUrl(review.images[0] || '')}
-                                                                    alt="Review"
-                                                                    className="w-full h-full object-cover"
+                                                                    alt="Review attachment"
+                                                                    width={36}
+                                                                    height={36}
+                                                                    className="h-full w-full object-cover"
                                                                 />
                                                             </div>
                                                             {review.images.length > 1 && (
-                                                                <span className="text-xs text-gray-500">
+                                                                <span className="text-xs text-[var(--color-foreground-tertiary)]">
                                                                     +{review.images.length - 1}
                                                                 </span>
                                                             )}
                                                         </div>
                                                     ) : (
-                                                        <span className="text-gray-400 text-xs">-</span>
+                                                        <span className="text-xs text-[var(--color-foreground-tertiary)]">—</span>
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
@@ -742,17 +770,19 @@ export function ReviewsListEnhanced() {
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <div className="text-sm">
+                                                    <div className="whitespace-nowrap text-xs text-[var(--color-foreground-secondary)]">
                                                         {formatDate(review.createdAt)}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-1">
+                                                    <div className="flex justify-end gap-0.5">
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
                                                             onClick={() => router.push(`/reviews/${review.id}`)}
-                                                            title="View Details"
+                                                            title="View details"
+                                                            aria-label={'View review ' + review.id}
+                                                            className="h-8 w-8"
                                                         >
                                                             <Eye className="h-4 w-4" />
                                                         </Button>
@@ -763,11 +793,13 @@ export function ReviewsListEnhanced() {
                                                                 onClick={() => handleApprove(review.id)}
                                                                 disabled={updatingId === review.id}
                                                                 title="Approve"
+                                                                aria-label={'Approve review ' + review.id}
+                                                                className="h-8 w-8"
                                                             >
                                                                 {updatingId === review.id ? (
                                                                     <Spinner size="sm" />
                                                                 ) : (
-                                                                    <Check className="h-4 w-4 text-green-600" />
+                                                                    <Check className="h-4 w-4 text-emerald-700" />
                                                                 )}
                                                             </Button>
                                                         )}
@@ -778,11 +810,13 @@ export function ReviewsListEnhanced() {
                                                                 onClick={() => handleReject(review.id)}
                                                                 disabled={updatingId === review.id}
                                                                 title="Reject"
+                                                                aria-label={'Reject review ' + review.id}
+                                                                className="h-8 w-8"
                                                             >
                                                                 {updatingId === review.id ? (
                                                                     <Spinner size="sm" />
                                                                 ) : (
-                                                                    <X className="h-4 w-4 text-orange-600" />
+                                                                    <X className="h-4 w-4 text-amber-700" />
                                                                 )}
                                                             </Button>
                                                         )}
@@ -792,11 +826,13 @@ export function ReviewsListEnhanced() {
                                                             onClick={() => handleDelete(review.id)}
                                                             disabled={updatingId === review.id}
                                                             title="Delete"
+                                                            aria-label={'Delete review ' + review.id}
+                                                            className="h-8 w-8"
                                                         >
                                                             {updatingId === review.id ? (
                                                                 <Spinner size="sm" />
                                                             ) : (
-                                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                                <Trash2 className="h-4 w-4 text-[var(--color-destructive)]" />
                                                             )}
                                                         </Button>
                                                     </div>
@@ -805,13 +841,15 @@ export function ReviewsListEnhanced() {
                                         ))}
                                     </TableBody>
                                 </Table>
+                                </div>
+                                </>
                             )}
                         </div>
 
                         {/* Pagination */}
                         {totalPages > 1 && (
-                            <div className="border-t p-4 flex items-center justify-between gap-4 flex-nowrap">
-                                <div className="text-sm text-[var(--color-foreground-secondary)] whitespace-nowrap">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] p-4 sm:px-5">
+                                <div className="whitespace-nowrap text-xs tabular-nums text-[var(--color-foreground-secondary)]">
                                     Showing page {page} of {totalPages}
                                 </div>
                                 <div className="flex gap-2 flex-nowrap flex-shrink-0">
@@ -842,4 +880,3 @@ export function ReviewsListEnhanced() {
         </>
     );
 }
-

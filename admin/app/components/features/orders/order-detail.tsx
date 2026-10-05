@@ -192,21 +192,23 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
     const canEdit = order.status !== 'SHIPPED' && order.status !== 'DELIVERED';
 
     return (
-        <div className="space-y-8 max-w-[1600px]">
+        <div className="mx-auto max-w-[1560px] space-y-5 pb-12">
             {/* Header */}
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] pb-4">
+                <div className="flex min-w-0 flex-wrap items-start gap-3">
                     <Button
                         variant="ghost"
+                        size="sm"
                         onClick={() => router.back()}
-                        className="flex-shrink-0"
+                        className="h-8 flex-shrink-0"
                     >
                         <ArrowLeft className="mr-2 h-4 w-4" />
                         Back
                     </Button>
-                    <div>
+                    <div className="min-w-0">
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-foreground-tertiary)]">Commerce / Orders</p>
                         <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-3xl font-semibold text-[var(--color-foreground)] tracking-tight">
+                            <h1 className="text-2xl font-semibold text-[var(--color-foreground)] tracking-tight">
                                 Order Details
                             </h1>
                             <Button
@@ -219,7 +221,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                 Copy ID
                             </Button>
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--color-foreground-secondary)] font-mono">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 break-all text-xs text-[var(--color-foreground-secondary)] font-mono">
                             <span>{order.id}</span>
                             <span>•</span>
                             <span>Created: {formatDateTime(order.createdAt)}</span>
@@ -228,7 +230,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-2">
                     <OrderStatusBadge status={order.status} />
                     <PaymentStatusBadge status={order.paymentStatus} />
                     <div className="flex gap-2">
@@ -247,7 +249,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
 
             {/* Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList>
+                <TabsList className="max-w-full justify-start overflow-x-auto">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="items">Items</TabsTrigger>
                     <TabsTrigger value="payment">Payment</TabsTrigger>
@@ -258,7 +260,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
 
                 {/* Overview Tab */}
                 <TabsContent value="overview" className="space-y-6">
-                    <div className="grid gap-6 md:grid-cols-2">
+                    <div className="grid items-start gap-6 md:grid-cols-2">
                         {/* Order Summary */}
                         <Card>
                             <CardHeader>
@@ -723,15 +725,15 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
                                                             Addons ({pricedAddons.length})
                                                         </h4>
-                                                        <div className="rounded-lg border border-purple-200 bg-purple-50/40 overflow-hidden">
-                                                            <div className="divide-y divide-purple-100">
+                                                        <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[#f8f8f8]">
+                                                            <div className="divide-y divide-[var(--color-border)]">
                                                                 {pricedAddons.map((addon) => (
                                                                     <div
                                                                         key={addon.ruleId}
                                                                         className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 px-3 py-2.5 bg-white"
                                                                     >
                                                                         <div className="min-w-0">
-                                                                            <p className="text-sm font-medium text-purple-900">
+                                                                            <p className="text-sm font-medium text-[var(--color-foreground)]">
                                                                                 {labels.get(addon.ruleId) ?? addon.name}
                                                                             </p>
                                                                             {addon.breakdown && addon.breakdown.length > 1 && (
@@ -741,7 +743,7 @@ export function OrderDetail({ orderId, initialOrder }: { orderId: string; initia
                                                                                 />
                                                                             )}
                                                                         </div>
-                                                                        <div className="text-sm font-semibold text-purple-900 shrink-0 sm:text-right">
+                                                                        <div className="shrink-0 text-sm font-semibold text-[var(--color-foreground)] sm:text-right">
                                                                             {formatCurrency(addon.total)}
                                                                         </div>
                                                                     </div>

@@ -1281,14 +1281,20 @@ export function CreateProductForm() {
     };
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>{renderStepTitle()}</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                    Step {step} of {TOTAL_STEPS}
-                </p>
+        <Card className="mx-auto max-w-[1080px] overflow-hidden">
+            <CardHeader className="border-b border-[var(--color-border)] bg-[var(--color-background-secondary)] p-5 sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-foreground-tertiary)]">Product setup</p>
+                        <CardTitle className="text-lg">{renderStepTitle().replace(/^Step \d+: /, '')}</CardTitle>
+                    </div>
+                    <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2.5 py-1 text-xs font-medium tabular-nums text-[var(--color-foreground-secondary)]">Step {step} / {TOTAL_STEPS}</span>
+                </div>
+                <div className="mt-4 flex gap-1" aria-label={`Step ${step} of ${TOTAL_STEPS}`}>
+                    {Array.from({ length: TOTAL_STEPS }, (_, index) => <span key={index} className={`h-1 flex-1 rounded-full ${index < step ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}`} />)}
+                </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-5 sm:p-7">
                 <form onSubmit={handleSubmit} className="space-y-6">
                     {error && (
                         <Alert variant="error" onClose={() => setError(null)}>
@@ -1298,7 +1304,7 @@ export function CreateProductForm() {
 
                     {renderStep()}
 
-                    <div className="flex items-center justify-between pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-5">
                         <div className="flex gap-2">
                             {step > 1 && (
                                 <Button
@@ -1340,5 +1346,4 @@ export function CreateProductForm() {
         </Card>
     );
 }
-
 

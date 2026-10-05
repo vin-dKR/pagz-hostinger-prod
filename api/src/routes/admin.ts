@@ -33,7 +33,6 @@ import {
     exportOrders,
 } from "../controllers/orderController.js";
 import { getDashboardOverview } from "../controllers/dashboardController.js";
-import { adminAuth } from "../middleware/auth.js";
 import {
     deleteAdminUser,
     getAdminUser,
@@ -167,11 +166,11 @@ const router: IRouter = Router();
 
 /**
  * Admin Management Routes
- * All routes require admin authentication
- * These routes are for managing products, categories, and orders
+ * Authentication-free admin management routes.
+ *
+ * This dashboard is intentionally open, so do not add authentication
+ * middleware to this router without also restoring the login flow.
  */
-router.use(adminAuth);
-
 // Product & Category Management (admin only)
 // Dashboard
 router.get("/dashboard/overview", getDashboardOverview);

@@ -1,11 +1,9 @@
 /**
  * Admin Authentication Service
- * Phone-based OTP signup, email+password login.
+ * Email+password sign-in with phone-based password recovery.
  */
 
 import { post, ApiResponse } from './api-client';
-
-export type OtpPurpose = 'SIGNUP' | 'RESET_PASSWORD';
 
 export interface AdminLoginCredentials {
   email?: string;
@@ -27,24 +25,13 @@ export interface AuthResponse {
   token: string;
 }
 
-export interface AdminSignupData {
-  name: string;
-  phone: string;
-  otp: string;
-  password: string;
-  email?: string;
-}
-
 export interface SendOtpResponse {
   phone: string;
   expiresInMinutes: number;
 }
 
-/**
- * Send OTP to mobile (signup or reset).
- */
-export async function sendAdminOtp(phone: string, purpose: OtpPurpose): Promise<ApiResponse<SendOtpResponse>> {
-  return post<SendOtpResponse>('/auth/send-otp', { phone, purpose });
+export interface ForgotPasswordResponse extends SendOtpResponse {
+  requiresSignup: boolean;
 }
 
 /**
@@ -63,24 +50,25 @@ export async function loginAdmin(credentials: AdminLoginCredentials): Promise<Au
   return response.data;
 }
 
-/**
- * Register admin. Requires OTP previously obtained with purpose=SIGNUP.
- */
-export async function registerAdmin(data: AdminSignupData): Promise<AuthResponse> {
-  const response = await post<AuthResponse>('/auth/register', { ...data, isAdmin: true });
+/** Request a password-reset OTP for an existing admin account. */
+export async function requestAdminPasswordReset(phone: string): Promise<ApiResponse<ForgotPasswordResponse>> {
+  return post<ForgotPasswordResponse>('/auth/forgot-password', { phone });
+}
 
-  if (!response.success || !response.data) {
-    throw new Error(response.error || 'Registration failed');
-  }
-  return response.data;
+/** Reset an existing admin password after verifying its phone OTP. */
+export async function resetAdminPassword(
+  phone: string,
+  otp: string,
+  password: string
+): Promise<ApiResponse<{ message: string }>> {
+  return post<{ message: string }>('/auth/reset-password', { phone, otp, password });
 }
 
 /**
- * Logout admin (client-side only).
+ * Leave the dashboard. Authentication state is not persisted.
  */
 export function logoutAdmin(): void {
   if (typeof window !== 'undefined') {
-    document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-    window.location.href = '/login';
+    window.location.href = '/dashboard';
   }
 }

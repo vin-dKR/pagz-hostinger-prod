@@ -17,7 +17,7 @@ interface UserFiltersProps {
 
 export function UserFilters({ filters, onFilterChange }: UserFiltersProps) {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 [&_label]:mb-1.5 [&_label]:block [&_label]:text-xs [&_label]:font-medium [&_label]:text-[var(--color-foreground-secondary)]">
             {/* Role Filter */}
             <div>
                 <Label htmlFor="role">Role</Label>
@@ -134,4 +134,3 @@ export function UserFilters({ filters, onFilterChange }: UserFiltersProps) {
         </div>
     );
 }
-

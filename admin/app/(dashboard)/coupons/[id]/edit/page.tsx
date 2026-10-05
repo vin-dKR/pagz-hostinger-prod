@@ -10,6 +10,7 @@ import { CouponForm } from '@/app/components/features/coupons/coupon-form';
 import { useCoupon } from '@/lib/hooks/use-coupons';
 import { LoadingState } from '@/app/components/ui/loading-state';
 import { ErrorState } from '@/app/components/ui/error-state';
+import { ManagementPage } from '@/app/components/layouts/management-page';
 
 export default function EditCouponPage() {
     const router = useRouter();
@@ -39,16 +40,8 @@ export default function EditCouponPage() {
     }
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold text-gray-900">Edit Coupon</h1>
-                <p className="mt-2 text-sm text-gray-600">
-                    Update coupon details and settings
-                </p>
-            </div>
-
+        <ManagementPage section="Commerce / Promotions" title="Edit coupon" description="Update coupon details and settings.">
             <CouponForm initialData={coupon} onSuccess={handleSuccess} />
-        </div>
+        </ManagementPage>
     );
 }
-

@@ -1,144 +1,132 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card'; 
+import { useState } from 'react';
+import type { PointerEvent } from 'react';
 import type { DashboardOverviewResponse } from '@/lib/api/dashboard.service';
+import { useChartWidth } from './use-chart-width';
 
 interface OrdersTrendChartProps {
     data: DashboardOverviewResponse['timeSeries']['ordersLast30Days'];
     loading?: boolean;
 }
 
-function formatDate(dateStr: string): string {
-    try {
-        const date = new Date(dateStr);
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = String(date.getFullYear()).slice(-2);
-        return `${day}-${month}-${year}`;
-    } catch {
-        return dateStr;
-    }
+function formatDate(value: string) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(date);
 }
 
 export function OrdersTrendChart({ data, loading }: OrdersTrendChartProps) {
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-    const tooltipRef = useRef<HTMLDivElement>(null);
+    const { ref, width } = useChartWidth();
+    const chart = { width, height: 228, left: 32, right: 12, top: 14, bottom: 30 };
+    const plotWidth = chart.width - chart.left - chart.right;
+    const plotHeight = chart.height - chart.top - chart.bottom;
+    const totalOrders = data.reduce((sum, item) => sum + item.count, 0);
+    const maxCount = Math.max(1, ...data.map((item) => item.count));
+    const ceiling = Math.ceil(maxCount / 4) * 4;
+    const slot = plotWidth / Math.max(data.length, 1);
+    const barWidth = Math.min(18, Math.max(3, slot * 0.6));
+    const active = hoveredIndex !== null ? data[hoveredIndex] : null;
+    const activeX = hoveredIndex !== null ? chart.left + slot * (hoveredIndex + 0.5) : 0;
+    const labelIndices = [...new Set([0, Math.floor((data.length - 1) / 2), data.length - 1])];
 
-    const maxCount = data.length > 0 ? Math.max(...data.map((d) => d.count), 1) : 1;
-    const totalOrders = data.reduce((sum, d) => sum + d.count, 0);
-    
-    // Format dates and ensure today is last
-    const formattedData = [...data].map(d => ({
-        ...d,
-        formattedDate: formatDate(d.date),
-    }));
-    
-    // Get today's date formatted
-    const today = formatDate(new Date().toISOString());
-    
-    // Ensure last date is today
-    const lastItem = formattedData[formattedData.length - 1];
-    if (lastItem) {
-        lastItem.formattedDate = today;
-    }
+    const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+        if (!data.length) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const x = (event.clientX - bounds.left) / bounds.width * chart.width;
+        const index = Math.floor((x - chart.left) / slot);
+        setHoveredIndex(Math.max(0, Math.min(data.length - 1, index)));
+    };
 
     return (
-        <Card className="shadow-sm border border-gray-200 hover:shadow-md transition-shadow" aria-label="Orders last 30 days chart">
-            <CardHeader>
-                <div className="flex items-center justify-between">
-                    <CardTitle className="text-xl font-semibold">Orders (Last 30 days)</CardTitle>
-                    <div className="text-sm text-gray-600">
-                        Total: <span className="font-semibold text-gray-900">{totalOrders.toLocaleString('en-IN')}</span>
-                    </div>
+        <div className="min-w-0 rounded-[9px] border border-[#dbdbdb] bg-[#ededed] p-[5px] shadow-[inset_0_1px_0_#ffffff,0_2px_5px_#00000008]" aria-label="Orders for the last 30 days">
+            <div className="flex min-h-[65px] flex-wrap items-center justify-between gap-2 px-2.5 py-2">
+                <div>
+                    <p className="font-mono text-[10px] font-medium uppercase tracking-[0.09em] text-[#737373]">02 / Order volume</p>
+                    <h2 className="mt-1 text-[15px] font-semibold tracking-[-0.03em] text-[#252525]">Daily orders</h2>
                 </div>
-            </CardHeader>
-            <CardContent>
+                <div className="text-right">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-[#777]">30-day total</p>
+                    <p className="mt-0.5 text-[21px] font-semibold leading-none tracking-[-0.04em] tabular-nums text-[#252525]">{totalOrders.toLocaleString('en-IN')}</p>
+                </div>
+            </div>
+
+            <div className="rounded-[6px] border border-[#e1e1e1] bg-white p-3 shadow-[inset_0_1px_0_#ffffff,0_1px_2px_#0000000a] sm:px-4">
+                <div ref={ref}>
+                <div className="mb-1 flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.09em] text-[#929292]"><span>Last 30 days</span><span>Orders / day</span></div>
                 {loading && !data.length ? (
-                    <div className="h-64 animate-pulse rounded-md bg-gray-100" />
+                    <div className="h-[228px] animate-pulse rounded-[4px] bg-[#f4f4f4]" />
                 ) : !data.length ? (
-                    <p className="text-sm text-gray-600 text-center py-8">
+                    <div className="flex h-[228px] items-center justify-center text-sm text-[#858585]">
                         No order data available yet
-                    </p>
+                    </div>
                 ) : (
-                    <div className="relative w-full">
-                        {/* Tooltip */}
-                        {hoveredIndex !== null && formattedData[hoveredIndex] && (
+                    <div className="min-w-0">
+                    <div className="relative min-w-0">
+                        {active && hoveredIndex !== null && (
                             <div
-                                ref={tooltipRef}
-                                className="absolute z-20 bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg pointer-events-none whitespace-nowrap"
-                                style={{
-                                    left: `${(hoveredIndex / formattedData.length) * 100}%`,
-                                    top: '-60px',
-                                    transform: 'translateX(-50%)',
-                                }}
+                                className="pointer-events-none absolute z-10 min-w-24 rounded-[5px] bg-[#252525] px-3 py-2 text-xs text-white shadow-lg"
+                                style={{ left: Math.min(88, Math.max(12, activeX / chart.width * 100)) + '%', top: '12px', transform: 'translateX(-50%)' }}
                             >
-                                <div className="font-semibold mb-1">{formattedData[hoveredIndex].formattedDate}</div>
-                                <div className="text-blue-300">
-                                    {formattedData[hoveredIndex].count} {formattedData[hoveredIndex].count === 1 ? 'order' : 'orders'}
-                                </div>
+                                <p className="opacity-70">{formatDate(active.date)}</p>
+                                <p className="mt-1 font-semibold tabular-nums">{active.count} {active.count === 1 ? 'order' : 'orders'}</p>
                             </div>
                         )}
-                        
-                        {/* Chart with Y-axis */}
-                        <div className="flex gap-2">
-                            {/* Y-axis labels */}
-                            <div className="flex flex-col justify-between text-xs text-gray-500 h-64 py-3">
-                                <span className="font-semibold">{maxCount}</span>
-                                <span>{Math.round(maxCount * 0.75)}</span>
-                                <span>{Math.round(maxCount * 0.5)}</span>
-                                <span>{Math.round(maxCount * 0.25)}</span>
-                                <span>0</span>
-                            </div>
-                            
-                            {/* Chart bars */}
-                            <div className="flex-1 relative">
-                                <div 
-                                    className="flex h-64 items-end justify-between gap-1 rounded-md bg-gradient-to-b from-gray-50 to-gray-100 p-3"
-                                    style={{ height: '256px' }}
-                                >
-                                    {formattedData.map((point, index) => {
-                                        // Calculate height in pixels (container is 256px - 24px padding = 232px usable)
-                                        const usableHeight = 232;
-                                        const barHeight = maxCount > 0 
-                                            ? Math.max((point.count / maxCount) * usableHeight, point.count > 0 ? 3 : 0)
-                                            : 0;
-                                        const isHovered = hoveredIndex === index;
-                                        
-                                        return (
-                                            <div
-                                                key={point.date}
-                                                className="relative flex-1 group cursor-pointer flex items-end"
-                                                style={{ height: '100%' }}
-                                                onMouseEnter={() => setHoveredIndex(index)}
-                                                onMouseLeave={() => setHoveredIndex(null)}
-                                            >
-                                                <div
-                                                    className={`w-full bg-gradient-to-t from-blue-600 to-blue-500 rounded-t transition-all duration-200 ${
-                                                        isHovered ? 'opacity-100 ring-2 ring-blue-400 ring-offset-2' : 'opacity-80 hover:opacity-100'
-                                                    }`}
-                                                    style={{ 
-                                                        height: `${barHeight}px`,
-                                                    }}
-                                                />
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                
-                                {/* X-axis labels */}
-                                <div className="flex justify-between mt-2 text-xs text-gray-500 px-3">
-                                    <span>{formattedData[0]?.formattedDate}</span>
-                                    <span>{formattedData[Math.floor(formattedData.length / 2)]?.formattedDate}</span>
-                                    <span className="font-semibold">{today}</span>
-                                </div>
-                            </div>
+                        <svg
+                            viewBox={`0 0 ${chart.width} ${chart.height}`}
+                            className="block h-auto w-full"
+                            role="img"
+                            aria-label="Daily orders for the last 30 days"
+                            onPointerMove={handlePointerMove}
+                            onPointerLeave={() => setHoveredIndex(null)}
+                        >
+                            <defs>
+                                <pattern id="dashboard-orders-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
+                                    <rect width="4" height="4" fill="#c7d6ef" />
+                                    <path d="M 0 4 L 4 0" fill="none" stroke="#6c91d8" strokeWidth="1" opacity="0.65" />
+                                </pattern>
+                            </defs>
+                            {[0, 1, 2, 3, 4].map((tick) => {
+                                const y = chart.top + tick * plotHeight / 4;
+                                return (
+                                    <g key={tick}>
+                                        <line x1={chart.left} x2={chart.width - chart.right} y1={y} y2={y} stroke="#e7e7e7" strokeDasharray={tick === 4 ? undefined : '2 5'} />
+                                        <text x={chart.left - 8} y={y + 4} textAnchor="end" fill="#919191" fontSize="10" fontFamily="ui-monospace, SFMono-Regular, monospace">
+                                            {Math.round(ceiling * (4 - tick) / 4)}
+                                        </text>
+                                    </g>
+                                );
+                            })}
+                            {data.map((item, index) => {
+                                const height = item.count === 0 ? 0 : Math.max(2, item.count / ceiling * plotHeight);
+                                const x = chart.left + slot * (index + 0.5) - barWidth / 2;
+                                return (
+                                    <rect
+                                        key={item.date}
+                                        x={x}
+                                        y={chart.top + plotHeight - height}
+                                        width={barWidth}
+                                        height={height}
+                                        rx={Math.min(3, barWidth / 3)}
+                                        fill={hoveredIndex === index ? '#6c91d8' : 'url(#dashboard-orders-hatch)'}
+                                        opacity={hoveredIndex === index ? 1 : 0.9}
+                                    />
+                                );
+                            })}
+                            {labelIndices.map((index, position) => {
+                                const item = data[index];
+                                if (!item) return null;
+                                return <text key={index} x={chart.left + slot * (index + 0.5)} y={chart.height - 5} textAnchor={position === 0 ? 'start' : position === labelIndices.length - 1 ? 'end' : 'middle'} fill="#919191" fontSize="10" fontFamily="ui-monospace, SFMono-Regular, monospace">{formatDate(item.date)}</text>;
+                            })}
+                        </svg>
+                        <div className="sr-only">
+                            {data.map((item) => <span key={item.date}>{formatDate(item.date)}: {item.count} orders. </span>)}
                         </div>
                     </div>
+                    </div>
                 )}
-            </CardContent>
-        </Card>
+                </div>
+            </div>
+        </div>
     );
 }
-
-

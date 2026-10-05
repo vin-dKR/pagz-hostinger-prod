@@ -22,7 +22,7 @@ import { Select } from '@/app/components/ui/select';
 import { useCoupons, useDeleteCoupon, useBulkCouponOperation, usePrefetchCoupon } from '@/lib/hooks/use-coupons';
 import type { Coupon } from '@/lib/api/coupons.service';
 import { formatDate } from '@/lib/utils/format';
-import { Edit, Trash2, Search, X, Eye, Loader2 } from 'lucide-react';
+import { Edit, Trash2, Search, X, Eye, Loader2, TicketPercent } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useConfirm } from '@/lib/hooks/use-confirm';
@@ -30,7 +30,6 @@ import { toastError } from '@/lib/utils/toast';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { CouponStatusBadge } from '@/app/components/ui/coupon-status-badge';
 import { CouponDiscountDisplay } from '@/app/components/ui/coupon-discount-display';
-import { LoadingState } from '@/app/components/ui/loading-state';
 import { ErrorState } from '@/app/components/ui/error-state';
 import { EmptyState } from '@/app/components/ui/empty-state';
 
@@ -185,7 +184,12 @@ export function CouponsListEnhanced() {
         return (
             <>
                 {ConfirmDialog}
-                <LoadingState message="Loading coupons..." />
+                <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-card)] p-5" aria-label="Loading coupons">
+                    <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-9 animate-pulse rounded-md bg-[var(--color-background-secondary)]" />)}
+                    </div>
+                    {Array.from({ length: 6 }).map((_, index) => <div key={index} className="mb-3 h-12 animate-pulse rounded-md bg-[var(--color-background-secondary)]" />)}
+                </div>
             </>
         );
     }
@@ -205,20 +209,30 @@ export function CouponsListEnhanced() {
     return (
         <>
             {ConfirmDialog}
-            <Card>
-                <CardContent className="p-6 space-y-4">
+            <Card className="overflow-hidden rounded-[10px] shadow-none hover:shadow-none">
+                <CardContent className="p-0">
                     {/* Filters */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <div className="admin-toolbar border-b border-[var(--color-border)] p-4 sm:px-5">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <h2 className="text-sm font-semibold text-[var(--color-foreground)]">Coupon directory</h2>
+                                <p className="mt-0.5 text-xs text-[var(--color-foreground-tertiary)]">Search and manage store offers</p>
+                            </div>
+                            <span className="rounded-md border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs font-medium tabular-nums text-[var(--color-foreground)]">{filteredCoupons.length} of {coupons.length} coupons</span>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(250px,1.7fr)_repeat(3,minmax(0,1fr))]">
+                        <div className="relative sm:col-span-2 xl:col-span-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-foreground-tertiary)]" />
                             <Input
-                                placeholder="Search coupons..."
+                                placeholder="Search code, name or description..."
                                 value={filters.search}
                                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                                className="pl-10"
+                                aria-label="Search coupons"
+                                className="h-9 pl-9"
                             />
                         </div>
                         <Select
+                            aria-label="Coupon status"
                             value={filters.status}
                             onChange={(e) =>
                                 setFilters({
@@ -234,6 +248,7 @@ export function CouponsListEnhanced() {
                             <option value="inactive">Inactive</option>
                         </Select>
                         <Select
+                            aria-label="Discount type"
                             value={filters.discountType}
                             onChange={(e) =>
                                 setFilters({
@@ -247,6 +262,7 @@ export function CouponsListEnhanced() {
                             <option value="FIXED">Fixed</option>
                         </Select>
                         <Select
+                            aria-label="Applicability"
                             value={filters.applicableTo}
                             onChange={(e) =>
                                 setFilters({
@@ -260,15 +276,16 @@ export function CouponsListEnhanced() {
                             <option value="CATEGORY">Category</option>
                             <option value="PRODUCT">Product</option>
                         </Select>
+                        </div>
                     </div>
 
                     {/* Bulk Actions */}
                     {selectedIds.size > 0 && (
-                        <div className="flex items-center gap-2 p-4 bg-blue-50 rounded-lg">
-                            <span className="text-sm font-medium">
+                        <div className="mx-4 my-3 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-primary)]/15 bg-[var(--color-primary)]/5 p-3 sm:mx-5">
+                            <span className="text-xs font-semibold text-[var(--color-foreground)]">
                                 {selectedIds.size} coupon(s) selected
                             </span>
-                            <div className="flex gap-2 ml-auto">
+                            <div className="ml-auto flex flex-wrap gap-2">
                                 <Button
                                     size="sm"
                                     variant="outline"
@@ -299,6 +316,7 @@ export function CouponsListEnhanced() {
                                     onClick={() => setSelectedIds(new Set())}
                                 >
                                     <X className="h-4 w-4" />
+                                    <span className="sr-only">Clear selection</span>
                                 </Button>
                             </div>
                         </div>
@@ -307,6 +325,7 @@ export function CouponsListEnhanced() {
                     {/* Table */}
                     {filteredCoupons.length === 0 ? (
                         <EmptyState
+                            icon={TicketPercent}
                             title={coupons.length === 0 ? 'No coupons found' : 'No coupons match your filters'}
                             description={
                                 coupons.length === 0
@@ -323,8 +342,46 @@ export function CouponsListEnhanced() {
                             }
                         />
                     ) : (
-                        <div className="overflow-x-auto">
-                            <Table>
+                        <div className="overflow-x-auto [&>div]:rounded-none [&>div]:border-0 [&>div]:shadow-none">
+                            <div className="divide-y divide-[var(--color-border)] sm:hidden">
+                                <div className="bg-[var(--color-background-secondary)] px-4 py-2.5">
+                                    <label className="inline-flex items-center gap-2 text-xs font-medium text-[var(--color-foreground-secondary)]">
+                                        <input type="checkbox" checked={filteredCoupons.length > 0 && selectedIds.size === filteredCoupons.length} onChange={toggleSelectAll} className="cursor-pointer rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+                                        Select all visible coupons
+                                    </label>
+                                </div>
+                                {filteredCoupons.map((coupon) => {
+                                    const usageCount = (coupon as Coupon & { _count?: { usages: number } })?._count?.usages || 0;
+                                    return (
+                                        <article key={coupon.id} onMouseEnter={() => prefetchCoupon(coupon.id)} className="p-4" data-state={selectedIds.has(coupon.id) ? 'selected' : undefined}>
+                                            <div className="flex items-start gap-3">
+                                                <input type="checkbox" checked={selectedIds.has(coupon.id)} onChange={() => toggleSelect(coupon.id)} aria-label={'Select coupon ' + coupon.code} className="mt-0.5 cursor-pointer rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate font-mono text-xs font-semibold tracking-[0.02em] text-[var(--color-foreground)]">{coupon.code}</p>
+                                                    <p className="mt-1 truncate text-xs text-[var(--color-foreground-secondary)]">{coupon.name}</p>
+                                                </div>
+                                                <CouponStatusBadge isActive={coupon.isActive} validFrom={coupon.validFrom} validUntil={coupon.validUntil} showIcon size="sm" />
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap items-center gap-2 pl-6 text-xs text-[var(--color-foreground-secondary)]">
+                                                <CouponDiscountDisplay discountType={coupon.discountType} discountValue={Number(coupon.discountValue)} maxDiscountAmount={coupon.maxDiscountAmount ? Number(coupon.maxDiscountAmount) : null} size="sm" />
+                                                {coupon.firstOrderOnly && <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">First order only</span>}
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3 text-[11px] text-[var(--color-foreground-tertiary)]">
+                                                <span>Valid until {formatDate(coupon.validUntil)}</span>
+                                                <span>·</span>
+                                                <span>{usageCount}{coupon.usageLimit ? ' / ' + coupon.usageLimit : ''} uses</span>
+                                                <div className="ml-auto flex gap-0.5">
+                                                    <Link href={`/coupons/${coupon.id}`}><Button variant="ghost" size="icon" className="h-8 w-8" title="View coupon details" aria-label={'View coupon ' + coupon.code}><Eye className="h-4 w-4" /></Button></Link>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingId(coupon.id); router.push(`/coupons/${coupon.id}/edit`); }} disabled={editingId === coupon.id} title="Edit coupon" aria-label={'Edit coupon ' + coupon.code}>{editingId === coupon.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Edit className="h-4 w-4" />}</Button>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-[var(--color-destructive)]" onClick={() => handleDelete(coupon.id)} disabled={deletingId === coupon.id || deleteCouponMutation.isPending} title="Delete coupon" aria-label={'Delete coupon ' + coupon.code}>{deletingId === coupon.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</Button>
+                                                </div>
+                                            </div>
+                                        </article>
+                                    );
+                                })}
+                            </div>
+                            <div className="hidden sm:block">
+                            <Table className="min-w-[1080px]">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead className="w-12">
@@ -335,7 +392,8 @@ export function CouponsListEnhanced() {
                                                     selectedIds.size === filteredCoupons.length
                                                 }
                                                 onChange={toggleSelectAll}
-                                                className="rounded border-gray-300 cursor-pointer"
+                                                aria-label="Select all visible coupons"
+                                                className="cursor-pointer rounded border-[var(--color-border)] accent-[var(--color-primary)]"
                                             />
                                         </TableHead>
                                         <TableHead>Code</TableHead>
@@ -361,20 +419,21 @@ export function CouponsListEnhanced() {
                                             <TableRow
                                                 key={coupon.id}
                                                 onMouseEnter={() => prefetchCoupon(coupon.id)}
-                                                className="hover:bg-gray-50"
+                                                data-state={selectedIds.has(coupon.id) ? 'selected' : undefined}
                                             >
                                                 <TableCell>
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedIds.has(coupon.id)}
                                                         onChange={() => toggleSelect(coupon.id)}
-                                                        className="rounded border-gray-300 cursor-pointer"
+                                                        aria-label={'Select coupon ' + coupon.code}
+                                                        className="cursor-pointer rounded border-[var(--color-border)] accent-[var(--color-primary)]"
                                                     />
                                                 </TableCell>
-                                                <TableCell className="font-mono font-medium">
-                                                    {coupon.code}
+                                                <TableCell className="whitespace-nowrap font-mono text-xs font-semibold tracking-[0.02em]">
+                                                    <span className="inline-flex rounded-md border border-[var(--color-border)] bg-[#f4f4f4] px-2 py-1 text-[var(--color-foreground)]">{coupon.code}</span>
                                                 </TableCell>
-                                                <TableCell>{coupon.name}</TableCell>
+                                                <TableCell><span className="block max-w-[190px] truncate font-medium" title={coupon.name}>{coupon.name}</span></TableCell>
                                                 <TableCell>
                                                     <CouponDiscountDisplay
                                                         discountType={coupon.discountType}
@@ -387,47 +446,50 @@ export function CouponsListEnhanced() {
                                                         size="sm"
                                                     />
                                                 </TableCell>
-                                                <TableCell>{formatDate(coupon.validUntil)}</TableCell>
+                                                <TableCell className="whitespace-nowrap text-xs text-[var(--color-foreground-secondary)]">{formatDate(coupon.validUntil)}</TableCell>
                                                 <TableCell>
-                                                    <CouponStatusBadge
-                                                        isActive={coupon.isActive}
-                                                        validFrom={coupon.validFrom}
-                                                        validUntil={coupon.validUntil}
-                                                        showIcon
-                                                        size="sm"
-                                                    />
+                                                    <span className="inline-flex">
+                                                        <CouponStatusBadge
+                                                            isActive={coupon.isActive}
+                                                            validFrom={coupon.validFrom}
+                                                            validUntil={coupon.validUntil}
+                                                            showIcon
+                                                            size="sm"
+                                                        />
+                                                    </span>
                                                 </TableCell>
                                                 <TableCell>
                                                     {coupon.firstOrderOnly ? (
-                                                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 border border-amber-200">
+                                                        <span className="inline-flex items-center whitespace-nowrap rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">
                                                             First order only
                                                         </span>
                                                     ) : (
-                                                        <span className="text-xs text-gray-400">-</span>
+                                                        <span className="text-xs text-[var(--color-foreground-tertiary)]">—</span>
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
                                                     {usageLimit ? (
-                                                        <span className="text-sm">
+                                                        <span className="whitespace-nowrap text-xs tabular-nums">
                                                             {usageCount}/{usageLimit}
                                                             {usagePercentage !== null && (
-                                                                <span className="text-gray-500 ml-1">
+                                                                <span className="ml-1 text-[var(--color-foreground-tertiary)]">
                                                                     ({usagePercentage}%)
                                                                 </span>
                                                             )}
                                                         </span>
                                                     ) : (
-                                                        <span className="text-sm">{usageCount}</span>
+                                                        <span className="text-xs tabular-nums">{usageCount}</span>
                                                     )}
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-2">
+                                                    <div className="flex justify-end gap-0.5">
                                                         <Link href={`/coupons/${coupon.id}`}>
                                                             <Button
                                                                 variant="ghost"
                                                                 size="icon"
-                                                                className="cursor-pointer"
+                                                                className="h-8 w-8 cursor-pointer"
                                                                 title="View coupon details"
+                                                                aria-label={'View coupon ' + coupon.code}
                                                             >
                                                                 <Eye className="h-4 w-4" />
                                                             </Button>
@@ -440,8 +502,9 @@ export function CouponsListEnhanced() {
                                                                 router.push(`/coupons/${coupon.id}/edit`);
                                                             }}
                                                             disabled={editingId === coupon.id}
-                                                            className="cursor-pointer"
+                                                            className="h-8 w-8 cursor-pointer"
                                                             title="Edit coupon"
+                                                            aria-label={'Edit coupon ' + coupon.code}
                                                         >
                                                             {editingId === coupon.id ? (
                                                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -457,13 +520,14 @@ export function CouponsListEnhanced() {
                                                                 deletingId === coupon.id ||
                                                                 deleteCouponMutation.isPending
                                                             }
-                                                            className="cursor-pointer"
+                                                            className="h-8 w-8 cursor-pointer text-[var(--color-destructive)]"
                                                             title="Delete coupon"
+                                                            aria-label={'Delete coupon ' + coupon.code}
                                                         >
                                                             {deletingId === coupon.id ? (
-                                                                <Loader2 className="h-4 w-4 animate-spin text-destructive" />
+                                                                <Loader2 className="h-4 w-4 animate-spin" />
                                                             ) : (
-                                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                                <Trash2 className="h-4 w-4" />
                                                             )}
                                                         </Button>
                                                     </div>
@@ -473,6 +537,7 @@ export function CouponsListEnhanced() {
                                     })}
                                 </TableBody>
                             </Table>
+                            </div>
                         </div>
                     )}
                 </CardContent>
